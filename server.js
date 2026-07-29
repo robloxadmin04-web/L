@@ -1,4 +1,4 @@
-// server.js - Solaries Phase 6 (Discord Bot D3 - 26 admin commands)
+// server.js - Solaries Phase 6 (Discord Bot D4 - admin + user commands)
 // Full command list: /login /logout /whoami /panel /managerrole /stats /settings
 // /key create|stock|delete|extend|revoke|info|list
 // /user info|blacklist|unblacklist|ban|unban  /hwid reset  /whitelist
@@ -784,7 +784,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D3) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D4) running on port " + PORT);
 });
 
 // ============================================================
@@ -963,6 +963,58 @@ async function startDiscordBot() {
       .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
+
+    // ---------- USER COMMANDS (no permission gate) ----------
+    new SlashCommandBuilder()
+      .setName("redeem")
+      .setDescription("Redeem a key and bind it to your Discord")
+      .addStringOption((o) => o.setName("key").setDescription("Your key value").setRequired(true))
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("loader")
+      .setDescription("Get the loader script (with your key if you have one)")
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("script")
+      .setDescription("Get the raw loader URL for a script")
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("resethwid")
+      .setDescription("Reset your own HWID (15h cooldown)")
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("claimrole")
+      .setDescription("Claim buyer role if you have a valid key")
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("mykey")
+      .setDescription("View your redeemed keys")
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("myproject")
+      .setDescription("View the projects you have keys in")
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("subscription")
+      .setDescription("Check your key's expiry status")
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(false))
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("profile")
+      .setDescription("View your Discord link and stats")
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("help")
+      .setDescription("Show commands available to you")
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("status")
+      .setDescription("Check Solaries service status")
+      .toJSON(),
   ];
 
   client.once(Events.ClientReady, async (c) => {
@@ -1022,6 +1074,18 @@ async function startDiscordBot() {
         else if (cmd === "project") await handleProjectGroup(interaction, sub);
         else if (cmd === "buyerrole") await handleBuyerRoleGroup(interaction, sub);
         else if (cmd === "setscript") await handleSetScript(interaction);
+        // User commands (no admin gate)
+        else if (cmd === "redeem") await handleRedeem(interaction);
+        else if (cmd === "loader") await handleLoader(interaction);
+        else if (cmd === "script") await handleScriptCmd(interaction);
+        else if (cmd === "resethwid") await handleResetHwidCmd(interaction);
+        else if (cmd === "claimrole") await handleClaimRole(interaction);
+        else if (cmd === "mykey") await handleMyKey(interaction);
+        else if (cmd === "myproject") await handleMyProject(interaction);
+        else if (cmd === "subscription") await handleSubscription(interaction);
+        else if (cmd === "profile") await handleProfile(interaction);
+        else if (cmd === "help") await handleHelp(interaction);
+        else if (cmd === "status") await handleStatus(interaction);
       } else if (interaction.isButton()) {
         // Custom IDs: "sol_getkey_<scriptId>", "sol_getscript_<scriptId>", "sol_resethwid_<scriptId>"
         const parts = interaction.customId.split("_");
@@ -1907,6 +1971,309 @@ async function startDiscordBot() {
       updated_at: new Date().toISOString(),
     }, { onConflict: "discord_id" });
     interaction.editReply({ content: "Active script set to **" + script.name + "**" });
+  }
+
+
+  // ============================================================
+  // USER COMMANDS
+  // ============================================================
+
+  // /redeem - bind an existing key to Discord
+  async function handleRedeem(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const key = interaction.options.getString("key", true).trim();
+    const discordId = interaction.user.id;
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, discord_id, project_id, owner_account_id, expires_at, projects(name)")
+      .eq("key", key).maybeSingle();
+
+    if (!keyRow) return interaction.editReply({ content: "Invalid key." });
+    if (keyRow.revoked) return interaction.editReply({ content: "This key has been revoked." });
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
+      return interaction.editReply({ content: "This key has expired." });
+    }
+
+    // Check blacklist
+    const bl = await isBlacklisted(keyRow.owner_account_id, discordId);
+    if (bl && bl.banned) {
+      return interaction.editReply({ content: "You are banned from this service." });
+    }
+
+    // Bind
+    if (keyRow.discord_id && keyRow.discord_id !== discordId) {
+      return interaction.editReply({ content: "This key is already bound to another Discord user." });
+    }
+
+    if (!keyRow.discord_id) {
+      await supabase.from("keys").update({ discord_id: discordId }).eq("id", keyRow.id);
+    }
+
+    // Try to grant buyer role
+    let roleMsg = "";
+    if (interaction.guildId) {
+      const { data: br } = await supabase.from("discord_buyer_roles")
+        .select("role_id").eq("project_id", keyRow.project_id).eq("guild_id", interaction.guildId).maybeSingle();
+      if (br) {
+        try {
+          const member = await interaction.guild.members.fetch(discordId);
+          await member.roles.add(br.role_id);
+          roleMsg = " Buyer role granted.";
+        } catch (e) {}
+      }
+    }
+
+    interaction.editReply({
+      content: "Key redeemed for **" + (keyRow.projects?.name || "project") + "**." + roleMsg,
+    });
+  }
+
+  // /loader - full loader script with user's key if available
+  async function handleLoader(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const scriptSlug = interaction.options.getString("script_id", true).trim();
+    const discordId = interaction.user.id;
+
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, slug, key_mode, project_id, projects!inner(owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
+
+    if (!script) return interaction.editReply({ content: "Script not found." });
+
+    const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
+    let loader;
+    if (script.key_mode === "keyless") {
+      loader = 'loadstring(game:HttpGet("' + loaderUrl + '"))()';
+    } else {
+      const { data: keyRow } = await supabase.from("keys")
+        .select("key, revoked").eq("discord_id", discordId)
+        .eq("project_id", script.project_id)
+        .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
+      if (keyRow && !keyRow.revoked) {
+        loader = '_G.script_key = "' + keyRow.key + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
+      } else {
+        loader = '_G.script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
+      }
+    }
+
+    interaction.editReply({
+      content: "Loader for **" + script.name + "**:\n\n```lua\n" + loader + "\n```",
+    });
+  }
+
+  // /script - just the raw URL
+  async function handleScriptCmd(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const scriptSlug = interaction.options.getString("script_id", true).trim();
+    const { data: script } = await supabase.from("scripts")
+      .select("name, slug").eq("slug", scriptSlug).maybeSingle();
+    if (!script) return interaction.editReply({ content: "Script not found." });
+    interaction.editReply({
+      content: "**" + script.name + "** URL:\n`" + PUBLIC_BASE_URL + "/v1/load/" + script.slug + "`",
+    });
+  }
+
+  // /resethwid - user's own key HWID reset with cooldown
+  async function handleResetHwidCmd(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const scriptSlug = interaction.options.getString("script_id", true).trim();
+    const discordId = interaction.user.id;
+    const COOLDOWN_MS = 15 * 60 * 60 * 1000;
+
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, project_id, projects!inner(owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
+    if (!script) return interaction.editReply({ content: "Script not found." });
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, hwid, last_hwid_reset, revoked").eq("discord_id", discordId)
+      .eq("project_id", script.project_id)
+      .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
+
+    if (!keyRow) return interaction.editReply({ content: "You do not have a key for this script." });
+    if (keyRow.revoked) return interaction.editReply({ content: "Your key is revoked." });
+    if (!keyRow.hwid) return interaction.editReply({ content: "No HWID bound yet. Nothing to reset." });
+
+    if (keyRow.last_hwid_reset) {
+      const elapsed = Date.now() - new Date(keyRow.last_hwid_reset).getTime();
+      if (elapsed < COOLDOWN_MS) {
+        const remaining = COOLDOWN_MS - elapsed;
+        const hours = Math.floor(remaining / 3600000);
+        const mins = Math.floor((remaining % 3600000) / 60000);
+        return interaction.editReply({ content: "Cooldown active. Try again in " + hours + "h " + mins + "m." });
+      }
+    }
+
+    await supabase.from("keys").update({ hwid: null, last_hwid_reset: new Date().toISOString() }).eq("id", keyRow.id);
+    interaction.editReply({ content: "HWID reset. Next reset in 15 hours." });
+  }
+
+  // /claimrole - claim buyer role if key valid
+  async function handleClaimRole(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (!interaction.guildId) return interaction.editReply({ content: "This command must be run in a server." });
+    const scriptSlug = interaction.options.getString("script_id", true).trim();
+    const discordId = interaction.user.id;
+
+    const { data: script } = await supabase.from("scripts")
+      .select("project_id, name, projects!inner(owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
+    if (!script) return interaction.editReply({ content: "Script not found." });
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, expires_at").eq("discord_id", discordId)
+      .eq("project_id", script.project_id).maybeSingle();
+    if (!keyRow) return interaction.editReply({ content: "You do not have a redeemed key for this project." });
+    if (keyRow.revoked) return interaction.editReply({ content: "Your key is revoked." });
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
+      return interaction.editReply({ content: "Your key has expired." });
+    }
+
+    const { data: br } = await supabase.from("discord_buyer_roles")
+      .select("role_id").eq("project_id", script.project_id)
+      .eq("guild_id", interaction.guildId).maybeSingle();
+    if (!br) return interaction.editReply({ content: "No buyer role configured for this project on this server." });
+
+    try {
+      const member = await interaction.guild.members.fetch(discordId);
+      await member.roles.add(br.role_id);
+      interaction.editReply({ content: "Buyer role granted for **" + script.name + "**." });
+    } catch (e) {
+      interaction.editReply({ content: "Could not assign role: " + (e.message || "unknown") });
+    }
+  }
+
+  // /mykey
+  async function handleMyKey(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+    const { data } = await supabase.from("keys")
+      .select("key, revoked, expires_at, projects(name)").eq("discord_id", discordId).order("created_at", { ascending: false });
+    if (!data || data.length === 0) return interaction.editReply({ content: "You have no redeemed keys." });
+    const lines = data.slice(0, 10).map((k) => {
+      const status = k.revoked ? " (revoked)" : (k.expires_at && new Date(k.expires_at).getTime() < Date.now() ? " (expired)" : "");
+      return "- " + (k.projects?.name || "?") + ": `" + k.key + "`" + status;
+    }).join("\n");
+    interaction.editReply({ content: "**Your keys:**\n" + lines });
+  }
+
+  // /myproject
+  async function handleMyProject(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+    const { data } = await supabase.from("keys")
+      .select("projects(name, slug, status)").eq("discord_id", discordId).eq("revoked", false);
+    if (!data || data.length === 0) return interaction.editReply({ content: "You have no active keys." });
+    const seen = new Set();
+    const lines = [];
+    data.forEach((k) => {
+      if (k.projects && !seen.has(k.projects.slug)) {
+        seen.add(k.projects.slug);
+        lines.push("- **" + k.projects.name + "** `" + k.projects.slug + "` (" + k.projects.status + ")");
+      }
+    });
+    interaction.editReply({ content: "**Your projects:**\n" + lines.join("\n") });
+  }
+
+  // /subscription
+  async function handleSubscription(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+    const scriptSlug = interaction.options.getString("script_id");
+
+    let query = supabase.from("keys")
+      .select("key, revoked, expires_at, hwid, projects(name, slug)").eq("discord_id", discordId);
+    if (scriptSlug) {
+      const { data: script } = await supabase.from("scripts").select("project_id").eq("slug", scriptSlug).maybeSingle();
+      if (script) query = query.eq("project_id", script.project_id);
+    }
+    const { data } = await query;
+    if (!data || data.length === 0) return interaction.editReply({ content: "No subscriptions found." });
+
+    const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Your subscriptions");
+    data.slice(0, 10).forEach((k) => {
+      const status = k.revoked ? "REVOKED" : (k.expires_at && new Date(k.expires_at).getTime() < Date.now() ? "EXPIRED" : "ACTIVE");
+      const expiry = k.expires_at ? new Date(k.expires_at).toISOString().slice(0, 10) : "Never";
+      embed.addFields({
+        name: k.projects?.name || "?",
+        value: "Status: " + status + "\nExpires: " + expiry + "\nHWID: " + (k.hwid ? "Bound" : "Not bound"),
+        inline: false,
+      });
+    });
+    interaction.editReply({ embeds: [embed] });
+  }
+
+  // /profile
+  async function handleProfile(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id, linked_at, accounts(name, plan)").eq("discord_id", discordId).maybeSingle();
+    const { count: keyCount } = await supabase.from("keys")
+      .select("id", { count: "exact", head: true }).eq("discord_id", discordId);
+
+    const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Your profile - " + interaction.user.username)
+      .addFields(
+        { name: "Discord", value: "<@" + discordId + ">", inline: true },
+        { name: "Solaries account", value: link ? (link.accounts?.name || "linked") : "Not linked", inline: true },
+        { name: "Plan", value: link ? (link.accounts?.plan || "-") : "-", inline: true },
+        { name: "Keys held", value: String(keyCount || 0), inline: true },
+        { name: "Linked at", value: link ? link.linked_at : "-", inline: true },
+      );
+    interaction.editReply({ embeds: [embed] });
+  }
+
+  // /help
+  async function handleHelp(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const isAdmin = interaction.memberPermissions?.has("ManageGuild") ?? false;
+
+    let text = "**User commands** (available to everyone):\n" +
+      "`/redeem key:<value>` - Bind a key to your Discord\n" +
+      "`/loader script_id:<slug>` - Get loader script with your key\n" +
+      "`/script script_id:<slug>` - Get raw loader URL\n" +
+      "`/resethwid script_id:<slug>` - Reset your HWID (15h cooldown)\n" +
+      "`/claimrole script_id:<slug>` - Claim buyer role\n" +
+      "`/mykey` - View your redeemed keys\n" +
+      "`/myproject` - View your active projects\n" +
+      "`/subscription` - Check key expiry\n" +
+      "`/profile` - View your Discord link\n" +
+      "`/status` - Service status\n" +
+      "`/help` - This message";
+
+    if (isAdmin) {
+      text += "\n\n**Admin commands** (Manage Server permission required):\n" +
+        "`/login` `/logout` `/whoami` `/panel` `/managerrole` `/stats` `/settings`\n" +
+        "`/key create|stock|delete|extend|revoke|info|list`\n" +
+        "`/user info|blacklist|unblacklist|ban|unban`\n" +
+        "`/hwid reset` `/whitelist`\n" +
+        "`/project create|delete|list|select`\n" +
+        "`/buyerrole set|clear|list` `/setscript`";
+    }
+
+    interaction.editReply({ content: text });
+  }
+
+  // /status
+  async function handleStatus(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const start = Date.now();
+    let dbOk = true;
+    try {
+      await supabase.from("accounts").select("id", { count: "exact", head: true }).limit(1);
+    } catch (e) { dbOk = false; }
+    const latency = Date.now() - start;
+
+    const embed = new EmbedBuilder().setColor(dbOk ? 0x22c55e : 0xef4444).setTitle("Solaries Service Status")
+      .addFields(
+        { name: "Bot", value: "Online", inline: true },
+        { name: "Database", value: dbOk ? "Online" : "Down", inline: true },
+        { name: "Latency", value: latency + "ms", inline: true },
+        { name: "Bot username", value: botStatus.username || "-", inline: true },
+        { name: "Servers", value: String(botStatus.guild_count || 0), inline: true },
+        { name: "Started", value: botStatus.started_at || "-", inline: true },
+      );
+    interaction.editReply({ embeds: [embed] });
   }
 
   await client.login(DISCORD_BOT_TOKEN);
