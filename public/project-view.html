@@ -6,140 +6,61 @@
     <title>Project</title>
     <link rel="stylesheet" href="app.css" />
     <style>
-      /* Page-specific styles for the project view */
       .breadcrumb { display:flex; align-items:center; gap:8px; margin-bottom:8px; color:var(--text-soft); font-size:13px; }
       .breadcrumb a { color:var(--text-muted); }
       .breadcrumb a:hover { color:var(--white); }
       .breadcrumb svg { width:14px; height:14px; }
 
-      /* Wizard */
-      .wizard-steps {
-        display:grid;
-        grid-template-columns:repeat(4, minmax(0, 1fr));
-        gap:8px;
-        padding:14px 20px;
-        border-bottom:1px solid var(--line-soft);
-      }
-      .wizard-step {
-        display:flex; align-items:center; gap:10px;
-        padding:10px 14px;
-        border:1px solid var(--line);
-        border-radius:12px;
-        background:var(--bg);
-        color:var(--text-soft);
-        font-size:13px; font-weight:600;
-        transition:background 0.2s, color 0.2s, border-color 0.2s;
-      }
+      .wizard-steps { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; padding:14px 20px; border-bottom:1px solid var(--line-soft); }
+      .wizard-step { display:flex; align-items:center; gap:10px; padding:10px 14px; border:1px solid var(--line); border-radius:12px; background:var(--bg); color:var(--text-soft); font-size:13px; font-weight:600; transition:background 0.2s, color 0.2s, border-color 0.2s; }
       .wizard-step.is-current { background:var(--surface-2); color:var(--white); border-color:#34383d; }
       .wizard-step.is-done { color:var(--text-muted); border-color:var(--line); }
-      .wizard-step .step-num {
-        width:22px; height:22px;
-        display:inline-flex; align-items:center; justify-content:center;
-        border-radius:999px;
-        background:var(--accent-soft); color:#c4b5fd;
-        font-size:11px; font-weight:700;
-      }
+      .wizard-step .step-num { width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:var(--accent-soft); color:#c4b5fd; font-size:11px; font-weight:700; }
       .wizard-step.is-current .step-num { background:var(--accent); color:var(--white); }
-
       .wizard-panel { display:none; }
       .wizard-panel.is-current { display:block; }
-
       .modal-card.wizard-card { width:min(680px, 100%); }
       .modal-card.wizard-card .modal-body { padding:20px; }
 
-      .protection-grid, .ui-grid {
-        display:grid;
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-        gap:12px;
-      }
-      .option-card {
-        padding:14px 16px;
-        border:1px solid var(--line);
-        border-radius:12px;
-        background:var(--bg);
-        cursor:pointer;
-        transition:background 0.2s, border-color 0.2s;
-      }
+      .protection-grid, .ui-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+      .option-card { padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--bg); cursor:pointer; transition:background 0.2s, border-color 0.2s; }
       .option-card:hover { background:var(--hover); border-color:#2a2d33; }
       .option-card.is-selected { border-color:var(--accent); background:var(--accent-soft); }
       .option-card-title { color:var(--white); font-size:14px; font-weight:600; margin:0 0 4px; }
       .option-card-desc { color:var(--text-soft); font-size:12px; margin:0; }
-      .option-badge {
-        display:inline-block; padding:2px 8px;
-        border-radius:6px; background:var(--line);
-        color:var(--text-muted); font-size:10px; font-weight:600;
-        margin-left:6px;
-      }
+      .option-badge { display:inline-block; padding:2px 8px; border-radius:6px; background:var(--line); color:var(--text-muted); font-size:10px; font-weight:600; margin-left:6px; }
 
-      .toggle-block {
-        border:1px solid var(--line);
-        border-radius:12px;
-        background:var(--bg);
-        overflow:hidden;
-      }
-      .toggle-block-title {
-        padding:12px 16px;
-        color:var(--white); font-size:13px; font-weight:600;
-        border-bottom:1px solid var(--line-soft);
-      }
-      .toggle-row {
-        display:flex; align-items:center; justify-content:space-between;
-        gap:12px; padding:12px 16px;
-      }
+      .toggle-block { border:1px solid var(--line); border-radius:12px; background:var(--bg); overflow:hidden; }
+      .toggle-block-title { padding:12px 16px; color:var(--white); font-size:13px; font-weight:600; border-bottom:1px solid var(--line-soft); }
+      .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; }
       .toggle-row + .toggle-row { border-top:1px solid var(--line-soft); }
       .toggle-copy p { margin:0; }
       .toggle-name { color:var(--white); font-size:13px; font-weight:500; }
       .toggle-desc { color:var(--text-soft); font-size:12px; margin-top:2px; }
-
-      /* Toggle switch */
       .switch { position:relative; width:38px; height:22px; flex-shrink:0; }
       .switch input { display:none; }
-      .switch .track {
-        position:absolute; inset:0;
-        background:#2a2d33; border-radius:999px;
-        transition:background 0.2s;
-      }
-      .switch .thumb {
-        position:absolute; top:3px; left:3px;
-        width:16px; height:16px;
-        background:var(--white); border-radius:999px;
-        transition:transform 0.2s;
-      }
+      .switch .track { position:absolute; inset:0; background:#2a2d33; border-radius:999px; transition:background 0.2s; }
+      .switch .thumb { position:absolute; top:3px; left:3px; width:16px; height:16px; background:var(--white); border-radius:999px; transition:transform 0.2s; }
       .switch input:checked ~ .track { background:var(--accent); }
       .switch input:checked ~ .thumb { transform:translateX(16px); }
 
-      .source-drop {
-        border:2px dashed var(--line);
-        border-radius:12px;
-        padding:32px 20px;
-        text-align:center;
-        cursor:pointer;
-        transition:border-color 0.2s, background 0.2s;
-      }
+      .source-drop { border:2px dashed var(--line); border-radius:12px; padding:32px 20px; text-align:center; cursor:pointer; transition:border-color 0.2s, background 0.2s; }
       .source-drop:hover, .source-drop.is-drag { border-color:var(--accent); background:var(--accent-soft); }
       .source-drop svg { width:32px; height:32px; color:var(--text-soft); margin-bottom:8px; }
       .source-drop-title { color:var(--white); font-size:14px; font-weight:600; margin:0 0 4px; }
       .source-drop-desc { color:var(--text-soft); font-size:12px; margin:0; }
-      .source-editor {
-        margin-top:12px;
-        font-family:Consolas, Monaco, monospace;
-        font-size:12px;
-        min-height:180px;
-      }
+      .source-editor { margin-top:12px; font-family:Consolas, Monaco, monospace; font-size:12px; min-height:180px; }
 
-      /* Loader modal */
-      .loader-code {
-        padding:14px 16px;
-        border:1px solid var(--line);
-        border-radius:10px;
-        background:var(--bg);
-        color:#c4b5fd;
-        font-family:Consolas, Monaco, monospace;
-        font-size:12px;
-        line-height:1.6;
-        word-break:break-all;
-        white-space:pre-wrap;
-      }
+      .loader-code { padding:14px 16px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:#c4b5fd; font-family:Consolas, Monaco, monospace; font-size:12px; line-height:1.6; word-break:break-all; white-space:pre-wrap; }
+
+      .list-input-row { display:grid; grid-template-columns:auto 1fr 1fr auto; gap:8px; align-items:end; margin-top:12px; }
+      @media (max-width: 720px) { .list-input-row { grid-template-columns: 1fr; } }
+      .list-input-row label { font-size:11px; color:var(--text-soft); letter-spacing:0.08em; text-transform:uppercase; }
+      .header-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+      .version-item { padding:12px 14px; border:1px solid var(--line); border-radius:10px; background:var(--bg); margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .version-meta { color:var(--text-soft); font-size:12px; margin-top:2px; }
+      .version-num { color:var(--white); font-weight:600; }
     </style>
   </head>
   <body>
@@ -171,7 +92,7 @@
           </nav>
           <nav class="nav-group">
             <p class="nav-title">Tools</p>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
+            <a class="nav-link" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span><span>Delivery</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"></path><path d="M8 3v4M16 3v4"></path></svg></span><span>Guide</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5-9 5z"></path><path d="M3 8v8l9 5 9-5V8"></path></svg></span><span>Batches</span></a>
@@ -180,6 +101,10 @@
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"></rect><path d="M3 10h18"></path></svg></span><span>Billing</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 8h16v12H4z"></path><path d="M4 8l8-5 8 5"></path></svg></span><span>Redeem</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"></circle><path d="M6 18V6l14 12"></path></svg></span><span>Webhooks</span></a>
+          </nav>
+          <nav class="nav-group">
+            <p class="nav-title">Owner</p>
+            <a class="nav-link" href="owner.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg></span><span>Accounts</span></a>
           </nav>
         </div>
 
@@ -200,9 +125,7 @@
 
       <main class="main">
         <div class="breadcrumb">
-          <a href="projects.html">
-            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"></path></svg>
-          </a>
+          <a href="projects.html"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"></path></svg></a>
           <a href="projects.html">Projects</a>
           <span>/</span>
           <span id="crumbName">Loading...</span>
@@ -221,10 +144,14 @@
               </p>
             </div>
           </div>
-          <button class="primary-btn" id="openWizard" type="button">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
-            New script
-          </button>
+          <div class="header-actions">
+            <button class="ghost-btn" id="btnRename" type="button">Rename</button>
+            <button class="ghost-btn" id="btnPause" type="button">Pause</button>
+            <button class="primary-btn" id="openWizard" type="button">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+              New script
+            </button>
+          </div>
         </header>
 
         <div class="card">
@@ -234,7 +161,6 @@
               <h2 class="card-title">Delivered payloads</h2>
             </div>
           </div>
-
           <div class="table-wrap">
             <table class="data-table" id="scriptsTable">
               <thead>
@@ -242,13 +168,13 @@
                   <th>Script</th>
                   <th>Status</th>
                   <th>Protection</th>
+                  <th>Version</th>
                   <th>Size</th>
                   <th style="text-align:right">Actions</th>
                 </tr>
               </thead>
               <tbody id="scriptsBody"></tbody>
             </table>
-
             <div class="empty-state" id="scriptsEmpty" style="display:none">
               <p class="empty-title">No scripts yet</p>
               <p class="empty-copy">Add your first script and share the loader with your users.</p>
@@ -259,36 +185,132 @@
             </div>
           </div>
         </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Access control</p>
+              <h2 class="card-title">Whitelist mode</h2>
+            </div>
+          </div>
+          <div class="toggle-block">
+            <div class="toggle-row">
+              <div class="toggle-copy">
+                <p class="toggle-name">Whitelist-only</p>
+                <p class="toggle-desc">Only devices in the allowlist can load scripts from this project. Key check still applies.</p>
+              </div>
+              <label class="switch"><input type="checkbox" id="tWhitelist"><span class="track"></span><span class="thumb"></span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Blocklist</p>
+              <h2 class="card-title">Blocked devices, IPs, and keys</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="blockTable">
+              <thead>
+                <tr><th>Type</th><th>Value</th><th>Reason</th><th>Added</th><th style="text-align:right">Actions</th></tr>
+              </thead>
+              <tbody id="blockBody"></tbody>
+            </table>
+            <div id="blockEmpty" style="display:none; text-align:center; color:var(--text-soft); padding:24px; font-size:13px;">No blocked entries. Add one below.</div>
+          </div>
+          <div class="list-input-row">
+            <div>
+              <label>Type</label>
+              <select class="select-field" id="blType" style="min-width:0;width:100%">
+                <option value="hwid">HWID</option>
+                <option value="ip">IP</option>
+                <option value="key">Key</option>
+              </select>
+            </div>
+            <div>
+              <label>Value</label>
+              <input class="text-field" id="blValue" type="text" placeholder="Value to block" autocomplete="off" style="min-width:0;width:100%" />
+            </div>
+            <div>
+              <label>Reason (optional)</label>
+              <input class="text-field" id="blReason" type="text" placeholder="Why" autocomplete="off" style="min-width:0;width:100%" />
+            </div>
+            <button class="primary-btn" id="btnAddBlock" type="button">Block</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Allowlist</p>
+              <h2 class="card-title">Pre-approved devices and keys</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="allowTable">
+              <thead>
+                <tr><th>Type</th><th>Value</th><th>Note</th><th>Added</th><th style="text-align:right">Actions</th></tr>
+              </thead>
+              <tbody id="allowBody"></tbody>
+            </table>
+            <div id="allowEmpty" style="display:none; text-align:center; color:var(--text-soft); padding:24px; font-size:13px;">No allowlist entries. Only needed when Whitelist mode is on.</div>
+          </div>
+          <div class="list-input-row">
+            <div>
+              <label>Type</label>
+              <select class="select-field" id="alType" style="min-width:0;width:100%">
+                <option value="hwid">HWID</option>
+                <option value="key">Key</option>
+              </select>
+            </div>
+            <div>
+              <label>Value</label>
+              <input class="text-field" id="alValue" type="text" placeholder="Value to allow" autocomplete="off" style="min-width:0;width:100%" />
+            </div>
+            <div>
+              <label>Note (optional)</label>
+              <input class="text-field" id="alNote" type="text" placeholder="Label" autocomplete="off" style="min-width:0;width:100%" />
+            </div>
+            <button class="primary-btn" id="btnAddAllow" type="button">Allow</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Danger zone</p>
+              <h2 class="card-title">Delete project</h2>
+            </div>
+          </div>
+          <p style="margin:0 0 12px; color:var(--text-soft); font-size:13px;">Permanently removes this project, all scripts, keys tied to it, and all blocklist/allowlist entries.</p>
+          <button class="ghost-btn is-danger" id="btnDelete" type="button" style="border-color:rgba(239,68,68,0.4); color:#fca5a5;">Delete project</button>
+        </div>
       </main>
     </div>
 
-    <!-- ============================================================
-         WIZARD MODAL
-         ============================================================ -->
     <div class="modal" id="wizardModal" aria-hidden="true">
       <div class="modal-backdrop" data-close="true"></div>
       <div class="modal-card wizard-card">
         <div class="modal-head">
           <div>
-            <h3 class="modal-title">New script</h3>
+            <h3 class="modal-title" id="wizardTitle">New script</h3>
             <p class="modal-subtitle">4 steps: protection, details, player interface, source.</p>
           </div>
           <button class="icon-square" id="closeWizard" type="button" aria-label="Close">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
           </button>
         </div>
-
         <div class="wizard-steps">
           <div class="wizard-step is-current" data-step="1"><span class="step-num">1</span><span>Protection</span></div>
           <div class="wizard-step" data-step="2"><span class="step-num">2</span><span>Details</span></div>
           <div class="wizard-step" data-step="3"><span class="step-num">3</span><span>Player interface</span></div>
           <div class="wizard-step" data-step="4"><span class="step-num">4</span><span>Source</span></div>
         </div>
-
         <div class="modal-body">
           <p class="field-error" id="wizardErr"></p>
 
-          <!-- Step 1: Protection -->
           <div class="wizard-panel is-current" data-panel="1">
             <div class="protection-grid">
               <div class="option-card is-selected" data-protection="none">
@@ -306,7 +328,6 @@
             </div>
           </div>
 
-          <!-- Step 2: Details -->
           <div class="wizard-panel" data-panel="2">
             <div class="field">
               <label for="sName">Name</label>
@@ -316,88 +337,41 @@
               <label for="sDesc">Description (optional)</label>
               <input class="text-field" id="sDesc" type="text" placeholder="What this script does" autocomplete="off" style="min-width:0;width:100%" />
             </div>
-
             <div class="toggle-block" style="margin-top:8px">
               <p class="toggle-block-title">Access</p>
               <div class="toggle-row">
-                <div class="toggle-copy">
-                  <p class="toggle-name">Enabled</p>
-                  <p class="toggle-desc">Pause access if off.</p>
-                </div>
+                <div class="toggle-copy"><p class="toggle-name">Enabled</p><p class="toggle-desc">Pause access if off.</p></div>
                 <label class="switch"><input type="checkbox" id="tEnabled" checked><span class="track"></span><span class="thumb"></span></label>
               </div>
               <div class="toggle-row">
-                <div class="toggle-copy">
-                  <p class="toggle-name">Keyless</p>
-                  <p class="toggle-desc">No key required. Anyone with the loader can run it.</p>
-                </div>
+                <div class="toggle-copy"><p class="toggle-name">Keyless</p><p class="toggle-desc">No key required. Anyone with the loader can run it.</p></div>
                 <label class="switch"><input type="checkbox" id="tKeyless"><span class="track"></span><span class="thumb"></span></label>
               </div>
             </div>
-
             <div class="toggle-block">
               <p class="toggle-block-title">Delivery</p>
-              <div class="toggle-row">
-                <div class="toggle-copy">
-                  <p class="toggle-name">Syntax check</p>
-                  <p class="toggle-desc">Validate before save.</p>
-                </div>
-                <label class="switch"><input type="checkbox" id="tSyntax" checked><span class="track"></span><span class="thumb"></span></label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-copy">
-                  <p class="toggle-name">Fast mode</p>
-                  <p class="toggle-desc">Fewer runtime checks.</p>
-                </div>
-                <label class="switch"><input type="checkbox" id="tFast"><span class="track"></span><span class="thumb"></span></label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-copy">
-                  <p class="toggle-name">Same device</p>
-                  <p class="toggle-desc">Tie sessions to device + IP.</p>
-                </div>
-                <label class="switch"><input type="checkbox" id="tSame" checked><span class="track"></span><span class="thumb"></span></label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-copy">
-                  <p class="toggle-name">Silent mode</p>
-                  <p class="toggle-desc">Suppress auth/debug console output.</p>
-                </div>
-                <label class="switch"><input type="checkbox" id="tSilent" checked><span class="track"></span><span class="thumb"></span></label>
-              </div>
+              <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Syntax check</p><p class="toggle-desc">Validate before save.</p></div><label class="switch"><input type="checkbox" id="tSyntax" checked><span class="track"></span><span class="thumb"></span></label></div>
+              <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Fast mode</p><p class="toggle-desc">Fewer runtime checks.</p></div><label class="switch"><input type="checkbox" id="tFast"><span class="track"></span><span class="thumb"></span></label></div>
+              <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Same device</p><p class="toggle-desc">Tie sessions to device and IP.</p></div><label class="switch"><input type="checkbox" id="tSame" checked><span class="track"></span><span class="thumb"></span></label></div>
+              <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Silent mode</p><p class="toggle-desc">Suppress auth and debug console output.</p></div><label class="switch"><input type="checkbox" id="tSilent" checked><span class="track"></span><span class="thumb"></span></label></div>
             </div>
-
             <div class="field">
               <label for="sGame">Game ID (optional)</label>
               <input class="text-field" id="sGame" type="text" placeholder="Optional place or universe ID" autocomplete="off" style="min-width:0;width:100%" />
             </div>
           </div>
 
-          <!-- Step 3: Player interface -->
           <div class="wizard-panel" data-panel="3">
-            <div class="toggle-block-title" style="border:none; padding:0 0 10px;">Key entry &amp; loading</div>
+            <div class="toggle-block-title" style="border:none; padding:0 0 10px;">Key entry and loading</div>
             <p style="margin:0 0 12px; color:var(--text-soft); font-size:12px;">Nothing extra before start.</p>
             <div class="ui-grid">
-              <div class="option-card is-selected" data-ui="no_gui">
-                <p class="option-card-title">No GUI</p>
-                <p class="option-card-desc">Start immediately.</p>
-              </div>
-              <div class="option-card" data-ui="loading">
-                <p class="option-card-title">Loading screen</p>
-                <p class="option-card-desc">Progress while starting.</p>
-              </div>
-              <div class="option-card" data-ui="key_gui">
-                <p class="option-card-title">Key system GUI</p>
-                <p class="option-card-desc">Ask for a key first.</p>
-              </div>
-              <div class="option-card" data-ui="custom">
-                <p class="option-card-title">Custom Lua GUI <span class="option-badge">Creator+</span></p>
-                <p class="option-card-desc">Your UI + Solaries SDK.</p>
-              </div>
+              <div class="option-card is-selected" data-ui="no_gui"><p class="option-card-title">No GUI</p><p class="option-card-desc">Start immediately.</p></div>
+              <div class="option-card" data-ui="loading"><p class="option-card-title">Loading screen</p><p class="option-card-desc">Progress while starting.</p></div>
+              <div class="option-card" data-ui="key_gui"><p class="option-card-title">Key system GUI</p><p class="option-card-desc">Ask for a key first.</p></div>
+              <div class="option-card" data-ui="custom"><p class="option-card-title">Custom Lua GUI <span class="option-badge">Creator+</span></p><p class="option-card-desc">Your UI and Solaries SDK.</p></div>
             </div>
           </div>
 
-          <!-- Step 4: Source -->
           <div class="wizard-panel" data-panel="4">
             <div class="source-drop" id="sourceDrop">
               <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><path d="M17 8l-5-5-5 5"></path><path d="M12 3v12"></path></svg>
@@ -406,9 +380,12 @@
               <input type="file" id="sourceFile" accept=".lua,.txt,text/plain" style="display:none" />
             </div>
             <textarea class="textarea-field source-editor" id="sSource" placeholder="Paste Lua here..."></textarea>
+            <div class="field" id="versionNoteField" style="display:none">
+              <label for="sVersionNote">Version note (optional)</label>
+              <input class="text-field" id="sVersionNote" type="text" placeholder="What changed" autocomplete="off" style="min-width:0;width:100%" />
+            </div>
           </div>
         </div>
-
         <div class="modal-foot">
           <button class="ghost-btn" id="btnBack" type="button" style="display:none">Back</button>
           <button class="ghost-btn" id="btnCancelWiz" type="button">Cancel</button>
@@ -417,7 +394,6 @@
       </div>
     </div>
 
-    <!-- Loader modal -->
     <div class="modal" id="loaderModal" aria-hidden="true">
       <div class="modal-backdrop" data-close="true"></div>
       <div class="modal-card">
@@ -437,6 +413,28 @@
         <div class="modal-foot">
           <button class="ghost-btn" id="btnCloseLoader" type="button">Close</button>
           <button class="primary-btn" id="btnCopyLoader" type="button">Copy loader</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="historyModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h3 class="modal-title">Version history</h3>
+            <p class="modal-subtitle" id="historySubtitle">All snapshots of this script.</p>
+          </div>
+          <button class="icon-square" id="closeHistory" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div id="historyList"></div>
+          <div id="historyEmpty" style="display:none; text-align:center; color:var(--text-soft); padding:24px; font-size:13px;">No history yet.</div>
+        </div>
+        <div class="modal-foot">
+          <button class="ghost-btn" id="btnCloseHistory" type="button">Close</button>
         </div>
       </div>
     </div>
