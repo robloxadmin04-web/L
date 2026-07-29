@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Projects</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="owner.css" />
+    <link rel="stylesheet" href="projects.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path>
+            </svg>
+          </div>
+          <div class="head-actions">
+            <button class="pill-btn" type="button">
+              <span class="pill-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M8 12h.01"></path>
+                  <path d="M16 12h.01"></path>
+                  <path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path>
+                </svg>
+              </span>
+              <span>Discord</span>
+            </button>
+            <button
+              class="icon-square"
+              id="themeToggle"
+              type="button"
+              aria-label="Toggle theme"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path
+                  d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+                ></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <nav class="nav-group" aria-label="Workspace">
+            <p class="nav-title">Workspace</p>
+            <a class="nav-link" href="dashboard.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="8" height="8" rx="1"></rect>
+                  <rect x="13" y="3" width="8" height="5" rx="1"></rect>
+                  <rect x="13" y="10" width="8" height="11" rx="1"></rect>
+                  <rect x="3" y="13" width="8" height="8" rx="1"></rect>
+                </svg>
+              </span>
+              <span>Overview</span>
+            </a>
+            <a class="nav-link is-active" href="project.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 8l9-5 9 5-9 5z"></path>
+                  <path d="M3 8v8l9 5 9-5V8"></path>
+                </svg>
+              </span>
+              <span>Projects</span>
+            </a>
+            <a class="nav-link" href="dashboard.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="8" cy="14" r="3"></circle>
+                  <path d="M11 14h9"></path>
+                  <path d="M17 11v6"></path>
+                </svg>
+              </span>
+              <span>Keys</span>
+            </a>
+            <a class="nav-link" href="owner.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="8" r="4"></circle>
+                  <path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path>
+                </svg>
+              </span>
+              <span>Owner</span>
+            </a>
+            <a class="nav-link" href="dashboard.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M8 12h.01"></path>
+                  <path d="M16 12h.01"></path>
+                  <path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path>
+                </svg>
+              </span>
+              <span>Discord</span>
+            </a>
+            <a class="nav-link" href="dashboard.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 5h16v11H7l-3 3z"></path>
+                </svg>
+              </span>
+              <span>Live Chat</span>
+            </a>
+            <a class="nav-link" href="dashboard.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M12 2v3"></path>
+                  <path d="M12 19v3"></path>
+                  <path d="M2 12h3"></path>
+                  <path d="M19 12h3"></path>
+                  <path d="M5 5l2 2"></path>
+                  <path d="M17 17l2 2"></path>
+                  <path d="M19 5l-2 2"></path>
+                  <path d="M7 17l-2 2"></path>
+                </svg>
+              </span>
+              <span>Settings</span>
+            </a>
+          </nav>
+
+          <nav class="nav-group" aria-label="Tools">
+            <p class="nav-title">Tools</p>
+            <a class="nav-link" href="dashboard.html">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 20V10"></path>
+                  <path d="M10 20V4"></path>
+                  <path d="M16 20v-7"></path>
+                  <path d="M22 20H2"></path>
+                </svg>
+              </span>
+              <span>Analytics</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-foot">
+          <div class="user-box">
+            <span class="user-avatar">NE</span>
+            <div class="user-copy">
+              <p class="user-name">neilsunday</p>
+              <p class="user-plan">Owner</p>
+            </div>
+          </div>
+          <a class="signout" href="index.html">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M15 4h4v16h-4"></path>
+                <path d="M10 8l-4 4 4 4"></path>
+                <path d="M6 12h10"></path>
+              </svg>
+            </span>
+            <span>Sign out</span>
+          </a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button
+              class="icon-square menu-btn"
+              id="menuToggle"
+              type="button"
+              aria-label="Open menu"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16"></path>
+                <path d="M4 12h16"></path>
+                <path d="M4 17h16"></path>
+              </svg>
+            </button>
+            <h1 class="page-title">Projects</h1>
+          </div>
+          <button class="primary-btn" id="openCreate" type="button">
+            New project
+          </button>
+        </header>
+
+        <div class="projects-layout">
+          <section class="panel-block projects-list-panel">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">All projects</p>
+                <h2 class="panel-title">Your projects</h2>
+              </div>
+            </div>
+            <div id="projectsList" class="projects-list"></div>
+            <div class="empty-state" id="projectsEmpty">
+              <p class="empty-title">No projects yet</p>
+              <p class="empty-copy">
+                Create a project to paste your script and get a loader line.
+              </p>
+            </div>
+          </section>
+
+          <section
+            class="panel-block project-detail"
+            id="projectDetail"
+            style="display: none"
+          >
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Project</p>
+                <h2 class="panel-title" id="detailName">Project</h2>
+              </div>
+              <button
+                class="mini-btn is-danger"
+                id="deleteProject"
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+
+            <div class="field">
+              <label>Loader line</label>
+              <div class="code-row">
+                <pre id="loaderLine" class="loader-pre"></pre>
+                <button class="mini-btn" id="copyLoader" type="button">
+                  Copy
+                </button>
+              </div>
+              <p class="field-hint" id="loaderHint">
+                Users paste this line to run your script.
+              </p>
+            </div>
+
+            <div class="field">
+              <label for="keyModeSelect">Key mode</label>
+              <select id="keyModeSelect" class="text-field">
+                <option value="keyed">Keyed (requires API key)</option>
+                <option value="keyless">Keyless (open)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="scriptInput">Script</label>
+              <textarea
+                id="scriptInput"
+                class="text-field script-area"
+                spellcheck="false"
+                placeholder="-- paste your Lua here"
+              ></textarea>
+              <p class="field-hint">
+                Stored securely and delivered only through the loader.
+              </p>
+            </div>
+
+            <div class="detail-actions">
+              <button class="primary-btn" id="saveProject" type="button">
+                Save changes
+              </button>
+              <span class="save-status" id="saveStatus"></span>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div class="modal" id="createModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <h3 class="modal-title">Create project</h3>
+          <button
+            class="icon-square"
+            id="closeModal"
+            type="button"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12"></path>
+              <path d="M18 6L6 18"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label for="nameInput">Project name</label>
+            <input
+              class="text-field"
+              id="nameInput"
+              type="text"
+              placeholder="Example: Main Hub"
+              autocomplete="off"
+            />
+          </div>
+          <div class="field">
+            <label for="modeInput">Key mode</label>
+            <select id="modeInput" class="text-field">
+              <option value="keyed">Keyed (requires API key)</option>
+              <option value="keyless">Keyless (open)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="ghost-btn" id="cancelModal" type="button">
+            Cancel
+          </button>
+          <button class="primary-btn" id="confirmCreate" type="button">
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="dashboard-guard.js"></script>
+    <script src="projects.js"></script>
+  </body>
+</html>
