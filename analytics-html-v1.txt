@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analytics</title>
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      .chart-wrap {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+        margin-top: 8px;
+      }
+      .chart-svg { width: 100%; height: 220px; display: block; }
+      .chart-empty { text-align: center; color: var(--text-soft); font-size: 13px; padding: 60px 0; }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+        gap: 16px;
+        margin-top: 16px;
+      }
+      @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+      .activity-list { display: flex; flex-direction: column; }
+      .activity-item {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .activity-item:last-child { border-bottom: 0; }
+      .activity-dot {
+        width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0;
+      }
+      .activity-dot.load  { background: var(--good); }
+      .activity-dot.login { background: var(--accent); }
+      .activity-dot.blocked { background: var(--danger); }
+      .activity-copy { flex: 1; min-width: 0; }
+      .activity-title { color: var(--white); font-size: 13px; margin: 0; }
+      .activity-time  { color: var(--text-soft); font-size: 12px; margin: 2px 0 0; }
+      .activity-tag {
+        display: inline-block;
+        padding: 2px 8px; margin-left: 8px;
+        border-radius: 6px;
+        background: var(--surface-2);
+        color: var(--text-muted);
+        font-size: 10px; font-weight: 600;
+        letter-spacing: 0.04em; text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path></svg></div>
+          <div class="head-actions">
+            <button class="pill-btn" type="button">
+              <span class="pill-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span>
+              <span>Discord</span>
+            </button>
+            <button class="icon-square" id="themeToggle" type="button" aria-label="Toggle theme">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <nav class="nav-group">
+            <p class="nav-title">Workspace</p>
+            <a class="nav-link" href="dashboard.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect></svg></span><span>Overview</span></a>
+            <a class="nav-link" href="projects.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span><span>Projects</span></a>
+            <a class="nav-link" href="keys.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span><span>Keys</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H4z"></path><path d="M4 20h11"></path><circle cx="12" cy="10.5" r="2.5"></circle></svg></span><span>Monetization</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span><span>Discord</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H7l-3 3z"></path></svg></span><span>Live Chat</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path><path d="M5 5l2 2"></path><path d="M17 17l2 2"></path><path d="M19 5l-2 2"></path><path d="M7 17l-2 2"></path></svg></span><span>Settings</span></a>
+          </nav>
+          <nav class="nav-group">
+            <p class="nav-title">Tools</p>
+            <a class="nav-link is-active" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span><span>Delivery</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"></path><path d="M8 3v4M16 3v4"></path></svg></span><span>Guide</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5-9 5z"></path><path d="M3 8v8l9 5 9-5V8"></path></svg></span><span>Batches</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M9 8l-4 4 4 4"></path><path d="M15 8l4 4-4 4"></path></svg></span><span>Obfuscator</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9 10h5a2 2 0 010 4h-4"></path></svg></span><span>Earn</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"></rect><path d="M3 10h18"></path></svg></span><span>Billing</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 8h16v12H4z"></path><path d="M4 8l8-5 8 5"></path></svg></span><span>Redeem</span></a>
+            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"></circle><path d="M6 18V6l14 12"></path></svg></span><span>Webhooks</span></a>
+          </nav>
+        </div>
+
+        <div class="sidebar-foot">
+          <div class="user-box">
+            <span class="user-avatar" data-user-avatar>?</span>
+            <div class="user-copy">
+              <p class="user-name" data-user-name>Loading...</p>
+              <p class="user-plan" data-user-plan>Free</p>
+            </div>
+          </div>
+          <a class="signout" href="#" data-signout>
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4"></path><path d="M10 8l-4 4 4 4"></path><path d="M6 12h10"></path></svg></span>
+            <span>Sign out</span>
+          </a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="icon-square menu-btn" id="menuToggle" type="button" aria-label="Open menu">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path></svg>
+            </button>
+            <h1 class="page-title">Analytics</h1>
+          </div>
+        </header>
+
+        <section class="stats-grid">
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Loads 7d</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span>
+            </div>
+            <p class="stat-value" data-stat="loads7">0</p>
+            <p class="stat-meta">Script deliveries last 7 days</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Loads 30d</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"></path><path d="M6 15l4-6 4 3 4-8"></path></svg></span>
+            </div>
+            <p class="stat-value" data-stat="loads30">0</p>
+            <p class="stat-meta">Rolling 30-day window</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Unique Keys 24h</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span>
+            </div>
+            <p class="stat-value" data-stat="uniq">0</p>
+            <p class="stat-meta">Distinct keys used today</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Top Project</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span>
+            </div>
+            <p class="stat-value" style="font-size:18px" data-stat="top">—</p>
+            <p class="stat-meta" data-stat-meta="top">Most active project (30d)</p>
+          </article>
+        </section>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Trend</p>
+              <h2 class="card-title">Loads per day · last 30 days</h2>
+            </div>
+          </div>
+          <div class="chart-wrap" id="chartWrap">
+            <div class="chart-empty" id="chartEmpty" style="display:none">No loads recorded yet. Once your scripts get used, the trend will show here.</div>
+            <svg class="chart-svg" id="chartSvg" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Rankings</p>
+                <h2 class="card-title">Top scripts (30d)</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="topTable">
+                <thead>
+                  <tr>
+                    <th>Script</th>
+                    <th>Project</th>
+                    <th style="text-align:right">Loads</th>
+                  </tr>
+                </thead>
+                <tbody id="topBody"></tbody>
+              </table>
+              <div class="empty-state" id="topEmpty" style="display:none">
+                <p class="empty-title">No load data yet</p>
+                <p class="empty-copy">Top scripts will appear here once you get traffic.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">Live feed</p>
+                <h2 class="card-title">Recent activity</h2>
+              </div>
+            </div>
+            <div class="activity-list" id="activityList"></div>
+            <div class="empty-state" id="activityEmpty" style="display:none">
+              <p class="empty-title">Nothing yet</p>
+              <p class="empty-copy">Signins and script loads will show here.</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="analytics.js"></script>
+  </body>
+</html>
