@@ -1,4 +1,4 @@
-// server.js - Solaries Phase 6 (Discord Bot D5 - updated panel with 5 buttons)
+// server.js - Solaries Phase 6 (Discord Bot D6 - hybrid DM + expiry warnings)
 // Full command list: /login /logout /whoami /panel /managerrole /stats /settings
 // /key create|stock|delete|extend|revoke|info|list
 // /user info|blacklist|unblacklist|ban|unban  /hwid reset  /whitelist
@@ -784,7 +784,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D5) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D6) running on port " + PORT);
 });
 
 // ============================================================
@@ -801,6 +801,17 @@ if (!DISCORD_BOT_TOKEN) {
 
 async function startDiscordBot() {
   const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+
+  // Helper: try to send DM, return true if delivered
+  async function trySendDM(discordId, payload) {
+    try {
+      const user = await client.users.fetch(discordId);
+      await user.send(payload);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   const client = new Client({
     intents: [
@@ -1384,32 +1395,34 @@ async function startDiscordBot() {
     }
 
     let loader;
+    let userKey = null;
     if (script.key_mode === "keyed") {
-      // Try to include the user's key if they have one
-      const { data: link } = await supabase.from("discord_users")
-        .select("account_id").eq("discord_id", discordId).maybeSingle();
-
-      let userKey = null;
-      if (link) {
-        const { data: existingKey } = await supabase.from("keys")
-          .select("key, revoked").eq("discord_id", discordId)
-          .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
-        if (existingKey && !existingKey.revoked) userKey = existingKey.key;
-      }
+      const { data: existingKey } = await supabase.from("keys")
+        .select("key, revoked").eq("discord_id", discordId)
+        .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
+      if (existingKey && !existingKey.revoked) userKey = existingKey.key;
 
       const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
       if (userKey) {
-        loader = 'loadstring(game:HttpGet("' + loaderUrl + '?key=' + userKey + '"))()';
+        loader = '_G.script_key = "' + userKey + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
       } else {
-        loader = 'local key = "PASTE_YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=" .. key))()';
+        loader = '_G.script_key = "PASTE_YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
       }
     } else {
       loader = 'loadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '"))()';
     }
 
-    await interaction.editReply({
-      content: "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```",
-    });
+    const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```" +
+      (userKey ? "\n\nKeep this private. Do not share." : "\n\nYou do not have a redeemed key yet. Click Redeem Key on the panel first.");
+
+    const dmSent = await trySendDM(discordId, { content: dmContent });
+    if (dmSent) {
+      await interaction.editReply({ content: "Sent loader script to your DMs. Check your Discord messages." });
+    } else {
+      await interaction.editReply({
+        content: "Could not DM you (DMs may be closed). Here it is:\n\n" + dmContent + "\n\nEnable DMs from server members to receive scripts privately.",
+      });
+    }
   }
 
   // ============================================================
@@ -2370,8 +2383,21 @@ async function startDiscordBot() {
       }
     }
 
+    // Try to DM the loader script
+    const { data: fullScript } = await supabase.from("scripts").select("slug, key_mode").eq("id", script.id).maybeSingle();
+    let dmMsg = "";
+    if (fullScript) {
+      const url = PUBLIC_BASE_URL + "/v1/load/" + fullScript.slug;
+      const loader = fullScript.key_mode === "keyless"
+        ? 'loadstring(game:HttpGet("' + url + '"))()'
+        : '_G.script_key = "' + key + '"\nloadstring(game:HttpGet("' + url + '?key=".._G.script_key))()';
+      const dmContent = "Key redeemed for **" + script.name + "**!\n\nYour loader:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
+      const dmSent = await trySendDM(discordId, { content: dmContent });
+      dmMsg = dmSent ? "\nLoader script sent to your DMs." : "\nCould not DM you (DMs may be closed). Use Get Script button.";
+    }
+
     interaction.editReply({
-      content: "Key redeemed for **" + script.name + "**." + roleMsg + "\nUse the Get Script button to get your loader.",
+      content: "Key redeemed for **" + script.name + "**." + roleMsg + dmMsg,
     });
   }
 
@@ -2472,6 +2498,54 @@ async function startDiscordBot() {
       );
     interaction.editReply({ embeds: [embed] });
   }
+
+
+  // ============================================================
+  // EXPIRY WARNING SCHEDULER
+  // DMs users when their key has ~4 hours left before expiring
+  // Runs every 30 minutes
+  // ============================================================
+  async function checkExpiringKeys() {
+    try {
+      const now = Date.now();
+      const warnStart = new Date(now + 3 * 60 * 60 * 1000).toISOString();
+      const warnEnd = new Date(now + 5 * 60 * 60 * 1000).toISOString();
+
+      const { data: expiringKeys } = await supabase.from("keys")
+        .select("id, key, discord_id, expires_at, expiry_warned_at, projects(name, slug)")
+        .not("discord_id", "is", null)
+        .not("expires_at", "is", null)
+        .eq("revoked", false)
+        .is("expiry_warned_at", null)
+        .gte("expires_at", warnStart)
+        .lte("expires_at", warnEnd);
+
+      if (!expiringKeys || expiringKeys.length === 0) return;
+
+      for (const k of expiringKeys) {
+        const hoursLeft = Math.round((new Date(k.expires_at).getTime() - now) / (60 * 60 * 1000));
+        const embed = new EmbedBuilder().setColor(0xf59e0b)
+          .setTitle("Key Expiring Soon")
+          .setDescription("Your key for **" + (k.projects?.name || "a script") + "** will expire in about " + hoursLeft + " hours.")
+          .addFields(
+            { name: "Key", value: "`" + k.key.slice(0, 6) + "..." + k.key.slice(-4) + "`", inline: true },
+            { name: "Expires", value: new Date(k.expires_at).toISOString(), inline: false },
+          )
+          .setFooter({ text: "Renew or contact the script owner to extend your access." });
+
+        const sent = await trySendDM(k.discord_id, { embeds: [embed] });
+        if (sent) {
+          await supabase.from("keys").update({ expiry_warned_at: new Date().toISOString() }).eq("id", k.id);
+          console.log("Sent expiry warning DM for key " + k.key.slice(0, 6) + "... to " + k.discord_id);
+        }
+      }
+    } catch (e) {
+      console.error("checkExpiringKeys error:", e.message);
+    }
+  }
+
+  setInterval(checkExpiringKeys, 30 * 60 * 1000);
+  setTimeout(checkExpiringKeys, 60 * 1000);
 
   await client.login(DISCORD_BOT_TOKEN);
 }
