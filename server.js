@@ -1,6 +1,6 @@
-// server.js - Solaries Phase 5
-// Adds: HWID lock, key expiry, blocklist/allowlist per project,
-// script version history, and new admin endpoints.
+// server.js - Solaries Phase 6 (Discord Bot D1)
+// Adds: embedded Discord bot with /login slash command
+// Bot only starts if DISCORD_BOT_TOKEN env var is set (safe fallback).
 
 const express = require("express");
 const path = require("path");
@@ -12,6 +12,8 @@ const PORT = process.env.PORT || 3000;
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY");
@@ -22,7 +24,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 });
 
 app.use(express.json({ limit: "2mb" }));
-app.set("trust proxy", true); // for x-forwarded-for behind Render
+app.set("trust proxy", true);
 app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================================
@@ -161,7 +163,6 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   const projectId = script.project_id;
   const accountId = script.projects.owner_account_id;
 
-  // HWID / IP blocklist for this project
   if (hwid || ip) {
     const orParts = [];
     if (hwid) orParts.push(`and(entry_type.eq.hwid,value.eq.${hwid})`);
@@ -177,7 +178,6 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     }
   }
 
-  // Whitelist-only mode
   if (script.projects.whitelist_only && hwid) {
     const { data: allowed } = await supabase
       .from("allowlist")
@@ -201,7 +201,6 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     if (!keyRow) return block("invalid key", 403, null, projectId, script.id);
     if (keyRow.revoked) return block("revoked key", 403, keyRow.id, projectId, script.id);
 
-    // Key blocklist
     const { data: keyBlocked } = await supabase
       .from("blocklist")
       .select("id")
@@ -219,11 +218,9 @@ app.get("/v1/load/:script_slug", async (req, res) => {
       return block("key expired", 403, keyRow.id, projectId, script.id);
     }
 
-    // HWID enforcement
     if (keyRow.hwid_locked) {
       if (!hwid) return block("missing hwid header", 401, keyRow.id, projectId, script.id);
       if (!keyRow.hwid) {
-        // First use - bind this HWID to the key
         await supabase.from("keys").update({ hwid: hwid }).eq("id", keyRow.id);
       } else if (keyRow.hwid !== hwid) {
         return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
@@ -477,7 +474,6 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
   };
   const { data, error } = await supabase.from("scripts").insert(insert).select().single();
   if (error) return res.status(500).json({ ok: false, error: "Could not create script" });
-  // Snapshot version 1
   await supabase.from("script_versions").insert({
     script_id: data.id, version: 1, source: source,
     size_bytes: Buffer.byteLength(source, "utf8"),
@@ -532,7 +528,6 @@ app.delete("/api/scripts/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Version history
 app.get("/api/scripts/:id/versions", requireAuth, async (req, res) => {
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
   if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
@@ -596,7 +591,6 @@ app.post("/api/keys", requireAuth, async (req, res) => {
     label: String(body.label || "").trim() || null,
     hwid_locked: !!body.hwid_locked,
   };
-  // Optional expiry in days
   if (body.expires_in_days) {
     const days = parseInt(body.expires_in_days, 10);
     if (days > 0) insert.expires_at = new Date(Date.now() + days * 86400000).toISOString();
@@ -729,6 +723,230 @@ app.delete("/api/accounts/:id", requireAuth, requireOwner, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log("Solaries server (Phase 5) running on port " + PORT);
+// ============================================================
+// DISCORD - status endpoint (for dashboard UI later)
+// ============================================================
+let botStatus = {
+  online: false,
+  username: null,
+  guild_count: 0,
+  started_at: null,
+  last_error: null,
+};
+
+app.get("/api/discord/status", requireAuth, (req, res) => {
+  res.json({ ok: true, status: botStatus });
 });
+
+app.get("/api/discord/link", requireAuth, async (req, res) => {
+  const { data } = await supabase.from("discord_users")
+    .select("discord_id, discord_username, linked_at")
+    .eq("account_id", req.session.account_id).maybeSingle();
+  res.json({ ok: true, linked: data || null });
+});
+
+app.delete("/api/discord/link", requireAuth, async (req, res) => {
+  await supabase.from("discord_users").delete().eq("account_id", req.session.account_id);
+  res.json({ ok: true });
+});
+
+// ============================================================
+// Health check + keep-alive
+// ============================================================
+app.get("/healthz", (req, res) => {
+  res.json({ ok: true, ts: Date.now(), bot: botStatus.online });
+});
+
+// Self-ping every 10 min to prevent Render free tier sleep
+setInterval(() => {
+  const url = PUBLIC_BASE_URL + "/healthz";
+  fetch(url).catch(() => {});
+}, 10 * 60 * 1000);
+
+// ============================================================
+// Start HTTP server
+// ============================================================
+app.listen(PORT, () => {
+  console.log("Solaries server (Phase 6 D1) running on port " + PORT);
+});
+
+// ============================================================
+// DISCORD BOT - embedded, optional
+// ============================================================
+if (!DISCORD_BOT_TOKEN) {
+  console.log("DISCORD_BOT_TOKEN not set - Discord bot disabled");
+} else {
+  startDiscordBot().catch((err) => {
+    console.error("Discord bot failed to start:", err.message);
+    botStatus.last_error = err.message;
+  });
+}
+
+async function startDiscordBot() {
+  const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, MessageFlags } = require("discord.js");
+
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildMessages,
+    ],
+  });
+
+  const commands = [
+    new SlashCommandBuilder()
+      .setName("login")
+      .setDescription("Link your Discord to your Solaries account with your API key")
+      .addStringOption((opt) =>
+        opt.setName("api_key")
+          .setDescription("Your Solaries API key (from your dashboard)")
+          .setRequired(true)
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("whoami")
+      .setDescription("Check which Solaries account is linked to your Discord")
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("unlink")
+      .setDescription("Unlink your Discord from your Solaries account")
+      .toJSON(),
+  ];
+
+  client.once(Events.ClientReady, async (c) => {
+    console.log("Discord bot ready as " + c.user.tag);
+    botStatus.online = true;
+    botStatus.username = c.user.tag;
+    botStatus.guild_count = c.guilds.cache.size;
+    botStatus.started_at = new Date().toISOString();
+
+    // Register slash commands globally (may take up to 1 hour to appear)
+    // For instant testing in a specific server, set DISCORD_TEST_GUILD_ID env var
+    try {
+      const rest = new REST({ version: "10" }).setToken(DISCORD_BOT_TOKEN);
+      const appId = c.user.id;
+      const testGuild = process.env.DISCORD_TEST_GUILD_ID;
+      if (testGuild) {
+        await rest.put(Routes.applicationGuildCommands(appId, testGuild), { body: commands });
+        console.log("Slash commands registered to test guild " + testGuild);
+      } else {
+        await rest.put(Routes.applicationCommands(appId), { body: commands });
+        console.log("Slash commands registered globally");
+      }
+    } catch (e) {
+      console.error("Command registration failed:", e.message);
+      botStatus.last_error = "Command registration: " + e.message;
+    }
+  });
+
+  client.on(Events.GuildCreate, () => {
+    botStatus.guild_count = client.guilds.cache.size;
+  });
+  client.on(Events.GuildDelete, () => {
+    botStatus.guild_count = client.guilds.cache.size;
+  });
+
+  client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    try {
+      if (interaction.commandName === "login") {
+        await handleLogin(interaction);
+      } else if (interaction.commandName === "whoami") {
+        await handleWhoami(interaction);
+      } else if (interaction.commandName === "unlink") {
+        await handleUnlink(interaction);
+      }
+    } catch (e) {
+      console.error("Interaction error:", e.message);
+      try {
+        const msg = "Something went wrong. Try again later.";
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: msg });
+        } else {
+          await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+        }
+      } catch (_) {}
+    }
+  });
+
+  async function handleLogin(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const apiKey = interaction.options.getString("api_key", true).trim();
+    const discordId = interaction.user.id;
+    const discordUsername = interaction.user.username;
+
+    const { data: account } = await supabase.from("accounts")
+      .select("id, name").eq("api_key", apiKey).maybeSingle();
+
+    if (!account) {
+      await interaction.editReply({ content: "Invalid API key. Check your Solaries dashboard and try again." });
+      return;
+    }
+
+    // Check if this Discord is already linked to another account
+    const { data: existingLink } = await supabase.from("discord_users")
+      .select("id, account_id").eq("discord_id", discordId).maybeSingle();
+
+    if (existingLink) {
+      if (existingLink.account_id === account.id) {
+        await interaction.editReply({ content: "You are already linked to " + account.name + "." });
+        return;
+      }
+      // Re-link: delete old and insert new
+      await supabase.from("discord_users").delete().eq("discord_id", discordId);
+    }
+
+    // Also remove any existing link on the target account (one Discord per account)
+    await supabase.from("discord_users").delete().eq("account_id", account.id);
+
+    const { error } = await supabase.from("discord_users").insert({
+      account_id: account.id,
+      discord_id: discordId,
+      discord_username: discordUsername,
+    });
+
+    if (error) {
+      await interaction.editReply({ content: "Could not link account. Try again later." });
+      return;
+    }
+
+    await interaction.editReply({
+      content: "Linked! Your Discord is now connected to Solaries account: " + account.name,
+    });
+  }
+
+  async function handleWhoami(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id, linked_at").eq("discord_id", discordId).maybeSingle();
+
+    if (!link) {
+      await interaction.editReply({ content: "Not linked. Use /login <api_key> first." });
+      return;
+    }
+
+    const { data: account } = await supabase.from("accounts")
+      .select("name, plan").eq("id", link.account_id).maybeSingle();
+
+    if (!account) {
+      await interaction.editReply({ content: "Linked account no longer exists. Please /login again." });
+      return;
+    }
+
+    await interaction.editReply({
+      content: "Linked to: " + account.name + " (plan: " + account.plan + ")",
+    });
+  }
+
+  async function handleUnlink(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+    await supabase.from("discord_users").delete().eq("discord_id", discordId);
+    await interaction.editReply({ content: "Unlinked. Use /login to link again." });
+  }
+
+  await client.login(DISCORD_BOT_TOKEN);
+}
