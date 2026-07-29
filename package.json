@@ -1,17 +1,17 @@
 {
-  "name": "keyforge-gate",
+  "name": "solaries",
   "version": "1.0.0",
-  "description": "API key gated static site with Supabase backend",
+  "description": "Solaries - Roblox script protection and key management platform",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
   },
-  "engines": {
-    "node": ">=18"
-  },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "discord.js": "^14.16.3",
     "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
