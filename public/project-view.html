@@ -417,6 +417,53 @@
       </div>
     </div>
 
+    <!-- Discord panel command modal -->
+    <div id="discordModal" class="modal" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" style="max-width:560px">
+        <div class="modal-head">
+          <div>
+            <h2 style="margin:0;font-size:18px;color:var(--white)">Discord Panel</h2>
+            <div id="discordSubtitle" style="color:var(--text-soft);font-size:13px;margin-top:2px"></div>
+          </div>
+          <button id="closeDiscord" class="icon-btn" data-close="true" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body" style="padding:20px">
+          <div style="margin-bottom:16px">
+            <div style="color:var(--text-soft);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Panel command</div>
+            <div style="display:flex;gap:8px;align-items:stretch">
+              <code id="discordCmd" style="flex:1;padding:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;font-family:Consolas,Monaco,monospace;font-size:13px;color:var(--white);overflow-x:auto;white-space:nowrap"></code>
+              <button id="btnCopyDiscord" class="btn is-primary" style="white-space:nowrap">Copy</button>
+            </div>
+            <div style="color:var(--text-muted);font-size:12px;margin-top:6px">Run this command in your Discord server to post a panel for this script.</div>
+          </div>
+
+          <div style="margin-bottom:16px">
+            <div style="color:var(--text-soft);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">How to use</div>
+            <ol style="color:var(--text-soft);font-size:13px;padding-left:20px;margin:0;line-height:1.6">
+              <li>Invite the Solaries bot to your Discord server</li>
+              <li>Run <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px;font-size:12px">/login</code> with your API key</li>
+              <li>Paste the command above in a channel</li>
+              <li>Users can then click Get Key, Get Script, or Reset HWID</li>
+            </ol>
+          </div>
+
+          <div>
+            <div style="color:var(--text-soft);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Bot invite link</div>
+            <div style="display:flex;gap:8px;align-items:stretch">
+              <code id="discordInvite" style="flex:1;padding:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;font-family:Consolas,Monaco,monospace;font-size:11px;color:var(--white);overflow-x:auto;white-space:nowrap">https://discord.com/oauth2/authorize?client_id=1532093570327121920&permissions=2416003136&integration_type=0&scope=bot+applications.commands</code>
+              <button id="btnCopyInvite" class="btn">Copy</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button id="btnCloseDiscord" class="btn" data-close="true">Close</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal" id="historyModal" aria-hidden="true">
       <div class="modal-backdrop" data-close="true"></div>
       <div class="modal-card">
