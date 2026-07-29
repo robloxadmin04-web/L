@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="../style/style-dashboard.css" />
+  </head>
+  <body>
+    <div class="dashboard-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 4h14v2H5z"></path>
+                <path d="M5 11h14v2H5z"></path>
+                <path d="M5 18h14v2H5z"></path>
+              </svg>
+            </div>
+            <div class="brand-copy">
+              <p class="brand-label">Control Panel</p>
+              <h1 class="brand-title">Dashboard</h1>
+            </div>
+          </div>
+
+          <nav class="nav" aria-label="Sidebar navigation">
+            <a
+              class="nav-link is-active"
+              href="#overview"
+              data-section="overview"
+            >
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="8" height="8" rx="1"></rect>
+                  <rect x="13" y="3" width="8" height="5" rx="1"></rect>
+                  <rect x="13" y="10" width="8" height="11" rx="1"></rect>
+                  <rect x="3" y="13" width="8" height="8" rx="1"></rect>
+                </svg>
+              </span>
+              <span>Overview</span>
+            </a>
+
+            <a class="nav-link" href="#projects" data-section="projects">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 7h16v11H4z"></path>
+                  <path d="M9 7V5h6v2"></path>
+                </svg>
+              </span>
+              <span>Projects</span>
+            </a>
+
+            <a class="nav-link" href="#keys" data-section="keys">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="8" cy="14" r="3"></circle>
+                  <path d="M11 14h9"></path>
+                  <path d="M17 11v6"></path>
+                </svg>
+              </span>
+              <span>Keys</span>
+            </a>
+
+            <a class="nav-link" href="#loader" data-section="loader">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 3v12"></path>
+                  <path d="M8 11l4 4 4-4"></path>
+                  <path d="M4 19h16"></path>
+                </svg>
+              </span>
+              <span>Loader</span>
+            </a>
+
+            <a class="nav-link" href="#activity" data-section="activity">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 18h16"></path>
+                  <path d="M7 14l3-3 3 2 4-5"></path>
+                </svg>
+              </span>
+              <span>Activity</span>
+            </a>
+
+            <a class="nav-link" href="#settings" data-section="settings">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M12 2v3"></path>
+                  <path d="M12 19v3"></path>
+                  <path d="M2 12h3"></path>
+                  <path d="M19 12h3"></path>
+                  <path d="M5 5l2 2"></path>
+                  <path d="M17 17l2 2"></path>
+                  <path d="M19 5l-2 2"></path>
+                  <path d="M7 17l-2 2"></path>
+                </svg>
+              </span>
+              <span>Settings</span>
+            </a>
+          </nav>
+        </div>
+
+        <div class="sidebar-bottom">
+          <div class="access-card">
+            <p class="access-label">Environment</p>
+            <p class="access-value">Private Access</p>
+            <p class="access-meta">API key verified session</p>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button
+              class="menu-btn"
+              id="menuToggle"
+              type="button"
+              aria-label="Open menu"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16"></path>
+                <path d="M4 12h16"></path>
+                <path d="M4 17h16"></path>
+              </svg>
+            </button>
+
+            <div>
+              <p class="page-kicker">Overview</p>
+              <h2 class="page-title">Project control and delivery</h2>
+            </div>
+          </div>
+
+          <div class="topbar-right">
+            <div class="topbar-badge">
+              <span class="badge-dot"></span>
+              <span>Active</span>
+            </div>
+
+            <div class="admin-box">
+              <span class="admin-avatar">A</span>
+              <div class="admin-copy">
+                <p class="admin-name">Admin Session</p>
+                <p class="admin-role">Owner access</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <section class="stats-grid" id="overview">
+          <article class="stat-card">
+            <p class="stat-label">Projects</p>
+            <h3 class="stat-value">04</h3>
+            <p class="stat-meta">2 active deployments</p>
+          </article>
+
+          <article class="stat-card">
+            <p class="stat-label">Active Keys</p>
+            <h3 class="stat-value">128</h3>
+            <p class="stat-meta">14 claimed today</p>
+          </article>
+
+          <article class="stat-card">
+            <p class="stat-label">Total Loads</p>
+            <h3 class="stat-value">3,482</h3>
+            <p class="stat-meta">Stable across all projects</p>
+          </article>
+
+          <article class="stat-card">
+            <p class="stat-label">Failed Access</p>
+            <h3 class="stat-value">09</h3>
+            <p class="stat-meta">Last 24 hours</p>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <section class="panel-card panel-wide" id="projects">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Projects</p>
+                <h3 class="panel-title">Current project status</h3>
+              </div>
+              <button class="ghost-btn" type="button">New project</button>
+            </div>
+
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Script</th>
+                    <th>Protection</th>
+                    <th>Keys</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Loader Core</td>
+                    <td>main.lua</td>
+                    <td>Protected</td>
+                    <td>48 active</td>
+                    <td><span class="status-pill is-live">Live</span></td>
+                  </tr>
+                  <tr>
+                    <td>Premium Hub</td>
+                    <td>hub.lua</td>
+                    <td>Protected</td>
+                    <td>32 active</td>
+                    <td><span class="status-pill is-live">Live</span></td>
+                  </tr>
+                  <tr>
+                    <td>Trial Access</td>
+                    <td>trial.lua</td>
+                    <td>Standard</td>
+                    <td>18 active</td>
+                    <td><span class="status-pill is-review">Review</span></td>
+                  </tr>
+                  <tr>
+                    <td>Archive Build</td>
+                    <td>legacy.lua</td>
+                    <td>Locked</td>
+                    <td>0 active</td>
+                    <td><span class="status-pill is-off">Offline</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel-card" id="loader">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Loader</p>
+                <h3 class="panel-title">Quick access</h3>
+              </div>
+            </div>
+
+            <div class="code-block">
+              <p class="code-label">Current loader</p>
+              <pre id="loaderCode">
+loadstring(game:HttpGet("[example.com](https://www.example.com/load/project-main)", true))()</pre
+              >
+              <button
+                class="ghost-btn full-width"
+                id="copyLoader"
+                type="button"
+              >
+                Copy loader
+              </button>
+              <p class="helper-note" id="copyStatus">Ready to copy</p>
+            </div>
+          </section>
+
+          <section class="panel-card" id="keys">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Keys</p>
+                <h3 class="panel-title">Key summary</h3>
+              </div>
+            </div>
+
+            <div class="stack-list">
+              <div class="list-row">
+                <span>Active keys</span>
+                <strong>128</strong>
+              </div>
+              <div class="list-row">
+                <span>Used keys</span>
+                <strong>74</strong>
+              </div>
+              <div class="list-row">
+                <span>Expired keys</span>
+                <strong>21</strong>
+              </div>
+              <div class="list-row">
+                <span>Revoked keys</span>
+                <strong>07</strong>
+              </div>
+              <div class="list-row">
+                <span>HWID locked</span>
+                <strong>39</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-card panel-wide" id="activity">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Activity</p>
+                <h3 class="panel-title">Recent events</h3>
+              </div>
+              <button class="ghost-btn" type="button">View logs</button>
+            </div>
+
+            <div class="activity-list">
+              <article class="activity-item">
+                <div class="activity-marker"></div>
+                <div class="activity-copy">
+                  <p class="activity-title">
+                    Key claim completed for Premium Hub
+                  </p>
+                  <p class="activity-meta">2 minutes ago</p>
+                </div>
+              </article>
+
+              <article class="activity-item">
+                <div class="activity-marker"></div>
+                <div class="activity-copy">
+                  <p class="activity-title">
+                    Loader Core generated 14 successful loads
+                  </p>
+                  <p class="activity-meta">18 minutes ago</p>
+                </div>
+              </article>
+
+              <article class="activity-item">
+                <div class="activity-marker"></div>
+                <div class="activity-copy">
+                  <p class="activity-title">
+                    Trial Access key expired for one device
+                  </p>
+                  <p class="activity-meta">41 minutes ago</p>
+                </div>
+              </article>
+
+              <article class="activity-item">
+                <div class="activity-marker"></div>
+                <div class="activity-copy">
+                  <p class="activity-title">
+                    Failed API key access blocked at entry
+                  </p>
+                  <p class="activity-meta">1 hour ago</p>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel-card" id="settings">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Settings</p>
+                <h3 class="panel-title">Session controls</h3>
+              </div>
+            </div>
+
+            <div class="stack-list">
+              <div class="list-row">
+                <span>Access mode</span>
+                <strong>Private</strong>
+              </div>
+              <div class="list-row">
+                <span>Discord panel</span>
+                <strong>Pending</strong>
+              </div>
+              <div class="list-row">
+                <span>Reward links</span>
+                <strong>Enabled</strong>
+              </div>
+              <div class="list-row">
+                <span>Auto revoke</span>
+                <strong>Disabled</strong>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="script-dashboard-v1.js"></script>
+  </body>
+</html>
