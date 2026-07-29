@@ -1,0 +1,1 @@
+okay, i upload natin sa render at gamit ako ng supabase para from index to dashboard 
