@@ -64,10 +64,10 @@ body {
 }
 
 .brand-name {
-  font-size: 12px;
+  font-size: 14px;
   letter-spacing: 3px;
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .hero {
@@ -101,8 +101,8 @@ body {
 }
 
 .big-logo svg {
-  width: 220px;
-  height: 220px;
+  width: 200px;
+  height: 200px;
 }
 
 /* RIGHT SIDE */
@@ -241,6 +241,7 @@ body {
   font-size: 12px;
   letter-spacing: 0;
   text-transform: none;
+  font-weight: 600;
 }
 
 .forgot-link:hover {
