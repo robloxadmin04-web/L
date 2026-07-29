@@ -1,5 +1,5 @@
-// keys.js — Solaries Keys management (Phase 3)
-// Account-scoped keys with optional per-project binding.
+// keys.js - Solaries Keys page (Phase 6)
+// Adds HWID lock toggle, expiry days, Reset HWID button, expiry column.
 
 const el = {
   total: document.querySelector('[data-stat="total"]'),
@@ -22,6 +22,8 @@ const el = {
   kLabel: document.getElementById("kLabel"),
   kPrefix: document.getElementById("kPrefix"),
   kProject: document.getElementById("kProject"),
+  kExpires: document.getElementById("kExpires"),
+  kHwidLock: document.getElementById("kHwidLock"),
   genErr: document.getElementById("genErr"),
 
   newKeyModal: document.getElementById("newKeyModal"),
@@ -36,16 +38,20 @@ let projects = [];
 let filter = "all";
 let limits = { max_keys: 0 };
 
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
 function formatDate(v) {
   if (!v) return "-";
   const d = new Date(v);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
-function escapeHtml(s) {
-  return String(s || "").replace(/[&<>"']/g, function (c) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-  });
+function isExpired(k) {
+  return k.expires_at && new Date(k.expires_at).getTime() < Date.now();
 }
 
 function projectName(id) {
@@ -61,7 +67,6 @@ async function loadAll() {
       window.SL.api("/api/projects"),
       window.SL.api("/api/keys"),
     ]);
-
     if (statsRes.ok) {
       limits = statsRes.limits;
       el.total.textContent = statsRes.stats.keys + " / " + limits.max_keys;
@@ -83,7 +88,6 @@ async function loadAll() {
 }
 
 function populateProjectFilters() {
-  // Filter dropdown on toolbar
   const currentFilter = el.projectFilter.value;
   el.projectFilter.innerHTML = '<option value="all">All projects</option><option value="global">Global (no project)</option>';
   projects.forEach(function (p) {
@@ -96,8 +100,7 @@ function populateProjectFilters() {
     el.projectFilter.value = currentFilter;
   }
 
-  // Modal dropdown
-  el.kProject.innerHTML = '<option value="">Global — works for any project</option>';
+  el.kProject.innerHTML = '<option value="">Global (works for any project)</option>';
   projects.forEach(function (p) {
     const o = document.createElement("option");
     o.value = p.id;
@@ -112,25 +115,23 @@ function render() {
 
   let list = keys.slice();
 
-  // Filter by status tab
-  if (filter === "active") list = list.filter(function (k) { return !k.revoked; });
+  if (filter === "active") list = list.filter(function (k) { return !k.revoked && !isExpired(k); });
   if (filter === "revoked") list = list.filter(function (k) { return k.revoked; });
+  if (filter === "expired") list = list.filter(function (k) { return !k.revoked && isExpired(k); });
 
-  // Filter by project
   if (projFilter === "global") list = list.filter(function (k) { return !k.project_id; });
   else if (projFilter !== "all") list = list.filter(function (k) { return k.project_id === projFilter; });
 
-  // Search
   if (term) {
     list = list.filter(function (k) {
       return k.key.toLowerCase().includes(term) || (k.label || "").toLowerCase().includes(term);
     });
   }
 
-  // Tab counts
   document.querySelector('[data-count="all"]').textContent = keys.length;
-  document.querySelector('[data-count="active"]').textContent = keys.filter(function (k) { return !k.revoked; }).length;
+  document.querySelector('[data-count="active"]').textContent = keys.filter(function (k) { return !k.revoked && !isExpired(k); }).length;
   document.querySelector('[data-count="revoked"]').textContent = keys.filter(function (k) { return k.revoked; }).length;
+  document.querySelector('[data-count="expired"]').textContent = keys.filter(function (k) { return !k.revoked && isExpired(k); }).length;
 
   el.body.innerHTML = "";
   if (list.length === 0) {
@@ -139,10 +140,9 @@ function render() {
       el.empty.style.display = "block";
     } else {
       el.empty.style.display = "none";
-      const p = document.createElement("p");
-      p.style.cssText = "text-align:center;color:var(--text-soft);padding:32px;";
-      p.textContent = "No keys match your filter.";
-      el.body.parentNode.appendChild(p);
+      const p = document.createElement("tr");
+      p.innerHTML = '<td colspan="7" style="text-align:center;color:var(--text-soft);padding:32px;">No keys match your filter.</td>';
+      el.body.appendChild(p);
     }
     return;
   }
@@ -156,15 +156,44 @@ function render() {
       ? '<span class="key-scope"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg>' + escapeHtml(pName) + '</span>'
       : '<span class="key-scope">Global</span>';
 
+    let lockCell;
+    if (k.hwid_locked) {
+      if (k.hwid) {
+        lockCell = '<span class="lock-icon lock-yes" title="Locked to: ' + escapeHtml(k.hwid) + '"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 018 0v4"></path></svg> Locked</span>';
+      } else {
+        lockCell = '<span class="lock-icon lock-no"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 118 0"></path></svg> Awaiting</span>';
+      }
+    } else {
+      lockCell = '<span class="lock-no">Open</span>';
+    }
+
+    let expiryCell = "Lifetime";
+    let statusCell;
+    if (k.revoked) {
+      statusCell = '<span class="status-pill is-revoked">Revoked</span>';
+    } else if (isExpired(k)) {
+      statusCell = '<span class="status-pill is-off">Expired</span>';
+    } else {
+      statusCell = '<span class="status-pill is-live">Active</span>';
+    }
+    if (k.expires_at) {
+      const days = Math.ceil((new Date(k.expires_at).getTime() - Date.now()) / 86400000);
+      expiryCell = formatDate(k.expires_at) + (days > 0 ? ' <span style="color:var(--text-soft)">(' + days + 'd)</span>' : ' <span style="color:#fca5a5">(expired)</span>');
+    }
+
+    const resetBtn = k.hwid_locked && k.hwid ? '<button class="mini-btn" data-reset>Reset HWID</button>' : '';
+
     tr.innerHTML =
       '<td><span class="key-code">' + escapeHtml(k.key) + '</span></td>' +
-      '<td>' + escapeHtml(k.label || "—") + '</td>' +
+      '<td>' + escapeHtml(k.label || "-") + '</td>' +
       '<td>' + scope + '</td>' +
-      '<td><span class="status-pill ' + (k.revoked ? "is-revoked" : "is-live") + '">' + (k.revoked ? "Revoked" : "Active") + '</span></td>' +
-      '<td style="color:var(--text-soft)">' + formatDate(k.created_at) + '</td>' +
+      '<td>' + lockCell + '</td>' +
+      '<td style="color:var(--text-soft)">' + expiryCell + '</td>' +
+      '<td>' + statusCell + '</td>' +
       '<td>' +
         '<div class="row-actions">' +
           '<button class="mini-btn" data-copy>Copy</button>' +
+          resetBtn +
           '<button class="mini-btn is-danger" data-toggle>' + (k.revoked ? "Restore" : "Revoke") + '</button>' +
           '<button class="mini-btn is-danger" data-del>Delete</button>' +
         '</div>' +
@@ -175,9 +204,7 @@ function render() {
         await navigator.clipboard.writeText(k.key);
         e.target.textContent = "Copied";
         setTimeout(function () { e.target.textContent = "Copy"; }, 1200);
-      } catch (err) {
-        window.SL.toast("Copy failed", "error");
-      }
+      } catch (err) { window.SL.toast("Copy failed", "error"); }
     });
 
     tr.querySelector("[data-toggle]").addEventListener("click", async function () {
@@ -200,11 +227,22 @@ function render() {
       } catch (e) { window.SL.toast(e.message, "error"); }
     });
 
+    const resetEl = tr.querySelector("[data-reset]");
+    if (resetEl) {
+      resetEl.addEventListener("click", async function () {
+        if (!window.confirm("Reset HWID for this key? User can bind to a new device on next load.")) return;
+        try {
+          const r = await window.SL.api("/api/keys/" + k.id + "/reset-hwid", { method: "POST" });
+          if (r.ok) { window.SL.toast("HWID reset", "ok"); loadAll(); }
+          else window.SL.toast(r.error || "Could not reset", "error");
+        } catch (e) { window.SL.toast(e.message, "error"); }
+      });
+    }
+
     el.body.appendChild(tr);
   });
 }
 
-// Filters
 el.tabs.forEach(function (t) {
   t.addEventListener("click", function () {
     el.tabs.forEach(function (x) { x.classList.remove("is-active"); });
@@ -216,11 +254,12 @@ el.tabs.forEach(function (t) {
 el.search.addEventListener("input", render);
 el.projectFilter.addEventListener("change", render);
 
-// Generate modal
 function openGen() {
   el.kLabel.value = "";
   el.kPrefix.value = "KF";
   el.kProject.value = "";
+  el.kExpires.value = "";
+  el.kHwidLock.checked = false;
   el.genErr.classList.remove("is-visible");
   el.genModal.classList.add("is-open");
   setTimeout(function () { el.kLabel.focus(); }, 50);
@@ -241,8 +280,10 @@ el.confirmGen.addEventListener("click", async function () {
     const body = {
       label: el.kLabel.value.trim(),
       prefix: el.kPrefix.value.trim() || "KF",
+      hwid_locked: el.kHwidLock.checked,
     };
     if (el.kProject.value) body.project_id = el.kProject.value;
+    if (el.kExpires.value) body.expires_in_days = parseInt(el.kExpires.value, 10);
     const r = await window.SL.api("/api/keys", {
       method: "POST",
       body: JSON.stringify(body),
@@ -264,7 +305,6 @@ el.confirmGen.addEventListener("click", async function () {
   }
 });
 
-// New key modal
 function showNewKey(k) {
   el.newKeyCode.textContent = k;
   el.newKeyModal.classList.add("is-open");
