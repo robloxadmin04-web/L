@@ -781,7 +781,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D2.2) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D3) running on port " + PORT);
 });
 
 // ============================================================
@@ -807,37 +807,158 @@ async function startDiscordBot() {
     ],
   });
 
+  // Discord ManageGuild permission (bit flag 32)
+  const MANAGE_GUILD = "32";
+
   const commands = [
+    // ---------- SETUP / SESSION ----------
     new SlashCommandBuilder()
       .setName("login")
-      .setDescription("Link your Discord to your Solaries account with your API key")
-      .addStringOption((opt) =>
-        opt.setName("api_key")
-          .setDescription("Your Solaries API key (from your dashboard)")
-          .setRequired(true)
-      )
+      .setDescription("Link this server to your Solaries account (API key)")
+      .addStringOption((o) => o.setName("api_key").setDescription("Your Solaries API key").setRequired(true))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("logout")
+      .setDescription("Unlink this Discord from your Solaries account")
+      .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("whoami")
-      .setDescription("Check which Solaries account is linked to your Discord")
-      .toJSON(),
-    new SlashCommandBuilder()
-      .setName("unlink")
-      .setDescription("Unlink your Discord from your Solaries account")
+      .setDescription("Show which Solaries account is linked to your Discord")
+      .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("panel")
       .setDescription("Post a Solaries panel for a script in this channel")
-      .addStringOption((opt) =>
-        opt.setName("script_id")
-          .setDescription("The script slug (from your Solaries dashboard)")
-          .setRequired(true)
-      )
-      .addStringOption((opt) =>
-        opt.setName("title")
-          .setDescription("Optional custom title for the panel")
-          .setRequired(false)
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
+      .addStringOption((o) => o.setName("title").setDescription("Optional custom title").setRequired(false))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("managerrole")
+      .setDescription("Set/clear which Discord role can run management commands")
+      .addSubcommand((s) => s.setName("set").setDescription("Add a manager role")
+        .addRoleOption((o) => o.setName("role").setDescription("Discord role").setRequired(true)))
+      .addSubcommand((s) => s.setName("clear").setDescription("Remove a manager role")
+        .addRoleOption((o) => o.setName("role").setDescription("Discord role").setRequired(true)))
+      .addSubcommand((s) => s.setName("list").setDescription("List manager roles"))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+
+    // ---------- STATS / SETTINGS ----------
+    new SlashCommandBuilder()
+      .setName("stats")
+      .setDescription("View project statistics (keys, users, executions)")
+      .addStringOption((o) => o.setName("project").setDescription("Project slug (default: active)").setRequired(false))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("settings")
+      .setDescription("View or configure bot settings")
+      .addSubcommand((s) => s.setName("view").setDescription("View current settings"))
+      .addSubcommand((s) => s.setName("keyprefix").setDescription("Set default key prefix")
+        .addStringOption((o) => o.setName("value").setDescription("Prefix (max 6 A-Z0-9)").setRequired(true)))
+      .addSubcommand((s) => s.setName("expiry").setDescription("Set default expiry days")
+        .addIntegerOption((o) => o.setName("days").setDescription("Default days (0 = no expiry)").setRequired(true)))
+      .addSubcommand((s) => s.setName("cooldown").setDescription("Set HWID reset cooldown hours")
+        .addIntegerOption((o) => o.setName("hours").setDescription("Cooldown hours").setRequired(true)))
+      .addSubcommand((s) => s.setName("logchannel").setDescription("Set log channel")
+        .addChannelOption((o) => o.setName("channel").setDescription("Log channel").setRequired(true)))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+
+    // ---------- KEY MANAGEMENT ----------
+    new SlashCommandBuilder()
+      .setName("key")
+      .setDescription("Manage keys")
+      .addSubcommand((s) => s.setName("create").setDescription("Generate a key")
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false))
+        .addStringOption((o) => o.setName("label").setDescription("Label").setRequired(false))
+        .addIntegerOption((o) => o.setName("expires_days").setDescription("Expires in N days").setRequired(false))
+        .addBooleanOption((o) => o.setName("hwid_lock").setDescription("HWID locked (default true)").setRequired(false)))
+      .addSubcommand((s) => s.setName("stock").setDescription("Bulk generate keys")
+        .addIntegerOption((o) => o.setName("count").setDescription("How many (max 50)").setRequired(true))
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false))
+        .addIntegerOption((o) => o.setName("expires_days").setDescription("Expires in N days").setRequired(false)))
+      .addSubcommand((s) => s.setName("delete").setDescription("Delete a key")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true)))
+      .addSubcommand((s) => s.setName("extend").setDescription("Extend key expiry")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true))
+        .addIntegerOption((o) => o.setName("days").setDescription("Days to add").setRequired(true)))
+      .addSubcommand((s) => s.setName("revoke").setDescription("Revoke a key")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true)))
+      .addSubcommand((s) => s.setName("info").setDescription("View key info")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true)))
+      .addSubcommand((s) => s.setName("list").setDescription("List keys in a project")
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+
+    // ---------- USER MANAGEMENT ----------
+    new SlashCommandBuilder()
+      .setName("user")
+      .setDescription("Manage users")
+      .addSubcommand((s) => s.setName("info").setDescription("View a user's info")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true)))
+      .addSubcommand((s) => s.setName("blacklist").setDescription("Blacklist a user (blocks key generation)")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+        .addStringOption((o) => o.setName("reason").setDescription("Reason").setRequired(false)))
+      .addSubcommand((s) => s.setName("unblacklist").setDescription("Remove blacklist")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true)))
+      .addSubcommand((s) => s.setName("ban").setDescription("Full ban (revokes all keys)")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+        .addStringOption((o) => o.setName("reason").setDescription("Reason").setRequired(false)))
+      .addSubcommand((s) => s.setName("unban").setDescription("Remove ban")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true)))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("hwid")
+      .setDescription("HWID management")
+      .addSubcommand((s) => s.setName("reset").setDescription("Force reset a user's HWID")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("whitelist")
+      .setDescription("Whitelist a user (grants access + buyer role)")
+      .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+      .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+
+    // ---------- PROJECT MANAGEMENT ----------
+    new SlashCommandBuilder()
+      .setName("project")
+      .setDescription("Manage projects")
+      .addSubcommand((s) => s.setName("create").setDescription("Create a project")
+        .addStringOption((o) => o.setName("name").setDescription("Project name").setRequired(true))
+        .addStringOption((o) => o.setName("note").setDescription("Optional note").setRequired(false)))
+      .addSubcommand((s) => s.setName("delete").setDescription("Delete a project")
+        .addStringOption((o) => o.setName("slug").setDescription("Project slug").setRequired(true)))
+      .addSubcommand((s) => s.setName("list").setDescription("View all projects"))
+      .addSubcommand((s) => s.setName("select").setDescription("Set active project for commands")
+        .addStringOption((o) => o.setName("slug").setDescription("Project slug").setRequired(true)))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("buyerrole")
+      .setDescription("Auto-assign a Discord role after a user redeems a key")
+      .addSubcommand((s) => s.setName("set").setDescription("Set buyer role for a project")
+        .addRoleOption((o) => o.setName("role").setDescription("Discord role").setRequired(true))
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
+      .addSubcommand((s) => s.setName("clear").setDescription("Clear buyer role for a project")
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
+      .addSubcommand((s) => s.setName("list").setDescription("List all buyer roles"))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("setscript")
+      .setDescription("Set the active script for the active project")
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
+      .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
   ];
 
@@ -877,15 +998,27 @@ async function startDiscordBot() {
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
       if (interaction.isChatInputCommand()) {
-        if (interaction.commandName === "login") {
-          await handleLogin(interaction);
-        } else if (interaction.commandName === "whoami") {
-          await handleWhoami(interaction);
-        } else if (interaction.commandName === "unlink") {
-          await handleUnlink(interaction);
-        } else if (interaction.commandName === "panel") {
-          await handlePanel(interaction);
-        }
+        const cmd = interaction.commandName;
+        const sub = interaction.options.getSubcommand(false);
+        // Setup / session
+        if (cmd === "login") await handleLogin(interaction);
+        else if (cmd === "logout") await handleLogout(interaction);
+        else if (cmd === "whoami") await handleWhoami(interaction);
+        else if (cmd === "panel") await handlePanel(interaction);
+        else if (cmd === "managerrole") await handleManagerRole(interaction, sub);
+        // Stats / settings
+        else if (cmd === "stats") await handleStats(interaction);
+        else if (cmd === "settings") await handleSettings(interaction, sub);
+        // Key management
+        else if (cmd === "key") await handleKeyGroup(interaction, sub);
+        // User management
+        else if (cmd === "user") await handleUserGroup(interaction, sub);
+        else if (cmd === "hwid") await handleHwidGroup(interaction, sub);
+        else if (cmd === "whitelist") await handleWhitelist(interaction);
+        // Project management
+        else if (cmd === "project") await handleProjectGroup(interaction, sub);
+        else if (cmd === "buyerrole") await handleBuyerRoleGroup(interaction, sub);
+        else if (cmd === "setscript") await handleSetScript(interaction);
       } else if (interaction.isButton()) {
         // Custom IDs: "sol_getkey_<scriptId>", "sol_getscript_<scriptId>", "sol_resethwid_<scriptId>"
         const parts = interaction.customId.split("_");
@@ -1252,6 +1385,525 @@ async function startDiscordBot() {
     await interaction.editReply({
       content: "HWID reset. Next reset will be available in 15 hours.",
     });
+  }
+
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+  async function requireLogin(interaction) {
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id").eq("discord_id", interaction.user.id).maybeSingle();
+    if (!link) {
+      await interaction.editReply({ content: "You must /login first with your Solaries API key." });
+      return null;
+    }
+    return link.account_id;
+  }
+
+  async function isManagerAllowed(interaction, accountId) {
+    // Owner/creator (linked account) always allowed
+    // Additional: user has a role in discord_manager_roles
+    if (!interaction.guildId) return true;
+    if (interaction.memberPermissions && interaction.memberPermissions.has("ManageGuild")) return true;
+    const { data: roles } = await supabase.from("discord_manager_roles")
+      .select("role_id").eq("account_id", accountId).eq("guild_id", interaction.guildId);
+    if (!roles || roles.length === 0) return interaction.memberPermissions?.has("ManageGuild") ?? false;
+    const userRoles = interaction.member?.roles?.cache;
+    if (!userRoles) return false;
+    return roles.some((r) => userRoles.has(r.role_id));
+  }
+
+  async function getActiveProject(discordId, accountId, slugOverride) {
+    if (slugOverride) {
+      const { data } = await supabase.from("projects")
+        .select("*").eq("slug", slugOverride).eq("owner_account_id", accountId).maybeSingle();
+      return data || null;
+    }
+    const { data: ctx } = await supabase.from("discord_user_context")
+      .select("active_project_id").eq("discord_id", discordId).maybeSingle();
+    if (!ctx || !ctx.active_project_id) return null;
+    const { data } = await supabase.from("projects")
+      .select("*").eq("id", ctx.active_project_id).eq("owner_account_id", accountId).maybeSingle();
+    return data || null;
+  }
+
+  async function isBlacklisted(accountId, discordId) {
+    const { data } = await supabase.from("blacklist")
+      .select("id, banned, reason").eq("account_id", accountId).eq("discord_id", discordId).maybeSingle();
+    return data || null;
+  }
+
+  async function getSettings(accountId) {
+    const { data } = await supabase.from("discord_settings")
+      .select("*").eq("account_id", accountId).maybeSingle();
+    return data || { key_prefix: "KF", default_expiry_days: 30, hwid_cooldown_hours: 15 };
+  }
+
+  // ============================================================
+  // /logout
+  // ============================================================
+  async function handleLogout(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+    await supabase.from("discord_users").delete().eq("discord_id", discordId);
+    await supabase.from("discord_user_context").delete().eq("discord_id", discordId);
+    await interaction.editReply({ content: "Logged out. Use /login to link again." });
+  }
+
+  // ============================================================
+  // /managerrole set|clear|list
+  // ============================================================
+  async function handleManagerRole(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!interaction.guildId) return interaction.editReply({ content: "This command must be run in a server." });
+
+    if (sub === "set") {
+      const role = interaction.options.getRole("role", true);
+      const { error } = await supabase.from("discord_manager_roles").insert({
+        account_id: accountId, guild_id: interaction.guildId, role_id: role.id,
+      });
+      if (error && !error.message.includes("duplicate")) {
+        return interaction.editReply({ content: "Error: " + error.message });
+      }
+      return interaction.editReply({ content: "Manager role set: " + role.name });
+    }
+    if (sub === "clear") {
+      const role = interaction.options.getRole("role", true);
+      await supabase.from("discord_manager_roles").delete()
+        .eq("account_id", accountId).eq("guild_id", interaction.guildId).eq("role_id", role.id);
+      return interaction.editReply({ content: "Manager role removed: " + role.name });
+    }
+    if (sub === "list") {
+      const { data } = await supabase.from("discord_manager_roles")
+        .select("role_id").eq("account_id", accountId).eq("guild_id", interaction.guildId);
+      if (!data || data.length === 0) return interaction.editReply({ content: "No manager roles set. Members with Discord ManageGuild permission can still use admin commands." });
+      const list = data.map((r) => "<@&" + r.role_id + ">").join(", ");
+      return interaction.editReply({ content: "Manager roles: " + list });
+    }
+  }
+
+  // ============================================================
+  // /stats
+  // ============================================================
+  async function handleStats(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+
+    const slug = interaction.options.getString("project");
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+
+    if (project) {
+      const [scripts, keys, revoked, loads24h] = await Promise.all([
+        supabase.from("scripts").select("id", { count: "exact", head: true }).eq("project_id", project.id),
+        supabase.from("keys").select("id", { count: "exact", head: true }).eq("project_id", project.id),
+        supabase.from("keys").select("id", { count: "exact", head: true }).eq("project_id", project.id).eq("revoked", true),
+        supabase.from("access_log").select("id", { count: "exact", head: true }).eq("project_id", project.id).eq("event", "load").gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+      ]);
+      const embed = new EmbedBuilder()
+        .setColor(0x8b5cf6).setTitle("Stats - " + project.name)
+        .addFields(
+          { name: "Scripts", value: String(scripts.count || 0), inline: true },
+          { name: "Keys total", value: String(keys.count || 0), inline: true },
+          { name: "Active", value: String((keys.count || 0) - (revoked.count || 0)), inline: true },
+          { name: "Revoked", value: String(revoked.count || 0), inline: true },
+          { name: "Loads 24h", value: String(loads24h.count || 0), inline: true },
+          { name: "Status", value: project.status, inline: true },
+        );
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // Account-wide stats
+    const [projs, scripts, keys, loads24h] = await Promise.all([
+      supabase.from("projects").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId),
+      supabase.from("scripts").select("id, projects!inner(owner_account_id)", { count: "exact", head: true }).eq("projects.owner_account_id", accountId),
+      supabase.from("keys").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId),
+      supabase.from("access_log").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId).eq("event", "load").gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+    ]);
+    const embed = new EmbedBuilder()
+      .setColor(0x8b5cf6).setTitle("Account Stats")
+      .addFields(
+        { name: "Projects", value: String(projs.count || 0), inline: true },
+        { name: "Scripts", value: String(scripts.count || 0), inline: true },
+        { name: "Keys", value: String(keys.count || 0), inline: true },
+        { name: "Loads 24h", value: String(loads24h.count || 0), inline: true },
+      );
+    interaction.editReply({ embeds: [embed] });
+  }
+
+  // ============================================================
+  // /settings view|keyprefix|expiry|cooldown|logchannel
+  // ============================================================
+  async function handleSettings(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+
+    if (sub === "view") {
+      const s = await getSettings(accountId);
+      const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Bot Settings")
+        .addFields(
+          { name: "Key Prefix", value: s.key_prefix || "KF", inline: true },
+          { name: "Default Expiry", value: (s.default_expiry_days || 30) + " days", inline: true },
+          { name: "HWID Cooldown", value: (s.hwid_cooldown_hours || 15) + " hours", inline: true },
+          { name: "Log Channel", value: s.log_channel_id ? "<#" + s.log_channel_id + ">" : "Not set", inline: false },
+        );
+      return interaction.editReply({ embeds: [embed] });
+    }
+    const patch = { account_id: accountId, updated_at: new Date().toISOString() };
+    if (sub === "keyprefix") patch.key_prefix = interaction.options.getString("value", true).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) || "KF";
+    if (sub === "expiry") patch.default_expiry_days = Math.max(0, interaction.options.getInteger("days", true));
+    if (sub === "cooldown") patch.hwid_cooldown_hours = Math.max(0, interaction.options.getInteger("hours", true));
+    if (sub === "logchannel") patch.log_channel_id = interaction.options.getChannel("channel", true).id;
+
+    const { error } = await supabase.from("discord_settings").upsert(patch, { onConflict: "account_id" });
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+    interaction.editReply({ content: "Setting updated." });
+  }
+
+  // ============================================================
+  // /key group
+  // ============================================================
+  async function handleKeyGroup(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+
+    if (sub === "create") return keyCreate(interaction, accountId);
+    if (sub === "stock") return keyStock(interaction, accountId);
+    if (sub === "delete") return keyDelete(interaction, accountId);
+    if (sub === "extend") return keyExtend(interaction, accountId);
+    if (sub === "revoke") return keyRevoke(interaction, accountId);
+    if (sub === "info") return keyInfo(interaction, accountId);
+    if (sub === "list") return keyList(interaction, accountId);
+  }
+
+  async function keyCreate(interaction, accountId) {
+    const slug = interaction.options.getString("project");
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project. Use /project select or pass project: slug." });
+    const settings = await getSettings(accountId);
+    const label = interaction.options.getString("label") || null;
+    const days = interaction.options.getInteger("expires_days");
+    const hwidLock = interaction.options.getBoolean("hwid_lock");
+    const key = makeKey(settings.key_prefix || "KF");
+    const insert = {
+      owner_account_id: accountId, project_id: project.id, key, label,
+      hwid_locked: hwidLock !== null && hwidLock !== undefined ? hwidLock : true,
+    };
+    const expiryDays = days !== null && days !== undefined ? days : (settings.default_expiry_days || 0);
+    if (expiryDays > 0) insert.expires_at = new Date(Date.now() + expiryDays * 86400000).toISOString();
+    const { error } = await supabase.from("keys").insert(insert);
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+    interaction.editReply({ content: "Key created for **" + project.name + "**:\n\n```" + key + "```" + (expiryDays > 0 ? "\nExpires in " + expiryDays + " days." : "\nNo expiry.") });
+  }
+
+  async function keyStock(interaction, accountId) {
+    const count = Math.min(Math.max(1, interaction.options.getInteger("count", true)), 50);
+    const slug = interaction.options.getString("project");
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project selected." });
+    const settings = await getSettings(accountId);
+    const days = interaction.options.getInteger("expires_days");
+    const expiryDays = days !== null && days !== undefined ? days : (settings.default_expiry_days || 0);
+    const rows = [];
+    for (let i = 0; i < count; i++) {
+      const k = makeKey(settings.key_prefix || "KF");
+      const row = { owner_account_id: accountId, project_id: project.id, key: k, hwid_locked: true, label: "Bulk stock" };
+      if (expiryDays > 0) row.expires_at = new Date(Date.now() + expiryDays * 86400000).toISOString();
+      rows.push(row);
+    }
+    const { data, error } = await supabase.from("keys").insert(rows).select("key");
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+    const list = (data || []).map((r) => r.key).join("\n");
+    interaction.editReply({ content: "Generated " + count + " keys for **" + project.name + "**:\n\n```" + list + "```" });
+  }
+
+  async function keyDelete(interaction, accountId) {
+    const key = interaction.options.getString("key", true).trim();
+    const { data } = await supabase.from("keys").select("id").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
+    await supabase.from("keys").delete().eq("id", data.id);
+    interaction.editReply({ content: "Key deleted." });
+  }
+
+  async function keyExtend(interaction, accountId) {
+    const key = interaction.options.getString("key", true).trim();
+    const days = interaction.options.getInteger("days", true);
+    const { data } = await supabase.from("keys").select("id, expires_at").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
+    const base = data.expires_at ? new Date(data.expires_at).getTime() : Date.now();
+    const newExpiry = new Date(base + days * 86400000).toISOString();
+    await supabase.from("keys").update({ expires_at: newExpiry }).eq("id", data.id);
+    interaction.editReply({ content: "Extended by " + days + " days. New expiry: " + newExpiry });
+  }
+
+  async function keyRevoke(interaction, accountId) {
+    const key = interaction.options.getString("key", true).trim();
+    const { data } = await supabase.from("keys").select("id").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
+    await supabase.from("keys").update({ revoked: true }).eq("id", data.id);
+    interaction.editReply({ content: "Key revoked." });
+  }
+
+  async function keyInfo(interaction, accountId) {
+    const key = interaction.options.getString("key", true).trim();
+    const { data } = await supabase.from("keys").select("*, projects(name, slug)").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
+    const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Key Info")
+      .addFields(
+        { name: "Key", value: "`" + data.key + "`", inline: false },
+        { name: "Project", value: data.projects?.name || "-", inline: true },
+        { name: "Label", value: data.label || "-", inline: true },
+        { name: "Status", value: data.revoked ? "Revoked" : "Active", inline: true },
+        { name: "HWID", value: data.hwid || "Not bound", inline: true },
+        { name: "HWID Lock", value: data.hwid_locked ? "Yes" : "No", inline: true },
+        { name: "Discord ID", value: data.discord_id || "-", inline: true },
+        { name: "Expires", value: data.expires_at || "Never", inline: false },
+        { name: "Created", value: data.created_at, inline: true },
+        { name: "Last used", value: data.last_used_at || "Never", inline: true },
+      );
+    interaction.editReply({ embeds: [embed] });
+  }
+
+  async function keyList(interaction, accountId) {
+    const slug = interaction.options.getString("project");
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project selected." });
+    const { data } = await supabase.from("keys").select("key, revoked, label, expires_at")
+      .eq("project_id", project.id).order("created_at", { ascending: false }).limit(25);
+    if (!data || data.length === 0) return interaction.editReply({ content: "No keys in " + project.name });
+    const lines = data.map((k) => (k.revoked ? "~~" : "") + k.key + (k.revoked ? "~~" : "") + (k.label ? " (" + k.label + ")" : "")).join("\n");
+    interaction.editReply({ content: "**Keys in " + project.name + "** (latest 25):\n" + lines });
+  }
+
+  // ============================================================
+  // /user group
+  // ============================================================
+  async function handleUserGroup(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+    const target = interaction.options.getUser("target", true);
+
+    if (sub === "info") {
+      const { data: link } = await supabase.from("discord_users").select("account_id, linked_at").eq("discord_id", target.id).maybeSingle();
+      const { data: keys } = await supabase.from("keys").select("key, revoked, project_id, projects(name)").eq("discord_id", target.id).eq("owner_account_id", accountId);
+      const bl = await isBlacklisted(accountId, target.id);
+      const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("User: " + target.username)
+        .addFields(
+          { name: "Discord", value: "<@" + target.id + ">", inline: true },
+          { name: "Linked", value: link ? "Yes (" + link.linked_at + ")" : "No", inline: true },
+          { name: "Blacklisted", value: bl ? "Yes" + (bl.banned ? " (BANNED)" : "") + (bl.reason ? " - " + bl.reason : "") : "No", inline: false },
+          { name: "Keys (yours)", value: keys && keys.length ? keys.map((k) => (k.revoked ? "[revoked] " : "") + k.key + " - " + (k.projects?.name || "?")).join("\n").slice(0, 1000) : "None", inline: false },
+        );
+      return interaction.editReply({ embeds: [embed] });
+    }
+    if (sub === "blacklist") {
+      const reason = interaction.options.getString("reason") || null;
+      await supabase.from("blacklist").upsert({ account_id: accountId, discord_id: target.id, reason, banned: false }, { onConflict: "account_id,discord_id" });
+      return interaction.editReply({ content: "Blacklisted " + target.username });
+    }
+    if (sub === "unblacklist") {
+      await supabase.from("blacklist").delete().eq("account_id", accountId).eq("discord_id", target.id);
+      return interaction.editReply({ content: "Removed blacklist for " + target.username });
+    }
+    if (sub === "ban") {
+      const reason = interaction.options.getString("reason") || null;
+      await supabase.from("blacklist").upsert({ account_id: accountId, discord_id: target.id, reason, banned: true }, { onConflict: "account_id,discord_id" });
+      await supabase.from("keys").update({ revoked: true }).eq("discord_id", target.id).eq("owner_account_id", accountId);
+      return interaction.editReply({ content: "Banned " + target.username + " and revoked all their keys." });
+    }
+    if (sub === "unban") {
+      await supabase.from("blacklist").delete().eq("account_id", accountId).eq("discord_id", target.id);
+      return interaction.editReply({ content: "Unbanned " + target.username });
+    }
+  }
+
+  // ============================================================
+  // /hwid reset
+  // ============================================================
+  async function handleHwidGroup(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+    if (sub !== "reset") return;
+    const target = interaction.options.getUser("target", true);
+    const slug = interaction.options.getString("project");
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    const q = supabase.from("keys").update({ hwid: null, last_hwid_reset: new Date().toISOString() })
+      .eq("discord_id", target.id).eq("owner_account_id", accountId);
+    if (project) q.eq("project_id", project.id);
+    const { data, error } = await q.select("id");
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+    interaction.editReply({ content: "Reset HWID on " + (data?.length || 0) + " key(s) for " + target.username });
+  }
+
+  // ============================================================
+  // /whitelist
+  // ============================================================
+  async function handleWhitelist(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+    const target = interaction.options.getUser("target", true);
+    const slug = interaction.options.getString("project");
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project selected." });
+
+    // Check if user already has a key for this project
+    const { data: existing } = await supabase.from("keys")
+      .select("key, revoked").eq("discord_id", target.id).eq("project_id", project.id).maybeSingle();
+    let keyValue;
+    if (existing && !existing.revoked) {
+      keyValue = existing.key;
+    } else {
+      const settings = await getSettings(accountId);
+      keyValue = makeKey(settings.key_prefix || "KF");
+      const insert = {
+        owner_account_id: accountId, project_id: project.id, key: keyValue,
+        discord_id: target.id, label: "Whitelist: " + target.username, hwid_locked: true,
+      };
+      const { error } = await supabase.from("keys").insert(insert);
+      if (error) return interaction.editReply({ content: "Error creating key: " + error.message });
+    }
+
+    // Grant buyer role if configured
+    let roleGranted = false;
+    if (interaction.guildId) {
+      const { data: br } = await supabase.from("discord_buyer_roles")
+        .select("role_id").eq("project_id", project.id).eq("guild_id", interaction.guildId).maybeSingle();
+      if (br) {
+        try {
+          const member = await interaction.guild.members.fetch(target.id);
+          await member.roles.add(br.role_id);
+          roleGranted = true;
+        } catch (e) { /* silent */ }
+      }
+    }
+
+    interaction.editReply({
+      content: "Whitelisted " + target.username + " for **" + project.name + "**." +
+        (roleGranted ? " Buyer role granted." : "") +
+        "\n\nKey: ```" + keyValue + "```",
+    });
+  }
+
+  // ============================================================
+  // /project group
+  // ============================================================
+  async function handleProjectGroup(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+
+    if (sub === "create") {
+      const name = interaction.options.getString("name", true).trim();
+      const note = interaction.options.getString("note") || "";
+      const { data, error } = await supabase.from("projects")
+        .insert({ owner_account_id: accountId, name, note, slug: makeSlug(name) })
+        .select().single();
+      if (error) return interaction.editReply({ content: "Error: " + error.message });
+      return interaction.editReply({ content: "Created project **" + data.name + "** (slug: `" + data.slug + "`)" });
+    }
+    if (sub === "delete") {
+      const slug = interaction.options.getString("slug", true).trim();
+      const { data } = await supabase.from("projects").select("id, name").eq("slug", slug).eq("owner_account_id", accountId).maybeSingle();
+      if (!data) return interaction.editReply({ content: "Project not found." });
+      await supabase.from("projects").delete().eq("id", data.id);
+      return interaction.editReply({ content: "Deleted project " + data.name });
+    }
+    if (sub === "list") {
+      const { data } = await supabase.from("projects").select("name, slug, status, whitelist_only")
+        .eq("owner_account_id", accountId).order("created_at", { ascending: false });
+      if (!data || data.length === 0) return interaction.editReply({ content: "No projects yet." });
+      const lines = data.map((p) => "- **" + p.name + "** `" + p.slug + "` (" + p.status + (p.whitelist_only ? ", whitelist" : "") + ")").join("\n");
+      return interaction.editReply({ content: "**Projects:**\n" + lines });
+    }
+    if (sub === "select") {
+      const slug = interaction.options.getString("slug", true).trim();
+      const { data } = await supabase.from("projects").select("id, name").eq("slug", slug).eq("owner_account_id", accountId).maybeSingle();
+      if (!data) return interaction.editReply({ content: "Project not found." });
+      await supabase.from("discord_user_context").upsert({
+        discord_id: interaction.user.id, active_project_id: data.id, updated_at: new Date().toISOString(),
+      }, { onConflict: "discord_id" });
+      return interaction.editReply({ content: "Active project set to **" + data.name + "**" });
+    }
+  }
+
+  // ============================================================
+  // /buyerrole group
+  // ============================================================
+  async function handleBuyerRoleGroup(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+    if (!interaction.guildId) return interaction.editReply({ content: "Must be run in a server." });
+
+    if (sub === "set") {
+      const role = interaction.options.getRole("role", true);
+      const slug = interaction.options.getString("project");
+      const project = await getActiveProject(interaction.user.id, accountId, slug);
+      if (!project) return interaction.editReply({ content: "No project selected." });
+      await supabase.from("discord_buyer_roles").delete()
+        .eq("project_id", project.id).eq("guild_id", interaction.guildId);
+      const { error } = await supabase.from("discord_buyer_roles").insert({
+        account_id: accountId, project_id: project.id, guild_id: interaction.guildId, role_id: role.id,
+      });
+      if (error) return interaction.editReply({ content: "Error: " + error.message });
+      return interaction.editReply({ content: "Buyer role for **" + project.name + "** set to " + role.name });
+    }
+    if (sub === "clear") {
+      const slug = interaction.options.getString("project");
+      const project = await getActiveProject(interaction.user.id, accountId, slug);
+      if (!project) return interaction.editReply({ content: "No project selected." });
+      await supabase.from("discord_buyer_roles").delete()
+        .eq("project_id", project.id).eq("guild_id", interaction.guildId);
+      return interaction.editReply({ content: "Buyer role cleared for " + project.name });
+    }
+    if (sub === "list") {
+      const { data } = await supabase.from("discord_buyer_roles")
+        .select("role_id, projects(name, slug)")
+        .eq("account_id", accountId).eq("guild_id", interaction.guildId);
+      if (!data || data.length === 0) return interaction.editReply({ content: "No buyer roles set." });
+      const lines = data.map((r) => "- **" + (r.projects?.name || "?") + "** -> <@&" + r.role_id + ">").join("\n");
+      return interaction.editReply({ content: "**Buyer roles:**\n" + lines });
+    }
+  }
+
+  // ============================================================
+  // /setscript
+  // ============================================================
+  async function handleSetScript(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+    const scriptSlug = interaction.options.getString("script_id", true).trim();
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, project_id, projects!inner(owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
+    if (!script || script.projects.owner_account_id !== accountId) {
+      return interaction.editReply({ content: "Script not found or not yours." });
+    }
+    await supabase.from("discord_user_context").upsert({
+      discord_id: interaction.user.id,
+      active_project_id: script.project_id,
+      active_script_id: script.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "discord_id" });
+    interaction.editReply({ content: "Active script set to **" + script.name + "**" });
   }
 
   await client.login(DISCORD_BOT_TOKEN);
