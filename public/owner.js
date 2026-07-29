@@ -1,6 +1,5 @@
-// owner.js
+// owner.js â€” with visible error messages inside the modal
 // Owner key admin. Talks to the backend using an owner token.
-// The owner token is entered once and kept in sessionStorage for this tab.
 
 const API_BASE = "";
 const TOKEN_KEY = "kf_owner_token";
@@ -26,6 +25,30 @@ const els = {
 };
 
 let keys = [];
+let modalStatus = null;
+
+function ensureModalStatus() {
+  if (modalStatus) return modalStatus;
+  const body = els.modal.querySelector(".modal-body");
+  modalStatus = document.createElement("p");
+  modalStatus.style.cssText = "margin:0;padding:10px 12px;border-radius:10px;font-size:13px;display:none;";
+  body.appendChild(modalStatus);
+  return modalStatus;
+}
+
+function showModalError(text) {
+  const s = ensureModalStatus();
+  s.textContent = text;
+  s.style.background = "#2a1416";
+  s.style.color = "#fca5a5";
+  s.style.border = "1px solid #4a1e22";
+  s.style.display = "block";
+}
+
+function hideModalError() {
+  const s = ensureModalStatus();
+  s.style.display = "none";
+}
 
 function getToken() {
   let token = sessionStorage.getItem(TOKEN_KEY);
@@ -47,7 +70,7 @@ async function api(pathName, options) {
   const config = options || {};
   config.headers = Object.assign(
     { "Content-Type": "application/json", "x-owner-token": token || "" },
-    config.headers || {},
+    config.headers || {}
   );
 
   const response = await fetch(API_BASE + pathName, config);
@@ -57,18 +80,20 @@ async function api(pathName, options) {
     throw new Error("Unauthorized. Wrong owner token.");
   }
 
-  return response.json();
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error("Server returned: " + text.slice(0, 120));
+  }
 }
 
 function formatDate(value) {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
   const d = new Date(value);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return year + "-" + month + "-" + day;
+  return d.getFullYear() + "-" +
+    String(d.getMonth() + 1).padStart(2, "0") + "-" +
+    String(d.getDate()).padStart(2, "0");
 }
 
 async function fetchKeys() {
@@ -77,6 +102,8 @@ async function fetchKeys() {
     if (result.ok) {
       keys = result.keys || [];
       render();
+    } else {
+      window.alert(result.error || "Could not load keys");
     }
   } catch (error) {
     window.alert(error.message);
@@ -85,17 +112,13 @@ async function fetchKeys() {
 
 function render() {
   const term = els.search.value.trim().toLowerCase();
-
   const filtered = keys.filter(function (item) {
-    if (!term) {
-      return true;
-    }
+    if (!term) return true;
     const label = (item.label || "").toLowerCase();
     return item.key.toLowerCase().includes(term) || label.includes(term);
   });
 
   els.body.innerHTML = "";
-
   filtered.forEach(function (item) {
     const tr = document.createElement("tr");
 
@@ -164,15 +187,12 @@ function render() {
   const hasRows = filtered.length > 0;
   els.table.style.display = hasRows ? "table" : "none";
   els.emptyState.style.display = hasRows ? "none" : "block";
-
   updateStats();
 }
 
 function updateStats() {
   const total = keys.length;
-  const revoked = keys.filter(function (k) {
-    return k.revoked;
-  }).length;
+  const revoked = keys.filter(function (k) { return k.revoked; }).length;
   els.statTotal.textContent = String(total);
   els.statActive.textContent = String(total - revoked);
   els.statRevoked.textContent = String(revoked);
@@ -183,14 +203,10 @@ async function copyKey(value, button) {
     await navigator.clipboard.writeText(value);
     const original = button.textContent;
     button.textContent = "Copied";
-    setTimeout(function () {
-      button.textContent = original;
-    }, 1200);
+    setTimeout(function () { button.textContent = original; }, 1200);
   } catch (error) {
     button.textContent = "Failed";
-    setTimeout(function () {
-      button.textContent = "Copy";
-    }, 1200);
+    setTimeout(function () { button.textContent = "Copy"; }, 1200);
   }
 }
 
@@ -200,9 +216,8 @@ async function updateKey(id, revoked) {
       method: "PATCH",
       body: JSON.stringify({ revoked: revoked }),
     });
-    if (result.ok) {
-      fetchKeys();
-    }
+    if (result.ok) fetchKeys();
+    else window.alert(result.error || "Could not update key");
   } catch (error) {
     window.alert(error.message);
   }
@@ -211,15 +226,19 @@ async function updateKey(id, revoked) {
 async function deleteKey(id) {
   try {
     const result = await api("/api/keys/" + id, { method: "DELETE" });
-    if (result.ok) {
-      fetchKeys();
-    }
+    if (result.ok) fetchKeys();
+    else window.alert(result.error || "Could not delete key");
   } catch (error) {
     window.alert(error.message);
   }
 }
 
 async function createKey() {
+  hideModalError();
+  els.confirmGenerate.disabled = true;
+  const originalText = els.confirmGenerate.textContent;
+  els.confirmGenerate.textContent = "Creating...";
+
   try {
     const result = await api("/api/keys", {
       method: "POST",
@@ -228,24 +247,28 @@ async function createKey() {
         prefix: els.prefixInput.value.trim(),
       }),
     });
+
     if (result.ok) {
       closeModal();
       fetchKeys();
+    } else {
+      showModalError(result.error || "Could not create key");
     }
   } catch (error) {
-    window.alert(error.message);
+    showModalError(error.message);
+  } finally {
+    els.confirmGenerate.disabled = false;
+    els.confirmGenerate.textContent = originalText;
   }
 }
 
-/* Modal */
 function openModal() {
+  hideModalError();
   els.modal.classList.add("is-open");
   els.modal.setAttribute("aria-hidden", "false");
   els.labelInput.value = "";
   els.prefixInput.value = "KF";
-  setTimeout(function () {
-    els.labelInput.focus();
-  }, 50);
+  setTimeout(function () { els.labelInput.focus(); }, 50);
 }
 
 function closeModal() {
@@ -253,7 +276,6 @@ function closeModal() {
   els.modal.setAttribute("aria-hidden", "true");
 }
 
-/* Events */
 els.openGenerate.addEventListener("click", openModal);
 els.closeModal.addEventListener("click", closeModal);
 els.cancelModal.addEventListener("click", closeModal);
@@ -261,15 +283,11 @@ els.confirmGenerate.addEventListener("click", createKey);
 els.search.addEventListener("input", render);
 
 els.modal.addEventListener("click", function (event) {
-  if (event.target.getAttribute("data-close") === "true") {
-    closeModal();
-  }
+  if (event.target.getAttribute("data-close") === "true") closeModal();
 });
 
 document.addEventListener("keydown", function (event) {
-  if (event.key === "Escape") {
-    closeModal();
-  }
+  if (event.key === "Escape") closeModal();
 });
 
 if (els.menuToggle && els.sidebar) {
