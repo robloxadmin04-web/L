@@ -1,305 +1,251 @@
-// owner.js â€” with visible error messages inside the modal
-// Owner key admin. Talks to the backend using an owner token.
+// owner.js â€” Solaries Accounts admin (Phase 4b)
+// Owner-only. Uses /api/accounts endpoints from server.js.
 
-const API_BASE = "";
-const TOKEN_KEY = "kf_owner_token";
+const el = {
+  total: document.querySelector('[data-stat="total"]'),
+  free: document.querySelector('[data-stat="free"]'),
+  creator: document.querySelector('[data-stat="creator"]'),
+  scale: document.querySelector('[data-stat="scale"]'),
 
-const els = {
-  statTotal: document.getElementById("statTotal"),
-  statActive: document.getElementById("statActive"),
-  statRevoked: document.getElementById("statRevoked"),
-  body: document.getElementById("keysBody"),
-  emptyState: document.getElementById("emptyState"),
-  table: document.getElementById("keysTable"),
+  table: document.getElementById("acctTable"),
+  body: document.getElementById("acctBody"),
+  empty: document.getElementById("acctEmpty"),
   search: document.getElementById("searchInput"),
-  openGenerate: document.getElementById("openGenerate"),
-  modal: document.getElementById("generateModal"),
-  closeModal: document.getElementById("closeModal"),
-  cancelModal: document.getElementById("cancelModal"),
-  confirmGenerate: document.getElementById("confirmGenerate"),
-  labelInput: document.getElementById("labelInput"),
-  prefixInput: document.getElementById("prefixInput"),
-  menuToggle: document.getElementById("menuToggle"),
-  sidebar: document.getElementById("sidebar"),
-  themeToggle: document.getElementById("themeToggle"),
+  tabs: document.querySelectorAll("#filterTabs .tab-btn"),
+  notOwner: document.getElementById("notOwnerCard"),
+
+  openCreate: document.getElementById("openCreate"),
+  createModal: document.getElementById("createModal"),
+  closeCreate: document.getElementById("closeCreate"),
+  cancelCreate: document.getElementById("cancelCreate"),
+  confirmCreate: document.getElementById("confirmCreate"),
+  aName: document.getElementById("aName"),
+  aPlan: document.getElementById("aPlan"),
+  createErr: document.getElementById("createErr"),
+
+  newKeyModal: document.getElementById("newKeyModal"),
+  newKeyName: document.getElementById("newKeyName"),
+  newKeyCode: document.getElementById("newKeyCode"),
+  closeNewKey: document.getElementById("closeNewKey"),
+  doneNewKey: document.getElementById("doneNewKey"),
+  copyNewKey: document.getElementById("copyNewKey"),
 };
 
-let keys = [];
-let modalStatus = null;
+let accounts = [];
+let filter = "all";
 
-function ensureModalStatus() {
-  if (modalStatus) return modalStatus;
-  const body = els.modal.querySelector(".modal-body");
-  modalStatus = document.createElement("p");
-  modalStatus.style.cssText = "margin:0;padding:10px 12px;border-radius:10px;font-size:13px;display:none;";
-  body.appendChild(modalStatus);
-  return modalStatus;
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
 }
 
-function showModalError(text) {
-  const s = ensureModalStatus();
-  s.textContent = text;
-  s.style.background = "#2a1416";
-  s.style.color = "#fca5a5";
-  s.style.border = "1px solid #4a1e22";
-  s.style.display = "block";
+function formatDate(v) {
+  if (!v) return "â€”";
+  const d = new Date(v);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
-function hideModalError() {
-  const s = ensureModalStatus();
-  s.style.display = "none";
+function timeAgo(v) {
+  if (!v) return "Never";
+  const then = new Date(v).getTime();
+  const diff = Math.max(0, Date.now() - then);
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) return sec + "s ago";
+  const min = Math.round(sec / 60);
+  if (min < 60) return min + "m ago";
+  const hr = Math.round(min / 60);
+  if (hr < 24) return hr + "h ago";
+  const day = Math.round(hr / 24);
+  return day + "d ago";
 }
 
-function getToken() {
-  let token = sessionStorage.getItem(TOKEN_KEY);
-  if (!token) {
-    token = window.prompt("Enter owner token");
-    if (token) {
-      sessionStorage.setItem(TOKEN_KEY, token.trim());
-    }
-  }
-  return sessionStorage.getItem(TOKEN_KEY);
-}
-
-function clearToken() {
-  sessionStorage.removeItem(TOKEN_KEY);
-}
-
-async function api(pathName, options) {
-  const token = getToken();
-  const config = options || {};
-  config.headers = Object.assign(
-    { "Content-Type": "application/json", "x-owner-token": token || "" },
-    config.headers || {}
-  );
-
-  const response = await fetch(API_BASE + pathName, config);
-
-  if (response.status === 401) {
-    clearToken();
-    throw new Error("Unauthorized. Wrong owner token.");
-  }
-
-  const text = await response.text();
+async function loadAccounts() {
   try {
-    return JSON.parse(text);
+    const r = await window.SL.api("/api/accounts");
+    if (!r.ok) {
+      if (r.error === "Owner only") {
+        el.notOwner.style.display = "block";
+        document.querySelector(".card").style.display = "none";
+        document.querySelector(".stats-grid").style.display = "none";
+        el.openCreate.style.display = "none";
+      }
+      throw new Error(r.error || "Could not load accounts");
+    }
+    accounts = r.accounts || [];
+    render();
   } catch (e) {
-    throw new Error("Server returned: " + text.slice(0, 120));
-  }
-}
-
-function formatDate(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  return d.getFullYear() + "-" +
-    String(d.getMonth() + 1).padStart(2, "0") + "-" +
-    String(d.getDate()).padStart(2, "0");
-}
-
-async function fetchKeys() {
-  try {
-    const result = await api("/api/keys", { method: "GET" });
-    if (result.ok) {
-      keys = result.keys || [];
-      render();
-    } else {
-      window.alert(result.error || "Could not load keys");
-    }
-  } catch (error) {
-    window.alert(error.message);
+    window.SL.toast(e.message, "error");
   }
 }
 
 function render() {
-  const term = els.search.value.trim().toLowerCase();
-  const filtered = keys.filter(function (item) {
-    if (!term) return true;
-    const label = (item.label || "").toLowerCase();
-    return item.key.toLowerCase().includes(term) || label.includes(term);
-  });
+  const term = el.search.value.trim().toLowerCase();
 
-  els.body.innerHTML = "";
-  filtered.forEach(function (item) {
+  let list = accounts.slice();
+
+  if (filter !== "all") list = list.filter(function (a) { return a.plan === filter; });
+
+  if (term) {
+    list = list.filter(function (a) {
+      return (a.name || "").toLowerCase().includes(term) || a.api_key.toLowerCase().includes(term);
+    });
+  }
+
+  // Stats
+  el.total.textContent = accounts.length;
+  el.free.textContent = accounts.filter(function (a) { return a.plan === "free"; }).length;
+  el.creator.textContent = accounts.filter(function (a) { return a.plan === "creator"; }).length;
+  el.scale.textContent = accounts.filter(function (a) { return a.plan === "scale"; }).length;
+
+  // Tab counts
+  document.querySelector('[data-count="all"]').textContent = accounts.length;
+  document.querySelector('[data-count="free"]').textContent = accounts.filter(function (a) { return a.plan === "free"; }).length;
+  document.querySelector('[data-count="creator"]').textContent = accounts.filter(function (a) { return a.plan === "creator"; }).length;
+  document.querySelector('[data-count="scale"]').textContent = accounts.filter(function (a) { return a.plan === "scale"; }).length;
+
+  el.body.innerHTML = "";
+  if (list.length === 0) {
+    el.table.style.display = "none";
+    if (accounts.length === 0) {
+      el.empty.style.display = "block";
+    } else {
+      el.empty.style.display = "none";
+      const p = document.createElement("p");
+      p.style.cssText = "text-align:center;color:var(--text-soft);padding:32px;";
+      p.textContent = "No accounts match your filter.";
+      el.body.parentNode.appendChild(p);
+    }
+    return;
+  }
+  el.table.style.display = "";
+  el.empty.style.display = "none";
+
+  list.forEach(function (a) {
     const tr = document.createElement("tr");
+    const planClass = a.role === "owner" ? "is-owner" : ("is-" + a.plan);
+    const planText = a.role === "owner" ? "OWNER" : a.plan.toUpperCase();
+    const isSelf = window.SL.account && window.SL.account.account_id === a.id;
 
-    const keyTd = document.createElement("td");
-    const keySpan = document.createElement("span");
-    keySpan.className = "key-code";
-    keySpan.textContent = item.key;
-    keyTd.appendChild(keySpan);
+    tr.innerHTML =
+      '<td><div class="cell-name">' + escapeHtml(a.name) + (isSelf ? ' <span style="color:var(--text-soft);font-weight:400;font-size:11px">(you)</span>' : '') + '</div></td>' +
+      '<td><span class="api-code">' + escapeHtml(a.api_key) + '</span></td>' +
+      '<td><span class="plan-pill ' + planClass + '">' + planText + '</span></td>' +
+      '<td style="color:var(--text-soft)">' + timeAgo(a.last_login) + '</td>' +
+      '<td style="color:var(--text-soft)">' + formatDate(a.created_at) + '</td>' +
+      '<td>' +
+        '<div class="row-actions">' +
+          '<button class="mini-btn" data-copy>Copy</button>' +
+          (a.role === "owner" || isSelf ? '' : '<button class="mini-btn is-danger" data-del>Delete</button>') +
+        '</div>' +
+      '</td>';
 
-    const labelTd = document.createElement("td");
-    labelTd.textContent = item.label || "No label";
-
-    const statusTd = document.createElement("td");
-    const pill = document.createElement("span");
-    pill.className = "status-pill " + (item.revoked ? "is-revoked" : "is-live");
-    pill.textContent = item.revoked ? "Revoked" : "Active";
-    statusTd.appendChild(pill);
-
-    const dateTd = document.createElement("td");
-    dateTd.textContent = formatDate(item.created_at);
-
-    const actionTd = document.createElement("td");
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
-
-    const copyBtn = document.createElement("button");
-    copyBtn.className = "mini-btn";
-    copyBtn.type = "button";
-    copyBtn.textContent = "Copy";
-    copyBtn.addEventListener("click", function () {
-      copyKey(item.key, copyBtn);
-    });
-
-    const toggleBtn = document.createElement("button");
-    toggleBtn.className = "mini-btn is-danger";
-    toggleBtn.type = "button";
-    toggleBtn.textContent = item.revoked ? "Restore" : "Revoke";
-    toggleBtn.addEventListener("click", function () {
-      updateKey(item.id, !item.revoked);
-    });
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.className = "mini-btn is-danger";
-    deleteBtn.type = "button";
-    deleteBtn.textContent = "Delete";
-    deleteBtn.addEventListener("click", function () {
-      if (window.confirm("Delete this key permanently?")) {
-        deleteKey(item.id);
+    tr.querySelector("[data-copy]").addEventListener("click", async function (e) {
+      try {
+        await navigator.clipboard.writeText(a.api_key);
+        e.target.textContent = "Copied";
+        setTimeout(function () { e.target.textContent = "Copy"; }, 1200);
+      } catch (err) {
+        window.SL.toast("Copy failed", "error");
       }
     });
 
-    actions.appendChild(copyBtn);
-    actions.appendChild(toggleBtn);
-    actions.appendChild(deleteBtn);
-    actionTd.appendChild(actions);
-
-    tr.appendChild(keyTd);
-    tr.appendChild(labelTd);
-    tr.appendChild(statusTd);
-    tr.appendChild(dateTd);
-    tr.appendChild(actionTd);
-
-    els.body.appendChild(tr);
-  });
-
-  const hasRows = filtered.length > 0;
-  els.table.style.display = hasRows ? "table" : "none";
-  els.emptyState.style.display = hasRows ? "none" : "block";
-  updateStats();
-}
-
-function updateStats() {
-  const total = keys.length;
-  const revoked = keys.filter(function (k) { return k.revoked; }).length;
-  els.statTotal.textContent = String(total);
-  els.statActive.textContent = String(total - revoked);
-  els.statRevoked.textContent = String(revoked);
-}
-
-async function copyKey(value, button) {
-  try {
-    await navigator.clipboard.writeText(value);
-    const original = button.textContent;
-    button.textContent = "Copied";
-    setTimeout(function () { button.textContent = original; }, 1200);
-  } catch (error) {
-    button.textContent = "Failed";
-    setTimeout(function () { button.textContent = "Copy"; }, 1200);
-  }
-}
-
-async function updateKey(id, revoked) {
-  try {
-    const result = await api("/api/keys/" + id, {
-      method: "PATCH",
-      body: JSON.stringify({ revoked: revoked }),
-    });
-    if (result.ok) fetchKeys();
-    else window.alert(result.error || "Could not update key");
-  } catch (error) {
-    window.alert(error.message);
-  }
-}
-
-async function deleteKey(id) {
-  try {
-    const result = await api("/api/keys/" + id, { method: "DELETE" });
-    if (result.ok) fetchKeys();
-    else window.alert(result.error || "Could not delete key");
-  } catch (error) {
-    window.alert(error.message);
-  }
-}
-
-async function createKey() {
-  hideModalError();
-  els.confirmGenerate.disabled = true;
-  const originalText = els.confirmGenerate.textContent;
-  els.confirmGenerate.textContent = "Creating...";
-
-  try {
-    const result = await api("/api/keys", {
-      method: "POST",
-      body: JSON.stringify({
-        label: els.labelInput.value.trim(),
-        prefix: els.prefixInput.value.trim(),
-      }),
-    });
-
-    if (result.ok) {
-      closeModal();
-      fetchKeys();
-    } else {
-      showModalError(result.error || "Could not create key");
+    const delBtn = tr.querySelector("[data-del]");
+    if (delBtn) {
+      delBtn.addEventListener("click", async function () {
+        if (!window.confirm("Delete account '" + a.name + "'? This removes all their projects, scripts, and keys.")) return;
+        try {
+          const r = await window.SL.api("/api/accounts/" + a.id, { method: "DELETE" });
+          if (r.ok) { window.SL.toast("Account deleted", "ok"); loadAccounts(); }
+          else window.SL.toast(r.error || "Could not delete", "error");
+        } catch (e) { window.SL.toast(e.message, "error"); }
+      });
     }
-  } catch (error) {
-    showModalError(error.message);
-  } finally {
-    els.confirmGenerate.disabled = false;
-    els.confirmGenerate.textContent = originalText;
+
+    el.body.appendChild(tr);
+  });
+}
+
+// Filters
+el.tabs.forEach(function (t) {
+  t.addEventListener("click", function () {
+    el.tabs.forEach(function (x) { x.classList.remove("is-active"); });
+    t.classList.add("is-active");
+    filter = t.getAttribute("data-filter");
+    render();
+  });
+});
+el.search.addEventListener("input", render);
+
+// Create modal
+function openCreate() {
+  el.aName.value = "";
+  el.aPlan.value = "free";
+  el.createErr.classList.remove("is-visible");
+  el.createModal.classList.add("is-open");
+  setTimeout(function () { el.aName.focus(); }, 50);
+}
+function closeCreate() { el.createModal.classList.remove("is-open"); }
+
+el.openCreate.addEventListener("click", openCreate);
+el.closeCreate.addEventListener("click", closeCreate);
+el.cancelCreate.addEventListener("click", closeCreate);
+el.createModal.addEventListener("click", function (e) {
+  if (e.target.getAttribute("data-close") === "true") closeCreate();
+});
+
+el.confirmCreate.addEventListener("click", async function () {
+  const name = el.aName.value.trim();
+  if (!name) {
+    el.createErr.textContent = "Name is required.";
+    el.createErr.classList.add("is-visible");
+    return;
   }
-}
-
-function openModal() {
-  hideModalError();
-  els.modal.classList.add("is-open");
-  els.modal.setAttribute("aria-hidden", "false");
-  els.labelInput.value = "";
-  els.prefixInput.value = "KF";
-  setTimeout(function () { els.labelInput.focus(); }, 50);
-}
-
-function closeModal() {
-  els.modal.classList.remove("is-open");
-  els.modal.setAttribute("aria-hidden", "true");
-}
-
-els.openGenerate.addEventListener("click", openModal);
-els.closeModal.addEventListener("click", closeModal);
-els.cancelModal.addEventListener("click", closeModal);
-els.confirmGenerate.addEventListener("click", createKey);
-els.search.addEventListener("input", render);
-
-els.modal.addEventListener("click", function (event) {
-  if (event.target.getAttribute("data-close") === "true") closeModal();
+  el.confirmCreate.disabled = true;
+  el.confirmCreate.textContent = "Issuing...";
+  try {
+    const r = await window.SL.api("/api/accounts", {
+      method: "POST",
+      body: JSON.stringify({ name: name, plan: el.aPlan.value }),
+    });
+    if (r.ok) {
+      closeCreate();
+      showNewKey(r.account.name, r.account.api_key);
+      loadAccounts();
+    } else {
+      el.createErr.textContent = r.error || "Could not create account.";
+      el.createErr.classList.add("is-visible");
+    }
+  } catch (e) {
+    el.createErr.textContent = e.message;
+    el.createErr.classList.add("is-visible");
+  } finally {
+    el.confirmCreate.disabled = false;
+    el.confirmCreate.textContent = "Issue key";
+  }
 });
 
-document.addEventListener("keydown", function (event) {
-  if (event.key === "Escape") closeModal();
+// New key modal
+function showNewKey(name, key) {
+  el.newKeyName.textContent = "For: " + name;
+  el.newKeyCode.textContent = key;
+  el.newKeyModal.classList.add("is-open");
+}
+function closeNewKey() { el.newKeyModal.classList.remove("is-open"); }
+el.closeNewKey.addEventListener("click", closeNewKey);
+el.doneNewKey.addEventListener("click", closeNewKey);
+el.newKeyModal.addEventListener("click", function (e) {
+  if (e.target.getAttribute("data-close") === "true") closeNewKey();
+});
+el.copyNewKey.addEventListener("click", async function () {
+  try {
+    await navigator.clipboard.writeText(el.newKeyCode.textContent);
+    window.SL.toast("Key copied", "ok");
+  } catch (e) { window.SL.toast("Copy failed", "error"); }
 });
 
-if (els.menuToggle && els.sidebar) {
-  els.menuToggle.addEventListener("click", function () {
-    els.sidebar.classList.toggle("is-open");
-  });
-}
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") { closeCreate(); closeNewKey(); }
+});
 
-if (els.themeToggle) {
-  els.themeToggle.addEventListener("click", function () {
-    document.body.classList.toggle("theme-light");
-  });
-}
-
-fetchKeys();
+loadAccounts();
