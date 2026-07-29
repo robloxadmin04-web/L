@@ -117,7 +117,7 @@ function render() {
       row.classList.toggle("is-open");
     });
     row.querySelector("[data-open]").addEventListener("click", function () {
-      window.SL.toast("Project detail page is coming in Phase 2", "ok");
+      window.location.href = "project-view.html?id=" + p.id;
     });
     row.querySelector("[data-delete]").addEventListener("click", async function () {
       if (!window.confirm("Delete project '" + p.name + "'? This removes all scripts and keys inside it.")) return;
@@ -128,6 +128,10 @@ function render() {
       } catch (e) { window.SL.toast(e.message, "error"); }
     });
 
+    row.querySelector(".project-row-head").addEventListener("click", function (e) {
+      if (e.target.closest("[data-delete]") || e.target.closest("[data-open]") || e.target.closest(".project-caret")) return;
+      window.location.href = "project-view.html?id=" + p.id;
+    });
     els.list.appendChild(row);
   });
 }
