@@ -1,4 +1,4 @@
-// server.js - Solaries Phase 6 (Discord Bot D4 - admin + user commands)
+// server.js - Solaries Phase 6 (Discord Bot D5 - updated panel with 5 buttons)
 // Full command list: /login /logout /whoami /panel /managerrole /stats /settings
 // /key create|stock|delete|extend|revoke|info|list
 // /user info|blacklist|unblacklist|ban|unban  /hwid reset  /whitelist
@@ -784,7 +784,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D4) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D5) running on port " + PORT);
 });
 
 // ============================================================
@@ -800,7 +800,7 @@ if (!DISCORD_BOT_TOKEN) {
 }
 
 async function startDiscordBot() {
-  const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+  const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 
   const client = new Client({
     intents: [
@@ -1087,14 +1087,23 @@ async function startDiscordBot() {
         else if (cmd === "help") await handleHelp(interaction);
         else if (cmd === "status") await handleStatus(interaction);
       } else if (interaction.isButton()) {
-        // Custom IDs: "sol_getkey_<scriptId>", "sol_getscript_<scriptId>", "sol_resethwid_<scriptId>"
+        // Custom IDs: "sol_<action>_<scriptId>"
         const parts = interaction.customId.split("_");
         if (parts[0] === "sol") {
           const action = parts[1];
           const scriptId = parts.slice(2).join("_");
-          if (action === "getkey") await handleGetKey(interaction, scriptId);
+          if (action === "redeem") await handleRedeemButton(interaction, scriptId);
+          else if (action === "getrole") await handleGetRoleButton(interaction, scriptId);
           else if (action === "getscript") await handleGetScript(interaction, scriptId);
           else if (action === "resethwid") await handleResetHwid(interaction, scriptId);
+          else if (action === "session") await handleSessionStatus(interaction, scriptId);
+          else if (action === "getkey") await handleGetKey(interaction, scriptId);
+        }
+      } else if (interaction.isModalSubmit()) {
+        const parts = interaction.customId.split("_");
+        if (parts[0] === "sol" && parts[1] === "redeemmodal") {
+          const scriptId = parts.slice(2).join("_");
+          await handleRedeemSubmit(interaction, scriptId);
         }
       }
     } catch (e) {
@@ -1228,33 +1237,44 @@ async function startDiscordBot() {
       .setColor(0x8b5cf6)
       .setTitle(customTitle || script.name)
       .setDescription(
-        (script.description || "Redeem your key or get your loader script from this panel.") +
-        "\n\nHWID resets are limited to once every 15 hours." +
+        (script.description || "Redeem your key, claim your buyer role, or get your script loader from this panel.") +
+        "\n\nHWID resets are limited to once every 15 hours - First reset becomes available 15 hours after redeeming your key." +
         "\n\nWarning: Sharing your key or loader script may result in the loss of your key or a permanent ban."
       )
       .setFooter({ text: "Powered by Solaries" });
 
-    // Buttons
-    const row = new ActionRowBuilder().addComponents(
+    // Buttons - row 1 (Redeem Key, Get Role, Get Script)
+    const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId("sol_getkey_" + script.id)
-        .setLabel("Get Key")
+        .setCustomId("sol_redeem_" + script.id)
+        .setLabel("Redeem Key")
         .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("sol_getrole_" + script.id)
+        .setLabel("Get Role")
+        .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId("sol_getscript_" + script.id)
         .setLabel("Get Script")
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(ButtonStyle.Secondary)
+    );
+    // Buttons - row 2 (Reset HWID, Session Status)
+    const row2 = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("sol_resethwid_" + script.id)
         .setLabel("Reset HWID")
-        .setStyle(ButtonStyle.Danger)
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId("sol_session_" + script.id)
+        .setLabel("Session Status")
+        .setStyle(ButtonStyle.Secondary)
     );
 
     // Post the panel message publicly
     const channel = interaction.channel;
     let posted;
     try {
-      posted = await channel.send({ embeds: [embed], components: [row] });
+      posted = await channel.send({ embeds: [embed], components: [row1, row2] });
     } catch (sendErr) {
       console.error("channel.send failed:", sendErr.code, sendErr.message);
       let hint = sendErr.message || "unknown";
@@ -2272,6 +2292,183 @@ async function startDiscordBot() {
         { name: "Bot username", value: botStatus.username || "-", inline: true },
         { name: "Servers", value: String(botStatus.guild_count || 0), inline: true },
         { name: "Started", value: botStatus.started_at || "-", inline: true },
+      );
+    interaction.editReply({ embeds: [embed] });
+  }
+
+
+  // ============================================================
+  // BUTTON: Redeem Key - opens modal for user to paste key
+  // ============================================================
+  async function handleRedeemButton(interaction, scriptId) {
+    const modal = new ModalBuilder()
+      .setCustomId("sol_redeemmodal_" + scriptId)
+      .setTitle("Redeem Your Key");
+    const input = new TextInputBuilder()
+      .setCustomId("key_value")
+      .setLabel("Enter your key")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setPlaceholder("KF-XXXX-XXXX-XXXX");
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    await interaction.showModal(modal);
+  }
+
+  // ============================================================
+  // MODAL SUBMIT: Redeem Key
+  // ============================================================
+  async function handleRedeemSubmit(interaction, scriptId) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const key = interaction.fields.getTextInputValue("key_value").trim();
+    const discordId = interaction.user.id;
+
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, project_id, projects!inner(owner_account_id)")
+      .eq("id", scriptId).maybeSingle();
+    if (!script) return interaction.editReply({ content: "Script not found." });
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, discord_id, project_id, owner_account_id, expires_at")
+      .eq("key", key).maybeSingle();
+
+    if (!keyRow) return interaction.editReply({ content: "Invalid key. Check spelling and try again." });
+    if (keyRow.revoked) return interaction.editReply({ content: "This key has been revoked." });
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
+      return interaction.editReply({ content: "This key has expired." });
+    }
+
+    // Verify key belongs to this script's project
+    if (keyRow.project_id && keyRow.project_id !== script.project_id) {
+      return interaction.editReply({ content: "This key is not valid for this script." });
+    }
+
+    // Blacklist check
+    const bl = await isBlacklisted(keyRow.owner_account_id, discordId);
+    if (bl && bl.banned) return interaction.editReply({ content: "You are banned from this service." });
+
+    // Already bound?
+    if (keyRow.discord_id && keyRow.discord_id !== discordId) {
+      return interaction.editReply({ content: "This key is already bound to another Discord user." });
+    }
+
+    // Bind if not already
+    if (!keyRow.discord_id) {
+      await supabase.from("keys").update({ discord_id: discordId }).eq("id", keyRow.id);
+    }
+
+    // Try to auto-grant buyer role
+    let roleMsg = "";
+    if (interaction.guildId) {
+      const { data: br } = await supabase.from("discord_buyer_roles")
+        .select("role_id").eq("project_id", script.project_id).eq("guild_id", interaction.guildId).maybeSingle();
+      if (br) {
+        try {
+          const member = await interaction.guild.members.fetch(discordId);
+          await member.roles.add(br.role_id);
+          roleMsg = "\nBuyer role granted.";
+        } catch (e) {}
+      }
+    }
+
+    interaction.editReply({
+      content: "Key redeemed for **" + script.name + "**." + roleMsg + "\nUse the Get Script button to get your loader.",
+    });
+  }
+
+  // ============================================================
+  // BUTTON: Get Role - claim buyer role if key valid
+  // ============================================================
+  async function handleGetRoleButton(interaction, scriptId) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (!interaction.guildId) return interaction.editReply({ content: "This must be used in a server." });
+    const discordId = interaction.user.id;
+
+    const { data: script } = await supabase.from("scripts")
+      .select("project_id, name, projects!inner(owner_account_id)")
+      .eq("id", scriptId).maybeSingle();
+    if (!script) return interaction.editReply({ content: "Script not found." });
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, expires_at").eq("discord_id", discordId)
+      .eq("project_id", script.project_id).maybeSingle();
+    if (!keyRow) {
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("No Active License")
+        .setDescription("Need an active license to get the role. Redeem a key first.");
+      return interaction.editReply({ embeds: [embed] });
+    }
+    if (keyRow.revoked) {
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Revoked")
+        .setDescription("Your key has been revoked.");
+      return interaction.editReply({ embeds: [embed] });
+    }
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Expired")
+        .setDescription("Your key has expired.");
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    const { data: br } = await supabase.from("discord_buyer_roles")
+      .select("role_id").eq("project_id", script.project_id)
+      .eq("guild_id", interaction.guildId).maybeSingle();
+    if (!br) return interaction.editReply({ content: "No buyer role configured for this project on this server." });
+
+    try {
+      const member = await interaction.guild.members.fetch(discordId);
+      await member.roles.add(br.role_id);
+      interaction.editReply({ content: "Buyer role granted for **" + script.name + "**." });
+    } catch (e) {
+      interaction.editReply({ content: "Could not assign role: " + (e.message || "unknown") });
+    }
+  }
+
+  // ============================================================
+  // BUTTON: Session Status - show user's key info
+  // ============================================================
+  async function handleSessionStatus(interaction, scriptId) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, project_id, projects!inner(owner_account_id)")
+      .eq("id", scriptId).maybeSingle();
+    if (!script) return interaction.editReply({ content: "Script not found." });
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("key, revoked, expires_at, hwid, hwid_locked, last_hwid_reset, last_used_at, created_at")
+      .eq("discord_id", discordId).eq("project_id", script.project_id).maybeSingle();
+
+    if (!keyRow) {
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("No Session")
+        .setDescription("You do not have a key for **" + script.name + "**. Click Redeem Key to bind one.");
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    const status = keyRow.revoked ? "REVOKED" :
+      (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now() ? "EXPIRED" : "ACTIVE");
+    const statusColor = status === "ACTIVE" ? 0x22c55e : 0xef4444;
+
+    let cooldownInfo = "Available";
+    if (keyRow.last_hwid_reset) {
+      const elapsed = Date.now() - new Date(keyRow.last_hwid_reset).getTime();
+      const COOLDOWN_MS = 15 * 60 * 60 * 1000;
+      if (elapsed < COOLDOWN_MS) {
+        const remaining = COOLDOWN_MS - elapsed;
+        const hours = Math.floor(remaining / 3600000);
+        const mins = Math.floor((remaining % 3600000) / 60000);
+        cooldownInfo = hours + "h " + mins + "m remaining";
+      }
+    }
+
+    const maskedKey = keyRow.key.slice(0, 6) + "..." + keyRow.key.slice(-4);
+    const embed = new EmbedBuilder().setColor(statusColor).setTitle("Session Status - " + script.name)
+      .addFields(
+        { name: "Status", value: status, inline: true },
+        { name: "Key", value: "`" + maskedKey + "`", inline: true },
+        { name: "HWID Locked", value: keyRow.hwid_locked ? "Yes" : "No", inline: true },
+        { name: "HWID", value: keyRow.hwid ? "Bound" : "Not bound", inline: true },
+        { name: "Reset Cooldown", value: cooldownInfo, inline: true },
+        { name: "Expires", value: keyRow.expires_at ? new Date(keyRow.expires_at).toISOString().slice(0, 10) : "Never", inline: true },
+        { name: "Last used", value: keyRow.last_used_at || "Never", inline: false },
       );
     interaction.editReply({ embeds: [embed] });
   }
