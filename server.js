@@ -781,7 +781,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D2.1) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D2.2) running on port " + PORT);
 });
 
 // ============================================================
@@ -797,7 +797,7 @@ if (!DISCORD_BOT_TOKEN) {
 }
 
 async function startDiscordBot() {
-  const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, MessageFlags } = require("discord.js");
+  const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
   const client = new Client({
     intents: [
