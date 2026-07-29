@@ -1,4 +1,5 @@
-// server.js â€” Solaries multi-tenant backend (Phase 0)
+// server.js â€” Solaries multi-tenant backend (Phase 4)
+// Adds /api/analytics endpoint for the Analytics page.
 // Every request is scoped to the authenticated account.
 
 const express = require("express");
@@ -24,11 +25,10 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================================
-// Session store â€” maps session_token -> account
-// In-memory for now; sessions reset on redeploy.
+// Session store
 // ============================================================
 const sessions = new Map();
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 function createSession(account) {
   const token = crypto.randomBytes(32).toString("hex");
@@ -52,9 +52,6 @@ function getSession(token) {
   return s;
 }
 
-// ============================================================
-// Middleware: require a valid session (any account)
-// ============================================================
 async function requireAuth(req, res, next) {
   const token = req.header("x-session-token");
   const session = token ? getSession(token) : null;
@@ -65,7 +62,6 @@ async function requireAuth(req, res, next) {
   next();
 }
 
-// Middleware: require owner role
 function requireOwner(req, res, next) {
   if (!req.session || req.session.role !== "owner") {
     return res.status(403).json({ ok: false, error: "Owner only" });
@@ -105,7 +101,7 @@ async function getPlanLimits(plan) {
 }
 
 // ============================================================
-// PUBLIC: sign in with API key (index.html)
+// PUBLIC: sign in / signout / me
 // ============================================================
 app.post("/api/signin", async (req, res) => {
   const apiKey = (req.body?.key || "").trim();
@@ -143,8 +139,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// PUBLIC: loader delivery (called by loadstring in Roblox)
-//   GET /v1/load/:script_slug?key=KF-XXXX
+// PUBLIC: loader delivery
 // ============================================================
 app.get("/v1/load/:script_slug", async (req, res) => {
   res.type("text/plain");
@@ -172,7 +167,6 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     if (!keyRow || keyRow.revoked) {
       return res.status(403).send("-- invalid or revoked key");
     }
-    // If the key is tied to a project, it must match this script's project
     if (keyRow.project_id && keyRow.project_id !== script.project_id) {
       return res.status(403).send("-- key not valid for this script");
     }
@@ -197,7 +191,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 });
 
 // ============================================================
-// STATS for signed-in account
+// STATS
 // ============================================================
 app.get("/api/stats", requireAuth, async (req, res) => {
   const accountId = req.session.account_id;
@@ -229,7 +223,146 @@ app.get("/api/stats", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// PROJECTS (scoped to account)
+// ANALYTICS
+// ============================================================
+app.get("/api/analytics", requireAuth, async (req, res) => {
+  const accountId = req.session.account_id;
+  const now = Date.now();
+  const day = 86400000;
+  const since30d = new Date(now - 30 * day).toISOString();
+  const since7d = new Date(now - 7 * day).toISOString();
+  const since24h = new Date(now - day).toISOString();
+
+  try {
+    // Pull last 30 days of load events with project + script info
+    const { data: loads } = await supabase
+      .from("access_log")
+      .select("id, project_id, script_id, key_id, created_at")
+      .eq("owner_account_id", accountId)
+      .eq("event", "load")
+      .gte("created_at", since30d)
+      .order("created_at", { ascending: false })
+      .limit(5000);
+
+    const loadRows = loads || [];
+
+    // Daily buckets for last 30 days
+    const byDay = new Map();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now - i * day);
+      const label = d.toISOString().slice(0, 10);
+      byDay.set(label, 0);
+    }
+    loadRows.forEach((r) => {
+      const label = String(r.created_at).slice(0, 10);
+      if (byDay.has(label)) byDay.set(label, byDay.get(label) + 1);
+    });
+    const series = Array.from(byDay.entries()).map(([date, count]) => ({ date, count }));
+
+    // Loads 7d + 30d totals
+    const loads7d = loadRows.filter((r) => r.created_at >= since7d).length;
+    const loads30d = loadRows.length;
+
+    // Unique keys used in 24h
+    const uniqueKeys24h = new Set(
+      loadRows.filter((r) => r.created_at >= since24h && r.key_id).map((r) => r.key_id)
+    ).size;
+
+    // Top scripts (last 30d)
+    const scriptCounts = new Map();
+    loadRows.forEach((r) => {
+      if (!r.script_id) return;
+      scriptCounts.set(r.script_id, (scriptCounts.get(r.script_id) || 0) + 1);
+    });
+    const topScriptIds = Array.from(scriptCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([id]) => id);
+
+    let topScripts = [];
+    if (topScriptIds.length > 0) {
+      const { data: scriptRows } = await supabase
+        .from("scripts")
+        .select("id, name, slug, project_id, projects!inner(name, owner_account_id)")
+        .in("id", topScriptIds)
+        .eq("projects.owner_account_id", accountId);
+
+      topScripts = (scriptRows || []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        project_name: s.projects?.name || "(deleted)",
+        loads: scriptCounts.get(s.id) || 0,
+      })).sort((a, b) => b.loads - a.loads);
+    }
+
+    // Top project
+    const projectCounts = new Map();
+    loadRows.forEach((r) => {
+      if (!r.project_id) return;
+      projectCounts.set(r.project_id, (projectCounts.get(r.project_id) || 0) + 1);
+    });
+    const topProjectEntry = Array.from(projectCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+    let topProject = null;
+    if (topProjectEntry) {
+      const { data: p } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("id", topProjectEntry[0])
+        .eq("owner_account_id", accountId)
+        .maybeSingle();
+      if (p) topProject = { name: p.name, loads: topProjectEntry[1] };
+    }
+
+    // Recent activity: last 20 events (any type)
+    const { data: recentRaw } = await supabase
+      .from("access_log")
+      .select("id, event, key_id, project_id, script_id, created_at")
+      .eq("owner_account_id", accountId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    const recent = recentRaw || [];
+    // Resolve labels
+    const projIds = [...new Set(recent.map((r) => r.project_id).filter(Boolean))];
+    const scriptIds = [...new Set(recent.map((r) => r.script_id).filter(Boolean))];
+    let projMap = {};
+    let scriptMap = {};
+    if (projIds.length) {
+      const { data } = await supabase.from("projects").select("id, name").in("id", projIds);
+      (data || []).forEach((p) => (projMap[p.id] = p.name));
+    }
+    if (scriptIds.length) {
+      const { data } = await supabase.from("scripts").select("id, name").in("id", scriptIds);
+      (data || []).forEach((s) => (scriptMap[s.id] = s.name));
+    }
+    const activity = recent.map((r) => ({
+      id: r.id,
+      event: r.event,
+      created_at: r.created_at,
+      project_name: r.project_id ? (projMap[r.project_id] || "(deleted)") : null,
+      script_name: r.script_id ? (scriptMap[r.script_id] || "(deleted)") : null,
+    }));
+
+    res.json({
+      ok: true,
+      analytics: {
+        loads_7d: loads7d,
+        loads_30d: loads30d,
+        unique_keys_24h: uniqueKeys24h,
+        top_project: topProject,
+        series,
+        top_scripts: topScripts,
+        activity,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ============================================================
+// PROJECTS
 // ============================================================
 app.get("/api/projects", requireAuth, async (req, res) => {
   const { data, error } = await supabase
@@ -239,7 +372,6 @@ app.get("/api/projects", requireAuth, async (req, res) => {
     .order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
 
-  // Add script + key counts per project
   const withCounts = await Promise.all(
     (data || []).map(async (p) => {
       const [scr, kys] = await Promise.all([
@@ -303,10 +435,9 @@ app.delete("/api/projects/:id", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// SCRIPTS (nested under project, scoped via project ownership)
+// SCRIPTS
 // ============================================================
 app.get("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
-  // Verify project ownership
   const { data: proj } = await supabase
     .from("projects").select("id").eq("id", req.params.pid).eq("owner_account_id", req.session.account_id).maybeSingle();
   if (!proj) return res.status(404).json({ ok: false, error: "Project not found" });
@@ -361,10 +492,9 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
 });
 
 app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
-  // Verify ownership via project join
   const { data: existing } = await supabase
     .from("scripts")
-    .select("id, project_id, projects!inner(owner_account_id)")
+    .select("id, project_id, version, projects!inner(owner_account_id)")
     .eq("id", req.params.id)
     .maybeSingle();
   if (!existing || existing.projects.owner_account_id !== req.session.account_id) {
@@ -402,7 +532,7 @@ app.delete("/api/scripts/:id", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// KEYS (scoped to account)
+// KEYS
 // ============================================================
 app.get("/api/keys", requireAuth, async (req, res) => {
   const { data, error } = await supabase
@@ -454,7 +584,7 @@ app.delete("/api/keys/:id", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// OWNER: manage all accounts (you only)
+// OWNER: accounts
 // ============================================================
 app.get("/api/accounts", requireAuth, requireOwner, async (req, res) => {
   const { data, error } = await supabase
@@ -483,5 +613,5 @@ app.delete("/api/accounts/:id", requireAuth, requireOwner, async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log("Solaries multi-tenant server running on port " + PORT);
+  console.log("Solaries server (Phase 4) running on port " + PORT);
 });
