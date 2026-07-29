@@ -4,171 +4,112 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashboard</title>
-    <link rel="stylesheet" href="dashboard.css" />
-    <link rel="stylesheet" href="owner.css" />
+    <link rel="stylesheet" href="app.css" />
   </head>
   <body>
-    <div class="app" id="app">
+    <div class="app">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-head">
           <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path>
-            </svg>
+            <svg viewBox="0 0 24 24"><path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path></svg>
           </div>
-
           <div class="head-actions">
             <button class="pill-btn" type="button">
               <span class="pill-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M8 12h.01"></path>
-                  <path d="M16 12h.01"></path>
-                  <path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path>
-                </svg>
+                <svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg>
               </span>
               <span>Discord</span>
             </button>
-
-            <button
-              class="icon-square"
-              id="themeToggle"
-              type="button"
-              aria-label="Toggle theme"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="4"></circle>
-                <path
-                  d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
-                ></path>
-              </svg>
+            <button class="icon-square" id="themeToggle" type="button" aria-label="Toggle theme">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
             </button>
           </div>
         </div>
 
         <div class="sidebar-scroll">
-          <nav class="nav-group" aria-label="Workspace">
+          <nav class="nav-group">
             <p class="nav-title">Workspace</p>
-
-            <a
-              class="nav-link is-active"
-              href="#overview"
-              data-section="overview"
-            >
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <rect x="3" y="3" width="8" height="8" rx="1"></rect>
-                  <rect x="13" y="3" width="8" height="5" rx="1"></rect>
-                  <rect x="13" y="10" width="8" height="11" rx="1"></rect>
-                  <rect x="3" y="13" width="8" height="8" rx="1"></rect>
-                </svg>
-              </span>
+            <a class="nav-link is-active" href="dashboard.html">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect></svg></span>
               <span>Overview</span>
             </a>
-
-            <a class="nav-link" href="project.html">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M3 8l9-5 9 5-9 5z"></path>
-                  <path d="M3 8v8l9 5 9-5V8"></path>
-                </svg>
-              </span>
+            <a class="nav-link" href="projects.html">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span>
               <span>Projects</span>
             </a>
-
-            <a class="nav-link" href="project.html">
-              
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="8" cy="14" r="3"></circle>
-                  <path d="M11 14h9"></path>
-                  <path d="M17 11v6"></path>
-                </svg>
-              </span>
+            <a class="nav-link" href="keys.html">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span>
               <span>Keys</span>
             </a>
-
-            <a class="nav-link" href="owner.html">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="12" cy="8" r="4"></circle>
-                  <path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path>
-                </svg>
-              </span>
-              <span>Owner</span>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H4z"></path><path d="M4 20h11"></path><circle cx="12" cy="10.5" r="2.5"></circle></svg></span>
+              <span>Monetization</span>
             </a>
-
-            <a class="nav-link" href="#discord" data-section="discord">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M8 12h.01"></path>
-                  <path d="M16 12h.01"></path>
-                  <path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path>
-                </svg>
-              </span>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span>
               <span>Discord</span>
             </a>
-
-            <a class="nav-link" href="#chat" data-section="chat">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M4 5h16v11H7l-3 3z"></path>
-                </svg>
-              </span>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H7l-3 3z"></path></svg></span>
               <span>Live Chat</span>
             </a>
-
-            <a class="nav-link" href="#settings" data-section="settings">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="3"></circle>
-                  <path d="M12 2v3"></path>
-                  <path d="M12 19v3"></path>
-                  <path d="M2 12h3"></path>
-                  <path d="M19 12h3"></path>
-                  <path d="M5 5l2 2"></path>
-                  <path d="M17 17l2 2"></path>
-                  <path d="M19 5l-2 2"></path>
-                  <path d="M7 17l-2 2"></path>
-                </svg>
-              </span>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path><path d="M5 5l2 2"></path><path d="M17 17l2 2"></path><path d="M19 5l-2 2"></path><path d="M7 17l-2 2"></path></svg></span>
               <span>Settings</span>
             </a>
           </nav>
 
-          <nav class="nav-group" aria-label="Tools">
+          <nav class="nav-group">
             <p class="nav-title">Tools</p>
-
-            <a class="nav-link" href="#analytics" data-section="analytics">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M4 20V10"></path>
-                  <path d="M10 20V4"></path>
-                  <path d="M16 20v-7"></path>
-                  <path d="M22 20H2"></path>
-                </svg>
-              </span>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span>
               <span>Analytics</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span>
+              <span>Delivery</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"></path><path d="M8 3v4M16 3v4"></path></svg></span>
+              <span>Guide</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5-9 5z"></path><path d="M3 8v8l9 5 9-5V8"></path></svg></span>
+              <span>Batches</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M9 8l-4 4 4 4"></path><path d="M15 8l4 4-4 4"></path></svg></span>
+              <span>Obfuscator</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9 10h5a2 2 0 010 4h-4"></path></svg></span>
+              <span>Earn</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"></rect><path d="M3 10h18"></path></svg></span>
+              <span>Billing</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 8h16v12H4z"></path><path d="M4 8l8-5 8 5"></path></svg></span>
+              <span>Redeem</span>
+            </a>
+            <a class="nav-link" href="#soon">
+              <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"></circle><path d="M6 18V6l14 12"></path></svg></span>
+              <span>Webhooks</span>
             </a>
           </nav>
         </div>
 
         <div class="sidebar-foot">
           <div class="user-box">
-            <span class="user-avatar">NE</span>
+            <span class="user-avatar" data-user-avatar>?</span>
             <div class="user-copy">
-              <p class="user-name">neilsunday</p>
-              <p class="user-plan">Owner</p>
+              <p class="user-name" data-user-name>Loading...</p>
+              <p class="user-plan" data-user-plan>Free</p>
             </div>
           </div>
-
-          <a class="signout" href="index.html">
-            <span class="nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M15 4h4v16h-4"></path>
-                <path d="M10 8l-4 4 4 4"></path>
-                <path d="M6 12h10"></path>
-              </svg>
-            </span>
+          <a class="signout" href="#" data-signout>
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4"></path><path d="M10 8l-4 4 4 4"></path><path d="M6 12h10"></path></svg></span>
             <span>Sign out</span>
           </a>
         </div>
@@ -177,142 +118,78 @@
       <main class="main">
         <header class="topbar">
           <div class="topbar-left">
-            <button
-              class="icon-square menu-btn"
-              id="menuToggle"
-              type="button"
-              aria-label="Open menu"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7h16"></path>
-                <path d="M4 12h16"></path>
-                <path d="M4 17h16"></path>
-              </svg>
+            <button class="icon-square menu-btn" id="menuToggle" type="button" aria-label="Open menu">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path></svg>
             </button>
             <h1 class="page-title">Overview</h1>
           </div>
-
-          <button
-            class="primary-btn"
-            type="button"
-            onclick="window.location.href = 'owner.html'"
-          >
-            Manage keys
+          <button class="primary-btn" type="button" onclick="window.location.href='projects.html'">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+            New project
           </button>
         </header>
 
         <section class="stats-grid">
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Total Keys</p>
-              <span class="stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="8" cy="14" r="3"></circle>
-                  <path d="M11 14h9"></path>
-                  <path d="M17 11v6"></path>
-                </svg>
-              </span>
+              <p class="stat-label">Projects</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span>
             </div>
-            <p class="stat-value" data-stat="total">0</p>
-            <p class="stat-meta">All generated keys</p>
+            <p class="stat-value" data-stat="projects">0</p>
+            <p class="stat-meta" data-stat-meta="projects">Owned projects</p>
           </article>
 
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Active Keys</p>
-              <span class="stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"></path>
-                  <path d="M9 12l2 2 4-4"></path>
-                </svg>
-              </span>
+              <p class="stat-label">Scripts</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M9 8l-4 4 4 4"></path><path d="M15 8l4 4-4 4"></path></svg></span>
             </div>
-            <p class="stat-value" data-stat="active">0</p>
-            <p class="stat-meta">Currently usable</p>
+            <p class="stat-value" data-stat="scripts">0</p>
+            <p class="stat-meta" data-stat-meta="scripts">Across all projects</p>
           </article>
 
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Revoked Keys</p>
-              <span class="stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="9"></circle>
-                  <path d="M6 6l12 12"></path>
-                </svg>
-              </span>
+              <p class="stat-label">Keys Issued</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span>
             </div>
-            <p class="stat-value" data-stat="revoked">0</p>
-            <p class="stat-meta">No longer valid</p>
+            <p class="stat-value" data-stat="keys">0</p>
+            <p class="stat-meta" data-stat-meta="keys">Active + revoked</p>
           </article>
 
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Logins 24h</p>
-              <span class="stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M3 12h4l2 6 4-14 2 8h6"></path>
-                </svg>
-              </span>
+              <p class="stat-label">Loads 24h</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span>
             </div>
-            <p class="stat-value" data-stat="logins24h">0</p>
-            <p class="stat-meta">Successful key logins</p>
+            <p class="stat-value" data-stat="loads">0</p>
+            <p class="stat-meta">Script deliveries today</p>
           </article>
         </section>
 
-        <section class="tabs-block">
-          <div class="tabs" role="tablist">
-            <button class="tab is-active" type="button" data-tab="keys">
-              Keys
-            </button>
-            <button class="tab" type="button" data-tab="analytics">
-              Analytics
-            </button>
-          </div>
-
-          <div class="tab-panels">
-            <div class="tab-panel is-active" data-panel="keys">
-              <div class="table-wrap">
-                <table class="data-table" id="keysTable">
-                  <thead>
-                    <tr>
-                      <th>Key</th>
-                      <th>Label</th>
-                      <th>Status</th>
-                      <th>Created</th>
-                    </tr>
-                  </thead>
-                  <tbody id="keysBody"></tbody>
-                </table>
-
-                <div class="empty-state" id="keysEmpty">
-                  <p class="empty-title">No keys yet</p>
-                  <p class="empty-copy">
-                    Generate a key from the Owner page to see it here.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div class="tab-panel" data-panel="analytics">
-              <div class="empty-state">
-                <p class="empty-title">No data yet</p>
-                <p class="empty-copy">
-                  Analytics will appear once your loader receives activity.
-                </p>
-              </div>
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Get started</p>
+              <h2 class="card-title">Your workspace</h2>
             </div>
           </div>
-        </section>
+          <p style="margin:0 0 16px; color:var(--text-muted);">Welcome, <strong data-user-name style="color:var(--white);">there</strong>. Start by creating a project, adding your first script, and issuing a key.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a class="primary-btn" href="projects.html">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+              Create project
+            </a>
+            <a class="ghost-btn" href="keys.html">
+              <svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg>
+              Manage keys
+            </a>
+          </div>
+        </div>
       </main>
     </div>
 
-    <button class="chat-fab" type="button" aria-label="Open chat">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 5h16v11H8l-4 3z"></path>
-      </svg>
-    </button>
-
-    <script src="dashboard-guard.js"></script>
+    <script src="auth.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>
