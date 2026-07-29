@@ -1,5 +1,8 @@
-// server.js - Solaries Phase 6 (Discord Bot D2.1 - detailed errors)
-// Adds on top of D1: /panel command + Get Key / Get Script / Reset HWID buttons
+// server.js - Solaries Phase 6 (Discord Bot D3 - 26 admin commands)
+// Full command list: /login /logout /whoami /panel /managerrole /stats /settings
+// /key create|stock|delete|extend|revoke|info|list
+// /user info|blacklist|unblacklist|ban|unban  /hwid reset  /whitelist
+// /project create|delete|list|select  /buyerrole set|clear|list  /setscript
 // Bot only starts if DISCORD_BOT_TOKEN env var is set (safe fallback).
 
 const express = require("express");
