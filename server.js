@@ -1,5 +1,5 @@
-// server.js - Solaries Phase 6 (Discord Bot D1)
-// Adds: embedded Discord bot with /login slash command
+// server.js - Solaries Phase 6 (Discord Bot D2)
+// Adds on top of D1: /panel command + Get Key / Get Script / Reset HWID buttons
 // Bot only starts if DISCORD_BOT_TOKEN env var is set (safe fallback).
 
 const express = require("express");
@@ -750,6 +750,20 @@ app.delete("/api/discord/link", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/discord/panels", requireAuth, async (req, res) => {
+  const { data } = await supabase.from("discord_panels")
+    .select("id, script_id, guild_id, channel_id, message_id, created_at, scripts(name, slug)")
+    .eq("account_id", req.session.account_id).order("created_at", { ascending: false });
+  res.json({ ok: true, panels: data || [] });
+});
+
+app.delete("/api/discord/panels/:id", requireAuth, async (req, res) => {
+  const { error } = await supabase.from("discord_panels").delete()
+    .eq("id", req.params.id).eq("account_id", req.session.account_id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
+  res.json({ ok: true });
+});
+
 // ============================================================
 // Health check + keep-alive
 // ============================================================
@@ -767,7 +781,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D1) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D2) running on port " + PORT);
 });
 
 // ============================================================
@@ -811,6 +825,20 @@ async function startDiscordBot() {
       .setName("unlink")
       .setDescription("Unlink your Discord from your Solaries account")
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName("panel")
+      .setDescription("Post a Solaries panel for a script in this channel")
+      .addStringOption((opt) =>
+        opt.setName("script_id")
+          .setDescription("The script slug (from your Solaries dashboard)")
+          .setRequired(true)
+      )
+      .addStringOption((opt) =>
+        opt.setName("title")
+          .setDescription("Optional custom title for the panel")
+          .setRequired(false)
+      )
+      .toJSON(),
   ];
 
   client.once(Events.ClientReady, async (c) => {
@@ -847,15 +875,27 @@ async function startDiscordBot() {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-
     try {
-      if (interaction.commandName === "login") {
-        await handleLogin(interaction);
-      } else if (interaction.commandName === "whoami") {
-        await handleWhoami(interaction);
-      } else if (interaction.commandName === "unlink") {
-        await handleUnlink(interaction);
+      if (interaction.isChatInputCommand()) {
+        if (interaction.commandName === "login") {
+          await handleLogin(interaction);
+        } else if (interaction.commandName === "whoami") {
+          await handleWhoami(interaction);
+        } else if (interaction.commandName === "unlink") {
+          await handleUnlink(interaction);
+        } else if (interaction.commandName === "panel") {
+          await handlePanel(interaction);
+        }
+      } else if (interaction.isButton()) {
+        // Custom IDs: "sol_getkey_<scriptId>", "sol_getscript_<scriptId>", "sol_resethwid_<scriptId>"
+        const parts = interaction.customId.split("_");
+        if (parts[0] === "sol") {
+          const action = parts[1];
+          const scriptId = parts.slice(2).join("_");
+          if (action === "getkey") await handleGetKey(interaction, scriptId);
+          else if (action === "getscript") await handleGetScript(interaction, scriptId);
+          else if (action === "resethwid") await handleResetHwid(interaction, scriptId);
+        }
       }
     } catch (e) {
       console.error("Interaction error:", e.message);
@@ -946,6 +986,253 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
     await supabase.from("discord_users").delete().eq("discord_id", discordId);
     await interaction.editReply({ content: "Unlinked. Use /login to link again." });
+  }
+
+  // ============================================================
+  // /panel <script_id> - post a panel embed in the channel
+  // ============================================================
+  async function handlePanel(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const scriptSlug = interaction.options.getString("script_id", true).trim();
+    const customTitle = interaction.options.getString("title");
+    const discordId = interaction.user.id;
+
+    // Must be logged in
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id").eq("discord_id", discordId).maybeSingle();
+    if (!link) {
+      await interaction.editReply({ content: "You must /login first before posting a panel." });
+      return;
+    }
+
+    // Load the script and verify ownership
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, description, slug, key_mode, projects!inner(name, owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
+
+    if (!script) {
+      await interaction.editReply({ content: "Script not found. Check the script slug in your dashboard." });
+      return;
+    }
+    if (script.projects.owner_account_id !== link.account_id) {
+      await interaction.editReply({ content: "You do not own this script." });
+      return;
+    }
+
+    // Build embed
+    const embed = new EmbedBuilder()
+      .setColor(0x8b5cf6)
+      .setTitle(customTitle || script.name)
+      .setDescription(
+        (script.description || "Redeem your key or get your loader script from this panel.") +
+        "\n\nHWID resets are limited to once every 15 hours." +
+        "\n\nWarning: Sharing your key or loader script may result in the loss of your key or a permanent ban."
+      )
+      .setFooter({ text: "Powered by Solaries" });
+
+    // Buttons
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("sol_getkey_" + script.id)
+        .setLabel("Get Key")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("sol_getscript_" + script.id)
+        .setLabel("Get Script")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("sol_resethwid_" + script.id)
+        .setLabel("Reset HWID")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    // Post the panel message publicly
+    const channel = interaction.channel;
+    const posted = await channel.send({ embeds: [embed], components: [row] });
+
+    // Save panel record
+    await supabase.from("discord_panels").insert({
+      account_id: link.account_id,
+      script_id: script.id,
+      guild_id: interaction.guildId,
+      channel_id: interaction.channelId,
+      message_id: posted.id,
+    });
+
+    await interaction.editReply({ content: "Panel posted." });
+  }
+
+  // ============================================================
+  // Button: Get Key
+  // ============================================================
+  async function handleGetKey(interaction, scriptId) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+
+    // Must be logged in
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id").eq("discord_id", discordId).maybeSingle();
+    if (!link) {
+      await interaction.editReply({ content: "You must /login first to get a key." });
+      return;
+    }
+
+    // Load script
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, project_id, key_mode, projects!inner(owner_account_id)")
+      .eq("id", scriptId).maybeSingle();
+    if (!script) {
+      await interaction.editReply({ content: "Script not found." });
+      return;
+    }
+    if (script.key_mode === "keyless") {
+      await interaction.editReply({ content: "This script is keyless - no key needed. Use Get Script instead." });
+      return;
+    }
+
+    const scriptOwnerId = script.projects.owner_account_id;
+
+    // Check if this Discord user already has a key for this script (one per user per script)
+    const { data: existing } = await supabase.from("keys")
+      .select("id, key, revoked")
+      .eq("discord_id", discordId)
+      .eq("project_id", script.project_id)
+      .eq("owner_account_id", scriptOwnerId)
+      .maybeSingle();
+
+    let keyValue;
+    if (existing) {
+      if (existing.revoked) {
+        await interaction.editReply({ content: "Your key for this script was revoked. Contact the script owner." });
+        return;
+      }
+      keyValue = existing.key;
+    } else {
+      // Generate new key
+      keyValue = makeKey("KF");
+      const { error } = await supabase.from("keys").insert({
+        owner_account_id: scriptOwnerId,
+        project_id: script.project_id,
+        key: keyValue,
+        label: "Discord: " + interaction.user.username,
+        discord_id: discordId,
+        hwid_locked: true,
+      });
+      if (error) {
+        await interaction.editReply({ content: "Could not generate key. Try again later." });
+        return;
+      }
+    }
+
+    await interaction.editReply({
+      content: "Your key for **" + script.name + "**:\n\n```" + keyValue + "```\n\nKeep this private. Do not share.",
+    });
+  }
+
+  // ============================================================
+  // Button: Get Script (loader URL)
+  // ============================================================
+  async function handleGetScript(interaction, scriptId) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, slug, key_mode, projects!inner(owner_account_id)")
+      .eq("id", scriptId).maybeSingle();
+    if (!script) {
+      await interaction.editReply({ content: "Script not found." });
+      return;
+    }
+
+    let loader;
+    if (script.key_mode === "keyed") {
+      // Try to include the user's key if they have one
+      const { data: link } = await supabase.from("discord_users")
+        .select("account_id").eq("discord_id", discordId).maybeSingle();
+
+      let userKey = null;
+      if (link) {
+        const { data: existingKey } = await supabase.from("keys")
+          .select("key, revoked").eq("discord_id", discordId)
+          .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
+        if (existingKey && !existingKey.revoked) userKey = existingKey.key;
+      }
+
+      const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
+      if (userKey) {
+        loader = 'loadstring(game:HttpGet("' + loaderUrl + '?key=' + userKey + '"))()';
+      } else {
+        loader = 'local key = "PASTE_YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=" .. key))()';
+      }
+    } else {
+      loader = 'loadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '"))()';
+    }
+
+    await interaction.editReply({
+      content: "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```",
+    });
+  }
+
+  // ============================================================
+  // Button: Reset HWID (15h cooldown)
+  // ============================================================
+  async function handleResetHwid(interaction, scriptId) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const discordId = interaction.user.id;
+    const COOLDOWN_MS = 15 * 60 * 60 * 1000; // 15 hours
+
+    const { data: script } = await supabase.from("scripts")
+      .select("id, project_id, projects!inner(owner_account_id)")
+      .eq("id", scriptId).maybeSingle();
+    if (!script) {
+      await interaction.editReply({ content: "Script not found." });
+      return;
+    }
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, hwid, last_hwid_reset, revoked")
+      .eq("discord_id", discordId)
+      .eq("project_id", script.project_id)
+      .eq("owner_account_id", script.projects.owner_account_id)
+      .maybeSingle();
+
+    if (!keyRow) {
+      await interaction.editReply({ content: "You do not have a key for this script yet. Click Get Key first." });
+      return;
+    }
+    if (keyRow.revoked) {
+      await interaction.editReply({ content: "Your key is revoked. Contact the script owner." });
+      return;
+    }
+    if (!keyRow.hwid) {
+      await interaction.editReply({ content: "No HWID is bound to your key yet - nothing to reset." });
+      return;
+    }
+
+    if (keyRow.last_hwid_reset) {
+      const elapsed = Date.now() - new Date(keyRow.last_hwid_reset).getTime();
+      if (elapsed < COOLDOWN_MS) {
+        const remaining = COOLDOWN_MS - elapsed;
+        const hours = Math.floor(remaining / (60 * 60 * 1000));
+        const mins = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+        await interaction.editReply({
+          content: "Cooldown active. Try again in " + hours + "h " + mins + "m.",
+        });
+        return;
+      }
+    }
+
+    const { error } = await supabase.from("keys")
+      .update({ hwid: null, last_hwid_reset: new Date().toISOString() })
+      .eq("id", keyRow.id);
+    if (error) {
+      await interaction.editReply({ content: "Could not reset HWID. Try again later." });
+      return;
+    }
+
+    await interaction.editReply({
+      content: "HWID reset. Next reset will be available in 15 hours.",
+    });
   }
 
   await client.login(DISCORD_BOT_TOKEN);
