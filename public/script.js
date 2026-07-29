@@ -1,5 +1,6 @@
-// script.js
-// Login gate for index.html. Talks ONLY to the backend, never to Supabase directly.
+// script.js â€” Solaries multi-tenant login (Phase 0)
+// The API key IS the account credential. On success, we store a
+// session token that all subsequent authenticated pages use.
 
 const form = document.getElementById("accessForm");
 const apiKeyInput = document.getElementById("apiKey");
@@ -7,8 +8,6 @@ const toggleKey = document.getElementById("toggleKey");
 const statusMessage = document.getElementById("statusMessage");
 const submitBtn = form.querySelector(".submit-btn");
 
-// Same-origin: the site is served by the same backend, so "" works.
-// If you host the front end elsewhere, set this to your Render URL.
 const API_BASE = "";
 
 function showMessage(text, type) {
@@ -27,10 +26,7 @@ if (toggleKey) {
   toggleKey.addEventListener("click", function () {
     const hidden = apiKeyInput.type === "password";
     apiKeyInput.type = hidden ? "text" : "password";
-    toggleKey.setAttribute(
-      "aria-label",
-      hidden ? "Hide API key" : "Show API key",
-    );
+    toggleKey.setAttribute("aria-label", hidden ? "Hide API key" : "Show API key");
   });
 }
 
@@ -47,10 +43,10 @@ form.addEventListener("submit", async function (event) {
 
   submitBtn.disabled = true;
   const originalText = submitBtn.textContent;
-  submitBtn.textContent = "Checking...";
+  submitBtn.textContent = "Signing in...";
 
   try {
-    const response = await fetch(API_BASE + "/api/verify", {
+    const response = await fetch(API_BASE + "/api/signin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: key }),
@@ -59,14 +55,15 @@ form.addEventListener("submit", async function (event) {
     const result = await response.json();
 
     if (result.ok) {
-      // Store a short-lived session marker so dashboard can check it.
-      sessionStorage.setItem("kf_session", "1");
-      showMessage("Access granted. Redirecting...", "success");
+      // Store the session token â€” used by dashboard, projects, keys, etc.
+      sessionStorage.setItem("sl_session", result.token);
+      sessionStorage.setItem("sl_account", JSON.stringify(result.account));
+      showMessage("Signed in. Redirecting...", "success");
       setTimeout(function () {
         window.location.href = "dashboard.html";
-      }, 600);
+      }, 500);
     } else {
-      showMessage(result.error || "Invalid or revoked key.", "error");
+      showMessage(result.error || "Invalid API key.", "error");
       submitBtn.disabled = false;
       submitBtn.textContent = originalText;
     }
