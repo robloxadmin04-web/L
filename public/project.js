@@ -1,4 +1,4 @@
-// projects.js
+// project.js â€” with visible error messages inside the modal
 // Owner projects page. Talks to the backend with the owner token.
 
 const API_BASE = "";
@@ -31,6 +31,30 @@ const els = {
 
 let projects = [];
 let current = null;
+let modalStatus = null;
+
+function ensureModalStatus() {
+  if (modalStatus) return modalStatus;
+  const body = els.modal.querySelector(".modal-body");
+  modalStatus = document.createElement("p");
+  modalStatus.style.cssText = "margin:0;padding:10px 12px;border-radius:10px;font-size:13px;display:none;";
+  body.appendChild(modalStatus);
+  return modalStatus;
+}
+
+function showModalError(text) {
+  const s = ensureModalStatus();
+  s.textContent = text;
+  s.style.background = "#2a1416";
+  s.style.color = "#fca5a5";
+  s.style.border = "1px solid #4a1e22";
+  s.style.display = "block";
+}
+
+function hideModalError() {
+  const s = ensureModalStatus();
+  s.style.display = "none";
+}
 
 function getToken() {
   let token = sessionStorage.getItem(TOKEN_KEY);
@@ -52,34 +76,27 @@ async function api(pathName, options) {
   const config = options || {};
   config.headers = Object.assign(
     { "Content-Type": "application/json", "x-owner-token": token || "" },
-    config.headers || {},
+    config.headers || {}
   );
   const response = await fetch(API_BASE + pathName, config);
   if (response.status === 401) {
     clearToken();
     throw new Error("Unauthorized. Wrong owner token.");
   }
-  return response.json();
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error("Server returned: " + text.slice(0, 120));
+  }
 }
 
 function loaderFor(project) {
   const base = window.location.origin;
   if (project.key_mode === "keyed") {
-    return (
-      'loadstring(game:HttpGet("' +
-      base +
-      "/v1/load/" +
-      project.slug +
-      '?key=YOUR_KEY", true))()'
-    );
+    return 'loadstring(game:HttpGet("' + base + "/v1/load/" + project.slug + '?key=YOUR_KEY", true))()';
   }
-  return (
-    'loadstring(game:HttpGet("' +
-    base +
-    "/v1/load/" +
-    project.slug +
-    '", true))()'
-  );
+  return 'loadstring(game:HttpGet("' + base + "/v1/load/" + project.slug + '", true))()';
 }
 
 async function loadProjects() {
@@ -88,6 +105,8 @@ async function loadProjects() {
     if (result.ok) {
       projects = result.projects || [];
       renderList();
+    } else {
+      window.alert(result.error || "Could not load projects");
     }
   } catch (error) {
     window.alert(error.message);
@@ -96,11 +115,9 @@ async function loadProjects() {
 
 function renderList() {
   els.list.innerHTML = "";
-
   projects.forEach(function (p) {
     const item = document.createElement("div");
-    item.className =
-      "project-item" + (current && current.id === p.id ? " is-active" : "");
+    item.className = "project-item" + (current && current.id === p.id ? " is-active" : "");
 
     const main = document.createElement("div");
     main.className = "project-item-main";
@@ -119,10 +136,7 @@ function renderList() {
 
     item.appendChild(main);
     item.appendChild(pill);
-    item.addEventListener("click", function () {
-      openProject(p.id);
-    });
-
+    item.addEventListener("click", function () { openProject(p.id); });
     els.list.appendChild(item);
   });
 
@@ -133,17 +147,14 @@ function renderList() {
 async function openProject(id) {
   try {
     const result = await api("/api/projects/" + id, { method: "GET" });
-    if (!result.ok) {
-      return;
-    }
+    if (!result.ok) return;
     current = result.project;
     els.detail.style.display = "block";
     els.detailName.textContent = current.name;
     els.loaderLine.textContent = loaderFor(current);
-    els.loaderHint.textContent =
-      current.key_mode === "keyed"
-        ? "Replace YOUR_KEY with an active API key before sharing."
-        : "Keyless project. Anyone with this line can load it.";
+    els.loaderHint.textContent = current.key_mode === "keyed"
+      ? "Replace YOUR_KEY with an active API key before sharing."
+      : "Keyless project. Anyone with this line can load it.";
     els.keyModeSelect.value = current.key_mode;
     els.scriptInput.value = current.script || "";
     els.saveStatus.textContent = "";
@@ -154,24 +165,18 @@ async function openProject(id) {
 }
 
 async function saveProject() {
-  if (!current) {
-    return;
-  }
+  if (!current) return;
   try {
     const result = await api("/api/projects/" + current.id, {
       method: "PATCH",
-      body: JSON.stringify({
-        script: els.scriptInput.value,
-        key_mode: els.keyModeSelect.value,
-      }),
+      body: JSON.stringify({ script: els.scriptInput.value, key_mode: els.keyModeSelect.value }),
     });
     if (result.ok) {
       current = result.project;
       els.loaderLine.textContent = loaderFor(current);
-      els.loaderHint.textContent =
-        current.key_mode === "keyed"
-          ? "Replace YOUR_KEY with an active API key before sharing."
-          : "Keyless project. Anyone with this line can load it.";
+      els.loaderHint.textContent = current.key_mode === "keyed"
+        ? "Replace YOUR_KEY with an active API key before sharing."
+        : "Keyless project. Anyone with this line can load it.";
       els.saveStatus.textContent = "Saved";
       els.saveStatus.className = "save-status is-ok";
       setTimeout(function () {
@@ -179,6 +184,8 @@ async function saveProject() {
         els.saveStatus.className = "save-status";
       }, 1600);
       loadProjects();
+    } else {
+      window.alert(result.error || "Could not save");
     }
   } catch (error) {
     window.alert(error.message);
@@ -186,20 +193,16 @@ async function saveProject() {
 }
 
 async function deleteProject() {
-  if (!current) {
-    return;
-  }
-  if (!window.confirm("Delete this project permanently?")) {
-    return;
-  }
+  if (!current) return;
+  if (!window.confirm("Delete this project permanently?")) return;
   try {
-    const result = await api("/api/projects/" + current.id, {
-      method: "DELETE",
-    });
+    const result = await api("/api/projects/" + current.id, { method: "DELETE" });
     if (result.ok) {
       current = null;
       els.detail.style.display = "none";
       loadProjects();
+    } else {
+      window.alert(result.error || "Could not delete");
     }
   } catch (error) {
     window.alert(error.message);
@@ -207,23 +210,35 @@ async function deleteProject() {
 }
 
 async function createProject() {
+  hideModalError();
   const name = els.nameInput.value.trim();
   if (!name) {
-    window.alert("Enter a project name.");
+    showModalError("Enter a project name.");
     return;
   }
+
+  els.confirmCreate.disabled = true;
+  const originalText = els.confirmCreate.textContent;
+  els.confirmCreate.textContent = "Creating...";
+
   try {
     const result = await api("/api/projects", {
       method: "POST",
       body: JSON.stringify({ name: name, key_mode: els.modeInput.value }),
     });
+
     if (result.ok) {
       closeModal();
       await loadProjects();
       openProject(result.project.id);
+    } else {
+      showModalError(result.error || "Could not create project");
     }
   } catch (error) {
-    window.alert(error.message);
+    showModalError(error.message);
+  } finally {
+    els.confirmCreate.disabled = false;
+    els.confirmCreate.textContent = originalText;
   }
 }
 
@@ -231,25 +246,20 @@ async function copyLoader() {
   try {
     await navigator.clipboard.writeText(els.loaderLine.textContent);
     els.copyLoader.textContent = "Copied";
-    setTimeout(function () {
-      els.copyLoader.textContent = "Copy";
-    }, 1200);
+    setTimeout(function () { els.copyLoader.textContent = "Copy"; }, 1200);
   } catch (error) {
     els.copyLoader.textContent = "Failed";
-    setTimeout(function () {
-      els.copyLoader.textContent = "Copy";
-    }, 1200);
+    setTimeout(function () { els.copyLoader.textContent = "Copy"; }, 1200);
   }
 }
 
 function openModal() {
+  hideModalError();
   els.modal.classList.add("is-open");
   els.modal.setAttribute("aria-hidden", "false");
   els.nameInput.value = "";
   els.modeInput.value = "keyed";
-  setTimeout(function () {
-    els.nameInput.focus();
-  }, 50);
+  setTimeout(function () { els.nameInput.focus(); }, 50);
 }
 
 function closeModal() {
@@ -266,15 +276,11 @@ els.deleteProject.addEventListener("click", deleteProject);
 els.copyLoader.addEventListener("click", copyLoader);
 
 els.modal.addEventListener("click", function (event) {
-  if (event.target.getAttribute("data-close") === "true") {
-    closeModal();
-  }
+  if (event.target.getAttribute("data-close") === "true") closeModal();
 });
 
 document.addEventListener("keydown", function (event) {
-  if (event.key === "Escape") {
-    closeModal();
-  }
+  if (event.key === "Escape") closeModal();
 });
 
 if (els.menuToggle && els.sidebar) {
