@@ -90,6 +90,45 @@ app.post("/api/verify", async (req, res) => {
 });
 
 // ============================================================
+// OWNER: dashboard stats
+// ============================================================
+app.get("/api/stats", requireOwner, async (req, res) => {
+  try {
+    const totalRes = await supabase
+      .from("api_keys")
+      .select("id", { count: "exact", head: true });
+
+    const revokedRes = await supabase
+      .from("api_keys")
+      .select("id", { count: "exact", head: true })
+      .eq("revoked", true);
+
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const loginsRes = await supabase
+      .from("access_log")
+      .select("id", { count: "exact", head: true })
+      .eq("event", "login")
+      .gte("created_at", dayAgo);
+
+    const total = totalRes.count || 0;
+    const revoked = revokedRes.count || 0;
+    const logins24h = loginsRes.count || 0;
+
+    return res.json({
+      ok: true,
+      stats: {
+        total: total,
+        active: total - revoked,
+        revoked: revoked,
+        logins24h: logins24h,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ============================================================
 // OWNER: list keys
 // ============================================================
 app.get("/api/keys", requireOwner, async (req, res) => {

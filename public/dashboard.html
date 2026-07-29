@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashboard</title>
-    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="../style/dashboard.css" />
+    <link rel="stylesheet" href="../style/owner.css" />
   </head>
   <body>
     <div class="app" id="app">
@@ -85,19 +86,14 @@
               <span>Keys</span>
             </a>
 
-            <a
-              class="nav-link"
-              href="#monetization"
-              data-section="monetization"
-            >
+            <a class="nav-link" href="owner.html">
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
-                  <path d="M4 5h16v11H4z"></path>
-                  <path d="M4 20h11"></path>
-                  <circle cx="12" cy="10.5" r="2.5"></circle>
+                  <circle cx="12" cy="8" r="4"></circle>
+                  <path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path>
                 </svg>
               </span>
-              <span>Monetization</span>
+              <span>Owner</span>
             </a>
 
             <a class="nav-link" href="#discord" data-section="discord">
@@ -160,11 +156,11 @@
             <span class="user-avatar">NE</span>
             <div class="user-copy">
               <p class="user-name">neilsunday</p>
-              <p class="user-plan">Starter</p>
+              <p class="user-plan">Owner</p>
             </div>
           </div>
 
-          <a class="signout" href="#signout">
+          <a class="signout" href="index.html">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M15 4h4v16h-4"></path>
@@ -195,72 +191,34 @@
             <h1 class="page-title">Overview</h1>
           </div>
 
-          <button class="primary-btn" type="button">New project</button>
+          <button
+            class="primary-btn"
+            type="button"
+            onclick="window.location.href = 'owner.html'"
+          >
+            Manage keys
+          </button>
         </header>
 
         <section class="stats-grid">
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Script Loads</p>
+              <p class="stat-label">Total Keys</p>
               <span class="stat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
-                  <path d="M9 8l-4 4 4 4"></path>
-                  <path d="M15 8l4 4-4 4"></path>
+                  <circle cx="8" cy="14" r="3"></circle>
+                  <path d="M11 14h9"></path>
+                  <path d="M17 11v6"></path>
                 </svg>
               </span>
             </div>
-            <p class="stat-value">0</p>
-            <p class="stat-meta">0 in last 24h</p>
+            <p class="stat-value" data-stat="total">0</p>
+            <p class="stat-meta">All generated keys</p>
           </article>
 
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Active Sessions</p>
-              <span class="stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M3 12h4l2 6 4-14 2 8h6"></path>
-                </svg>
-              </span>
-            </div>
-            <p class="stat-value">0</p>
-            <p class="stat-meta">Live sessions</p>
-          </article>
-
-          <article class="stat-card">
-            <div class="stat-head">
-              <p class="stat-label">Loads This Week</p>
-              <span class="stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M5 7h14"></path>
-                  <path d="M5 12h14"></path>
-                  <path d="M5 17h14"></path>
-                  <circle cx="9" cy="7" r="1.6"></circle>
-                  <circle cx="15" cy="12" r="1.6"></circle>
-                  <circle cx="8" cy="17" r="1.6"></circle>
-                </svg>
-              </span>
-            </div>
-            <p class="stat-value">0</p>
-            <p class="stat-meta">Successful deliveries</p>
-          </article>
-
-          <article class="stat-card">
-            <div class="stat-head">
-              <p class="stat-label">Wynfuscate This Month</p>
-              <span class="stat-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"></path>
-                </svg>
-              </span>
-            </div>
-            <p class="stat-value">0 / 20</p>
-            <div class="stat-bar"><span style="width: 0%"></span></div>
-            <p class="stat-meta">20 left this month</p>
-          </article>
-
-          <article class="stat-card">
-            <div class="stat-head">
-              <p class="stat-label">Blocked Attempts</p>
+              <p class="stat-label">Active Keys</p>
               <span class="stat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
                   <path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"></path>
@@ -268,106 +226,69 @@
                 </svg>
               </span>
             </div>
-            <p class="stat-value">0</p>
-            <p class="stat-meta">Stopped by ad-link checks</p>
+            <p class="stat-value" data-stat="active">0</p>
+            <p class="stat-meta">Currently usable</p>
           </article>
 
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Projects</p>
+              <p class="stat-label">Revoked Keys</p>
               <span class="stat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
-                  <path d="M3 8l9-5 9 5-9 5z"></path>
-                  <path d="M3 8v8l9 5 9-5V8"></path>
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <path d="M6 6l12 12"></path>
                 </svg>
               </span>
             </div>
-            <p class="stat-value">1</p>
-            <p class="stat-meta">0 shared with you</p>
+            <p class="stat-value" data-stat="revoked">0</p>
+            <p class="stat-meta">No longer valid</p>
           </article>
-        </section>
 
-        <section class="quick-block">
-          <h2 class="block-title">Quick actions</h2>
-
-          <div class="quick-grid">
-            <button class="quick-card" type="button">
-              <span>New project</span>
-              <span class="quick-arrow" aria-hidden="true">
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Logins 24h</p>
+              <span class="stat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
-                  <path d="M5 12h14"></path>
-                  <path d="M13 6l6 6-6 6"></path>
+                  <path d="M3 12h4l2 6 4-14 2 8h6"></path>
                 </svg>
               </span>
-            </button>
-
-            <button class="quick-card" type="button">
-              <span>Keys</span>
-              <span class="quick-arrow" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M5 12h14"></path>
-                  <path d="M13 6l6 6-6 6"></path>
-                </svg>
-              </span>
-            </button>
-
-            <button class="quick-card" type="button">
-              <span>Discord</span>
-              <span class="quick-arrow" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M5 12h14"></path>
-                  <path d="M13 6l6 6-6 6"></path>
-                </svg>
-              </span>
-            </button>
-          </div>
-
-          <div class="show-details">
-            <a href="#details">Show details</a>
-          </div>
+            </div>
+            <p class="stat-value" data-stat="logins24h">0</p>
+            <p class="stat-meta">Successful key logins</p>
+          </article>
         </section>
 
         <section class="tabs-block">
           <div class="tabs" role="tablist">
-            <button class="tab is-active" type="button" data-tab="projects">
-              Projects
+            <button class="tab is-active" type="button" data-tab="keys">
+              Keys
             </button>
-            <button class="tab" type="button" data-tab="keys">Keys</button>
             <button class="tab" type="button" data-tab="analytics">
               Analytics
             </button>
           </div>
 
           <div class="tab-panels">
-            <div class="tab-panel is-active" data-panel="projects">
+            <div class="tab-panel is-active" data-panel="keys">
               <div class="table-wrap">
-                <table class="data-table">
+                <table class="data-table" id="keysTable">
                   <thead>
                     <tr>
-                      <th>Project</th>
-                      <th>Script</th>
-                      <th>Keys</th>
+                      <th>Key</th>
+                      <th>Label</th>
                       <th>Status</th>
+                      <th>Created</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr>
-                      <td>Main Project</td>
-                      <td>main.lua</td>
-                      <td>0 active</td>
-                      <td><span class="status-pill is-live">Live</span></td>
-                    </tr>
-                  </tbody>
+                  <tbody id="keysBody"></tbody>
                 </table>
-              </div>
-            </div>
 
-            <div class="tab-panel" data-panel="keys">
-              <div class="empty-state">
-                <p class="empty-title">No keys yet</p>
-                <p class="empty-copy">
-                  Generate a key to give access to your users.
-                </p>
+                <div class="empty-state" id="keysEmpty">
+                  <p class="empty-title">No keys yet</p>
+                  <p class="empty-copy">
+                    Generate a key from the Owner page to see it here.
+                  </p>
+                </div>
               </div>
             </div>
 
