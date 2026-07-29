@@ -1,0 +1,17 @@
+{
+  "name": "keyforge-gate",
+  "version": "1.0.0",
+  "description": "API key gated static site with Supabase backend",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "express": "^4.19.2"
+  }
+}
