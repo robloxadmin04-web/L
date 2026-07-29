@@ -1,4 +1,4 @@
-// server.js â€” Solaries Phase 5
+// server.js - Solaries Phase 5
 // Adds: HWID lock, key expiry, blocklist/allowlist per project,
 // script version history, and new admin endpoints.
 
@@ -125,7 +125,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// PUBLIC LOADER â€” with HWID, expiry, and block/allow checks
+// PUBLIC LOADER - with HWID, expiry, and block/allow checks
 // ============================================================
 app.get("/v1/load/:script_slug", async (req, res) => {
   res.type("text/plain");
@@ -223,7 +223,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     if (keyRow.hwid_locked) {
       if (!hwid) return block("missing hwid header", 401, keyRow.id, projectId, script.id);
       if (!keyRow.hwid) {
-        // First use â€” bind this HWID to the key
+        // First use - bind this HWID to the key
         await supabase.from("keys").update({ hwid: hwid }).eq("id", keyRow.id);
       } else if (keyRow.hwid !== hwid) {
         return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
@@ -572,7 +572,7 @@ app.post("/api/scripts/:id/restore/:v", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// KEYS â€” with HWID + expiry management
+// KEYS - with HWID + expiry management
 // ============================================================
 app.get("/api/keys", requireAuth, async (req, res) => {
   const { data, error } = await supabase.from("keys")
@@ -659,7 +659,7 @@ app.post("/api/projects/:pid/blocklist", requireAuth, async (req, res) => {
     owner_account_id: req.session.account_id, project_id: req.params.pid,
     entry_type: entryType, value, reason: body.reason || null,
   }).select().single();
-  if (error) return res.status(500).json({ ok: false, error: "Could not add â€” value may already be blocked" });
+  if (error) return res.status(500).json({ ok: false, error: "Could not add - value may already be blocked" });
   res.json({ ok: true, entry: data });
 });
 
@@ -690,7 +690,7 @@ app.post("/api/projects/:pid/allowlist", requireAuth, async (req, res) => {
     owner_account_id: req.session.account_id, project_id: req.params.pid,
     entry_type: entryType, value, note: body.note || null,
   }).select().single();
-  if (error) return res.status(500).json({ ok: false, error: "Could not add â€” value may already be allowed" });
+  if (error) return res.status(500).json({ ok: false, error: "Could not add - value may already be allowed" });
   res.json({ ok: true, entry: data });
 });
 
