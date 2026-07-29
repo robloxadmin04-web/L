@@ -1,8 +1,9 @@
-/* Owner page key management. Demo storage only (localStorage). */
-/* NOTE: keys stored client-side are visible in the browser. */
-/* For real security, verify keys on a backend instead. */
+// owner.js
+// Owner key admin. Talks to the backend using an owner token.
+// The owner token is entered once and kept in sessionStorage for this tab.
 
-const STORAGE_KEY = "kf_api_keys";
+const API_BASE = "";
+const TOKEN_KEY = "kf_owner_token";
 
 const els = {
   statTotal: document.getElementById("statTotal"),
@@ -24,52 +25,64 @@ const els = {
   themeToggle: document.getElementById("themeToggle"),
 };
 
-let keys = loadKeys();
+let keys = [];
 
-/* Storage */
-function loadKeys() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (error) {
-    return [];
+function getToken() {
+  let token = sessionStorage.getItem(TOKEN_KEY);
+  if (!token) {
+    token = window.prompt("Enter owner token");
+    if (token) {
+      sessionStorage.setItem(TOKEN_KEY, token.trim());
+    }
   }
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
-function saveKeys() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(keys));
+function clearToken() {
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
-/* Key generation */
-function randomBlock() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < 4; i = i + 1) {
-    out = out + chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return out;
-}
-
-function makeKey(prefix) {
-  const safePrefix =
-    (prefix || "KF")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "")
-      .slice(0, 6) || "KF";
-  return (
-    safePrefix + "-" + randomBlock() + "-" + randomBlock() + "-" + randomBlock()
+async function api(pathName, options) {
+  const token = getToken();
+  const config = options || {};
+  config.headers = Object.assign(
+    { "Content-Type": "application/json", "x-owner-token": token || "" },
+    config.headers || {},
   );
+
+  const response = await fetch(API_BASE + pathName, config);
+
+  if (response.status === 401) {
+    clearToken();
+    throw new Error("Unauthorized. Wrong owner token.");
+  }
+
+  return response.json();
 }
 
-function formatDate(timestamp) {
-  const d = new Date(timestamp);
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+  const d = new Date(value);
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return year + "-" + month + "-" + day;
 }
 
-/* Rendering */
+async function fetchKeys() {
+  try {
+    const result = await api("/api/keys", { method: "GET" });
+    if (result.ok) {
+      keys = result.keys || [];
+      render();
+    }
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
 function render() {
   const term = els.search.value.trim().toLowerCase();
 
@@ -102,7 +115,7 @@ function render() {
     statusTd.appendChild(pill);
 
     const dateTd = document.createElement("td");
-    dateTd.textContent = formatDate(item.created);
+    dateTd.textContent = formatDate(item.created_at);
 
     const actionTd = document.createElement("td");
     const actions = document.createElement("div");
@@ -121,9 +134,7 @@ function render() {
     toggleBtn.type = "button";
     toggleBtn.textContent = item.revoked ? "Restore" : "Revoke";
     toggleBtn.addEventListener("click", function () {
-      item.revoked = !item.revoked;
-      saveKeys();
-      render();
+      updateKey(item.id, !item.revoked);
     });
 
     const deleteBtn = document.createElement("button");
@@ -131,11 +142,9 @@ function render() {
     deleteBtn.type = "button";
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", function () {
-      keys = keys.filter(function (k) {
-        return k.id !== item.id;
-      });
-      saveKeys();
-      render();
+      if (window.confirm("Delete this key permanently?")) {
+        deleteKey(item.id);
+      }
     });
 
     actions.appendChild(copyBtn);
@@ -164,10 +173,8 @@ function updateStats() {
   const revoked = keys.filter(function (k) {
     return k.revoked;
   }).length;
-  const active = total - revoked;
-
   els.statTotal.textContent = String(total);
-  els.statActive.textContent = String(active);
+  els.statActive.textContent = String(total - revoked);
   els.statRevoked.textContent = String(revoked);
 }
 
@@ -187,6 +194,49 @@ async function copyKey(value, button) {
   }
 }
 
+async function updateKey(id, revoked) {
+  try {
+    const result = await api("/api/keys/" + id, {
+      method: "PATCH",
+      body: JSON.stringify({ revoked: revoked }),
+    });
+    if (result.ok) {
+      fetchKeys();
+    }
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function deleteKey(id) {
+  try {
+    const result = await api("/api/keys/" + id, { method: "DELETE" });
+    if (result.ok) {
+      fetchKeys();
+    }
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function createKey() {
+  try {
+    const result = await api("/api/keys", {
+      method: "POST",
+      body: JSON.stringify({
+        label: els.labelInput.value.trim(),
+        prefix: els.prefixInput.value.trim(),
+      }),
+    });
+    if (result.ok) {
+      closeModal();
+      fetchKeys();
+    }
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
 /* Modal */
 function openModal() {
   els.modal.classList.add("is-open");
@@ -201,21 +251,6 @@ function openModal() {
 function closeModal() {
   els.modal.classList.remove("is-open");
   els.modal.setAttribute("aria-hidden", "true");
-}
-
-function createKey() {
-  const newKey = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    key: makeKey(els.prefixInput.value),
-    label: els.labelInput.value.trim(),
-    revoked: false,
-    created: Date.now(),
-  };
-
-  keys.unshift(newKey);
-  saveKeys();
-  render();
-  closeModal();
 }
 
 /* Events */
@@ -249,4 +284,4 @@ if (els.themeToggle) {
   });
 }
 
-render();
+fetchKeys();
