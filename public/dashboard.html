@@ -4,27 +4,50 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashboard</title>
-    <link rel="stylesheet" href="../style/style-dashboard.css" />
+    <link rel="stylesheet" href="../style/dashboard.css" />
   </head>
   <body>
-    <div class="dashboard-shell">
+    <div class="app" id="app">
       <aside class="sidebar" id="sidebar">
-        <div class="sidebar-top">
-          <div class="brand">
-            <div class="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M5 4h14v2H5z"></path>
-                <path d="M5 11h14v2H5z"></path>
-                <path d="M5 18h14v2H5z"></path>
-              </svg>
-            </div>
-            <div class="brand-copy">
-              <p class="brand-label">Control Panel</p>
-              <h1 class="brand-title">Dashboard</h1>
-            </div>
+        <div class="sidebar-head">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path>
+            </svg>
           </div>
 
-          <nav class="nav" aria-label="Sidebar navigation">
+          <div class="head-actions">
+            <button class="pill-btn" type="button">
+              <span class="pill-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M8 12h.01"></path>
+                  <path d="M16 12h.01"></path>
+                  <path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path>
+                </svg>
+              </span>
+              <span>Discord</span>
+            </button>
+
+            <button
+              class="icon-square"
+              id="themeToggle"
+              type="button"
+              aria-label="Toggle theme"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path
+                  d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+                ></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <nav class="nav-group" aria-label="Workspace">
+            <p class="nav-title">Workspace</p>
+
             <a
               class="nav-link is-active"
               href="#overview"
@@ -44,8 +67,8 @@
             <a class="nav-link" href="#projects" data-section="projects">
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
-                  <path d="M4 7h16v11H4z"></path>
-                  <path d="M9 7V5h6v2"></path>
+                  <path d="M3 8l9-5 9 5-9 5z"></path>
+                  <path d="M3 8v8l9 5 9-5V8"></path>
                 </svg>
               </span>
               <span>Projects</span>
@@ -62,25 +85,39 @@
               <span>Keys</span>
             </a>
 
-            <a class="nav-link" href="#loader" data-section="loader">
+            <a
+              class="nav-link"
+              href="#monetization"
+              data-section="monetization"
+            >
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
-                  <path d="M12 3v12"></path>
-                  <path d="M8 11l4 4 4-4"></path>
-                  <path d="M4 19h16"></path>
+                  <path d="M4 5h16v11H4z"></path>
+                  <path d="M4 20h11"></path>
+                  <circle cx="12" cy="10.5" r="2.5"></circle>
                 </svg>
               </span>
-              <span>Loader</span>
+              <span>Monetization</span>
             </a>
 
-            <a class="nav-link" href="#activity" data-section="activity">
+            <a class="nav-link" href="#discord" data-section="discord">
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
-                  <path d="M4 18h16"></path>
-                  <path d="M7 14l3-3 3 2 4-5"></path>
+                  <path d="M8 12h.01"></path>
+                  <path d="M16 12h.01"></path>
+                  <path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path>
                 </svg>
               </span>
-              <span>Activity</span>
+              <span>Discord</span>
+            </a>
+
+            <a class="nav-link" href="#chat" data-section="chat">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 5h16v11H7l-3 3z"></path>
+                </svg>
+              </span>
+              <span>Live Chat</span>
             </a>
 
             <a class="nav-link" href="#settings" data-section="settings">
@@ -100,14 +137,43 @@
               <span>Settings</span>
             </a>
           </nav>
+
+          <nav class="nav-group" aria-label="Tools">
+            <p class="nav-title">Tools</p>
+
+            <a class="nav-link" href="#analytics" data-section="analytics">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 20V10"></path>
+                  <path d="M10 20V4"></path>
+                  <path d="M16 20v-7"></path>
+                  <path d="M22 20H2"></path>
+                </svg>
+              </span>
+              <span>Analytics</span>
+            </a>
+          </nav>
         </div>
 
-        <div class="sidebar-bottom">
-          <div class="access-card">
-            <p class="access-label">Environment</p>
-            <p class="access-value">Private Access</p>
-            <p class="access-meta">API key verified session</p>
+        <div class="sidebar-foot">
+          <div class="user-box">
+            <span class="user-avatar">NE</span>
+            <div class="user-copy">
+              <p class="user-name">neilsunday</p>
+              <p class="user-plan">Starter</p>
+            </div>
           </div>
+
+          <a class="signout" href="#signout">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M15 4h4v16h-4"></path>
+                <path d="M10 8l-4 4 4 4"></path>
+                <path d="M6 12h10"></path>
+              </svg>
+            </span>
+            <span>Sign out</span>
+          </a>
         </div>
       </aside>
 
@@ -115,7 +181,7 @@
         <header class="topbar">
           <div class="topbar-left">
             <button
-              class="menu-btn"
+              class="icon-square menu-btn"
               id="menuToggle"
               type="button"
               aria-label="Open menu"
@@ -126,249 +192,204 @@
                 <path d="M4 17h16"></path>
               </svg>
             </button>
-
-            <div>
-              <p class="page-kicker">Overview</p>
-              <h2 class="page-title">Project control and delivery</h2>
-            </div>
+            <h1 class="page-title">Overview</h1>
           </div>
 
-          <div class="topbar-right">
-            <div class="topbar-badge">
-              <span class="badge-dot"></span>
-              <span>Active</span>
-            </div>
-
-            <div class="admin-box">
-              <span class="admin-avatar">A</span>
-              <div class="admin-copy">
-                <p class="admin-name">Admin Session</p>
-                <p class="admin-role">Owner access</p>
-              </div>
-            </div>
-          </div>
+          <button class="primary-btn" type="button">New project</button>
         </header>
 
-        <section class="stats-grid" id="overview">
+        <section class="stats-grid">
           <article class="stat-card">
-            <p class="stat-label">Projects</p>
-            <h3 class="stat-value">04</h3>
-            <p class="stat-meta">2 active deployments</p>
+            <div class="stat-head">
+              <p class="stat-label">Script Loads</p>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M9 8l-4 4 4 4"></path>
+                  <path d="M15 8l4 4-4 4"></path>
+                </svg>
+              </span>
+            </div>
+            <p class="stat-value">0</p>
+            <p class="stat-meta">0 in last 24h</p>
           </article>
 
           <article class="stat-card">
-            <p class="stat-label">Active Keys</p>
-            <h3 class="stat-value">128</h3>
-            <p class="stat-meta">14 claimed today</p>
+            <div class="stat-head">
+              <p class="stat-label">Active Sessions</p>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 12h4l2 6 4-14 2 8h6"></path>
+                </svg>
+              </span>
+            </div>
+            <p class="stat-value">0</p>
+            <p class="stat-meta">Live sessions</p>
           </article>
 
           <article class="stat-card">
-            <p class="stat-label">Total Loads</p>
-            <h3 class="stat-value">3,482</h3>
-            <p class="stat-meta">Stable across all projects</p>
+            <div class="stat-head">
+              <p class="stat-label">Loads This Week</p>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 7h14"></path>
+                  <path d="M5 12h14"></path>
+                  <path d="M5 17h14"></path>
+                  <circle cx="9" cy="7" r="1.6"></circle>
+                  <circle cx="15" cy="12" r="1.6"></circle>
+                  <circle cx="8" cy="17" r="1.6"></circle>
+                </svg>
+              </span>
+            </div>
+            <p class="stat-value">0</p>
+            <p class="stat-meta">Successful deliveries</p>
           </article>
 
           <article class="stat-card">
-            <p class="stat-label">Failed Access</p>
-            <h3 class="stat-value">09</h3>
-            <p class="stat-meta">Last 24 hours</p>
+            <div class="stat-head">
+              <p class="stat-label">Wynfuscate This Month</p>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"></path>
+                </svg>
+              </span>
+            </div>
+            <p class="stat-value">0 / 20</p>
+            <div class="stat-bar"><span style="width: 0%"></span></div>
+            <p class="stat-meta">20 left this month</p>
+          </article>
+
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Blocked Attempts</p>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"></path>
+                  <path d="M9 12l2 2 4-4"></path>
+                </svg>
+              </span>
+            </div>
+            <p class="stat-value">0</p>
+            <p class="stat-meta">Stopped by ad-link checks</p>
+          </article>
+
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Projects</p>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 8l9-5 9 5-9 5z"></path>
+                  <path d="M3 8v8l9 5 9-5V8"></path>
+                </svg>
+              </span>
+            </div>
+            <p class="stat-value">1</p>
+            <p class="stat-meta">0 shared with you</p>
           </article>
         </section>
 
-        <section class="content-grid">
-          <section class="panel-card panel-wide" id="projects">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Projects</p>
-                <h3 class="panel-title">Current project status</h3>
-              </div>
-              <button class="ghost-btn" type="button">New project</button>
-            </div>
+        <section class="quick-block">
+          <h2 class="block-title">Quick actions</h2>
 
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Project</th>
-                    <th>Script</th>
-                    <th>Protection</th>
-                    <th>Keys</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Loader Core</td>
-                    <td>main.lua</td>
-                    <td>Protected</td>
-                    <td>48 active</td>
-                    <td><span class="status-pill is-live">Live</span></td>
-                  </tr>
-                  <tr>
-                    <td>Premium Hub</td>
-                    <td>hub.lua</td>
-                    <td>Protected</td>
-                    <td>32 active</td>
-                    <td><span class="status-pill is-live">Live</span></td>
-                  </tr>
-                  <tr>
-                    <td>Trial Access</td>
-                    <td>trial.lua</td>
-                    <td>Standard</td>
-                    <td>18 active</td>
-                    <td><span class="status-pill is-review">Review</span></td>
-                  </tr>
-                  <tr>
-                    <td>Archive Build</td>
-                    <td>legacy.lua</td>
-                    <td>Locked</td>
-                    <td>0 active</td>
-                    <td><span class="status-pill is-off">Offline</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <div class="quick-grid">
+            <button class="quick-card" type="button">
+              <span>New project</span>
+              <span class="quick-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 12h14"></path>
+                  <path d="M13 6l6 6-6 6"></path>
+                </svg>
+              </span>
+            </button>
 
-          <section class="panel-card" id="loader">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Loader</p>
-                <h3 class="panel-title">Quick access</h3>
-              </div>
-            </div>
+            <button class="quick-card" type="button">
+              <span>Keys</span>
+              <span class="quick-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 12h14"></path>
+                  <path d="M13 6l6 6-6 6"></path>
+                </svg>
+              </span>
+            </button>
 
-            <div class="code-block">
-              <p class="code-label">Current loader</p>
-              <pre id="loaderCode">
-loadstring(game:HttpGet("[example.com](https://www.example.com/load/project-main)", true))()</pre
-              >
-              <button
-                class="ghost-btn full-width"
-                id="copyLoader"
-                type="button"
-              >
-                Copy loader
-              </button>
-              <p class="helper-note" id="copyStatus">Ready to copy</p>
-            </div>
-          </section>
+            <button class="quick-card" type="button">
+              <span>Discord</span>
+              <span class="quick-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 12h14"></path>
+                  <path d="M13 6l6 6-6 6"></path>
+                </svg>
+              </span>
+            </button>
+          </div>
 
-          <section class="panel-card" id="keys">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Keys</p>
-                <h3 class="panel-title">Key summary</h3>
+          <div class="show-details">
+            <a href="#details">Show details</a>
+          </div>
+        </section>
+
+        <section class="tabs-block">
+          <div class="tabs" role="tablist">
+            <button class="tab is-active" type="button" data-tab="projects">
+              Projects
+            </button>
+            <button class="tab" type="button" data-tab="keys">Keys</button>
+            <button class="tab" type="button" data-tab="analytics">
+              Analytics
+            </button>
+          </div>
+
+          <div class="tab-panels">
+            <div class="tab-panel is-active" data-panel="projects">
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Project</th>
+                      <th>Script</th>
+                      <th>Keys</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Main Project</td>
+                      <td>main.lua</td>
+                      <td>0 active</td>
+                      <td><span class="status-pill is-live">Live</span></td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div class="stack-list">
-              <div class="list-row">
-                <span>Active keys</span>
-                <strong>128</strong>
-              </div>
-              <div class="list-row">
-                <span>Used keys</span>
-                <strong>74</strong>
-              </div>
-              <div class="list-row">
-                <span>Expired keys</span>
-                <strong>21</strong>
-              </div>
-              <div class="list-row">
-                <span>Revoked keys</span>
-                <strong>07</strong>
-              </div>
-              <div class="list-row">
-                <span>HWID locked</span>
-                <strong>39</strong>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel-card panel-wide" id="activity">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Activity</p>
-                <h3 class="panel-title">Recent events</h3>
-              </div>
-              <button class="ghost-btn" type="button">View logs</button>
-            </div>
-
-            <div class="activity-list">
-              <article class="activity-item">
-                <div class="activity-marker"></div>
-                <div class="activity-copy">
-                  <p class="activity-title">
-                    Key claim completed for Premium Hub
-                  </p>
-                  <p class="activity-meta">2 minutes ago</p>
-                </div>
-              </article>
-
-              <article class="activity-item">
-                <div class="activity-marker"></div>
-                <div class="activity-copy">
-                  <p class="activity-title">
-                    Loader Core generated 14 successful loads
-                  </p>
-                  <p class="activity-meta">18 minutes ago</p>
-                </div>
-              </article>
-
-              <article class="activity-item">
-                <div class="activity-marker"></div>
-                <div class="activity-copy">
-                  <p class="activity-title">
-                    Trial Access key expired for one device
-                  </p>
-                  <p class="activity-meta">41 minutes ago</p>
-                </div>
-              </article>
-
-              <article class="activity-item">
-                <div class="activity-marker"></div>
-                <div class="activity-copy">
-                  <p class="activity-title">
-                    Failed API key access blocked at entry
-                  </p>
-                  <p class="activity-meta">1 hour ago</p>
-                </div>
-              </article>
-            </div>
-          </section>
-
-          <section class="panel-card" id="settings">
-            <div class="panel-head">
-              <div>
-                <p class="panel-kicker">Settings</p>
-                <h3 class="panel-title">Session controls</h3>
+            <div class="tab-panel" data-panel="keys">
+              <div class="empty-state">
+                <p class="empty-title">No keys yet</p>
+                <p class="empty-copy">
+                  Generate a key to give access to your users.
+                </p>
               </div>
             </div>
 
-            <div class="stack-list">
-              <div class="list-row">
-                <span>Access mode</span>
-                <strong>Private</strong>
-              </div>
-              <div class="list-row">
-                <span>Discord panel</span>
-                <strong>Pending</strong>
-              </div>
-              <div class="list-row">
-                <span>Reward links</span>
-                <strong>Enabled</strong>
-              </div>
-              <div class="list-row">
-                <span>Auto revoke</span>
-                <strong>Disabled</strong>
+            <div class="tab-panel" data-panel="analytics">
+              <div class="empty-state">
+                <p class="empty-title">No data yet</p>
+                <p class="empty-copy">
+                  Analytics will appear once your loader receives activity.
+                </p>
               </div>
             </div>
-          </section>
+          </div>
         </section>
       </main>
     </div>
 
-    <script src="script-dashboard-v1.js"></script>
+    <button class="chat-fab" type="button" aria-label="Open chat">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 5h16v11H8l-4 3z"></path>
+      </svg>
+    </button>
+
+    <script src="dashboard.js"></script>
   </body>
 </html>
