@@ -1,5 +1,6 @@
-// project-view.js - Solaries Project detail (Phase 6)
-// Adds: edit script, version history + restore, blocklist, allowlist,
+// project-view.js - Solaries Project detail (Phase 6 D2 UI)
+// Adds: Discord panel modal per script with copy-to-clipboard command
+// Also has: edit script, version history + restore, blocklist, allowlist,
 // whitelist-only toggle, pause/resume, rename, delete project.
 
 const params = new URLSearchParams(window.location.search);
@@ -58,6 +59,15 @@ const el = {
   closeLoader: document.getElementById("closeLoader"),
   btnCloseLoader: document.getElementById("btnCloseLoader"),
   btnCopyLoader: document.getElementById("btnCopyLoader"),
+
+  discordModal: document.getElementById("discordModal"),
+  discordSubtitle: document.getElementById("discordSubtitle"),
+  discordCmd: document.getElementById("discordCmd"),
+  discordInvite: document.getElementById("discordInvite"),
+  closeDiscord: document.getElementById("closeDiscord"),
+  btnCloseDiscord: document.getElementById("btnCloseDiscord"),
+  btnCopyDiscord: document.getElementById("btnCopyDiscord"),
+  btnCopyInvite: document.getElementById("btnCopyInvite"),
 
   historyModal: document.getElementById("historyModal"),
   historySubtitle: document.getElementById("historySubtitle"),
@@ -169,12 +179,14 @@ function renderScripts() {
       '<td>' + humanSize(s.size_bytes || 0) + '</td>' +
       '<td style="text-align:right">' +
         '<button class="mini-btn is-primary" data-loader>Loader</button> ' +
+        '<button class="mini-btn" data-discord>Discord</button> ' +
         '<button class="mini-btn" data-edit>Edit</button> ' +
         '<button class="mini-btn" data-history>History</button> ' +
         '<button class="mini-btn is-danger" data-del>Delete</button>' +
       '</td>';
 
     tr.querySelector("[data-loader]").addEventListener("click", function () { openLoader(s); });
+    tr.querySelector("[data-discord]").addEventListener("click", function () { openDiscord(s); });
     tr.querySelector("[data-edit]").addEventListener("click", function () { openWizardForEdit(s); });
     tr.querySelector("[data-history]").addEventListener("click", function () { openHistory(s); });
     tr.querySelector("[data-del]").addEventListener("click", async function () {
@@ -219,6 +231,33 @@ el.btnCopyLoader.addEventListener("click", async function () {
 });
 
 // ------------------------------------------------------------
+// Discord panel modal
+// ------------------------------------------------------------
+function openDiscord(script) {
+  el.discordSubtitle.textContent = script.name + " - slug: " + script.slug;
+  el.discordCmd.textContent = "/panel script_id:" + script.slug;
+  el.discordModal.classList.add("is-open");
+}
+function closeDiscord() { el.discordModal.classList.remove("is-open"); }
+el.closeDiscord.addEventListener("click", closeDiscord);
+el.btnCloseDiscord.addEventListener("click", closeDiscord);
+el.discordModal.addEventListener("click", function (e) {
+  if (e.target.getAttribute("data-close") === "true") closeDiscord();
+});
+el.btnCopyDiscord.addEventListener("click", async function () {
+  try {
+    await navigator.clipboard.writeText(el.discordCmd.textContent);
+    window.SL.toast("Command copied", "ok");
+  } catch (e) { window.SL.toast("Copy failed", "error"); }
+});
+el.btnCopyInvite.addEventListener("click", async function () {
+  try {
+    await navigator.clipboard.writeText(el.discordInvite.textContent);
+    window.SL.toast("Invite link copied", "ok");
+  } catch (e) { window.SL.toast("Copy failed", "error"); }
+});
+
+// ------------------------------------------------------------
 // Wizard (create or edit)
 // ------------------------------------------------------------
 function openWizardForCreate() {
@@ -245,14 +284,12 @@ function openWizardForCreate() {
 }
 
 async function openWizardForEdit(s) {
-  // Fetch full source
   try {
     const r = await window.SL.api("/api/scripts/" + s.id + "/versions");
     editingScript = s;
     el.wizardTitle.textContent = "Edit " + s.name;
     wizard = { step: 1, protection: s.protection || "none", ui: s.player_ui || "no_gui" };
 
-    // We need the current source - fetch from latest version
     if (r.ok && r.versions && r.versions.length > 0) {
       const latest = r.versions[0];
       const vr = await window.SL.api("/api/scripts/" + s.id + "/versions/" + latest.version);
@@ -607,7 +644,7 @@ el.btnAddAllow.addEventListener("click", async function () {
 });
 
 document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape") { closeWizard(); closeLoader(); closeHistory(); }
+  if (e.key === "Escape") { closeWizard(); closeLoader(); closeHistory(); closeDiscord(); }
 });
 
 loadProject();
