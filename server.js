@@ -1,4 +1,4 @@
-// server.js - Solaries Phase 6 (Discord Bot D2)
+// server.js - Solaries Phase 6 (Discord Bot D2.1 - detailed errors)
 // Adds on top of D1: /panel command + Get Key / Get Script / Reset HWID buttons
 // Bot only starts if DISCORD_BOT_TOKEN env var is set (safe fallback).
 
@@ -781,7 +781,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D2) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D2.1) running on port " + PORT);
 });
 
 // ============================================================
@@ -898,15 +898,19 @@ async function startDiscordBot() {
         }
       }
     } catch (e) {
-      console.error("Interaction error:", e.message);
+      console.error("Interaction error [" + (interaction.commandName || interaction.customId || "unknown") + "]:", e);
+      console.error("Stack:", e.stack);
       try {
-        const msg = "Something went wrong. Try again later.";
+        const errText = String(e.message || e || "unknown error").slice(0, 400);
+        const msg = "Error: " + errText;
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({ content: msg });
         } else {
           await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
         }
-      } catch (_) {}
+      } catch (replyErr) {
+        console.error("Failed to send error reply:", replyErr.message);
+      }
     }
   });
 
@@ -1048,16 +1052,31 @@ async function startDiscordBot() {
 
     // Post the panel message publicly
     const channel = interaction.channel;
-    const posted = await channel.send({ embeds: [embed], components: [row] });
+    let posted;
+    try {
+      posted = await channel.send({ embeds: [embed], components: [row] });
+    } catch (sendErr) {
+      console.error("channel.send failed:", sendErr.code, sendErr.message);
+      let hint = sendErr.message || "unknown";
+      if (sendErr.code === 50013) hint = "Bot missing permissions in this channel. Grant Send Messages + Embed Links to the Solaries role.";
+      else if (sendErr.code === 50001) hint = "Bot cannot access this channel. Add the Solaries role to the channel members.";
+      await interaction.editReply({ content: "Could not post panel: " + hint });
+      return;
+    }
 
     // Save panel record
-    await supabase.from("discord_panels").insert({
+    const { error: insertErr } = await supabase.from("discord_panels").insert({
       account_id: link.account_id,
       script_id: script.id,
       guild_id: interaction.guildId,
       channel_id: interaction.channelId,
       message_id: posted.id,
     });
+    if (insertErr) {
+      console.error("discord_panels insert failed:", insertErr);
+      await interaction.editReply({ content: "Panel posted to Discord but could not save record: " + (insertErr.message || "db error") });
+      return;
+    }
 
     await interaction.editReply({ content: "Panel posted." });
   }
