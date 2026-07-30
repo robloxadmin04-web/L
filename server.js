@@ -1,4 +1,4 @@
-// server.js - Solaries Phase 6 (Discord Bot D8 - redeem no DM + pause/disable checks)
+// server.js - Solaries Phase 6 (Discord Bot D9 - custom script slug on create)
 // Full command list: /login /logout /whoami /panel /managerrole /stats /settings
 // /key create|stock|delete|extend|revoke|info|list
 // /user info|blacklist|unblacklist|ban|unban  /hwid reset  /whitelist
@@ -462,9 +462,25 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
   const body = req.body || {};
   const name = String(body.name || "").trim();
   if (!name) return res.status(400).json({ ok: false, error: "Script name is required" });
+
+  // Custom slug handling with validation + uniqueness check
+  let finalSlug;
+  const customSlug = String(body.slug || "").trim().toLowerCase();
+  if (customSlug) {
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(customSlug) || customSlug.length < 3 || customSlug.length > 40) {
+      return res.status(400).json({ ok: false, error: "Slug must be 3-40 chars, lowercase a-z, 0-9, and dashes only. Cannot start/end with dash." });
+    }
+    const { data: existing } = await supabase.from("scripts")
+      .select("id").eq("project_id", req.params.pid).eq("slug", customSlug).maybeSingle();
+    if (existing) return res.status(400).json({ ok: false, error: "Slug already used in this project. Pick a different one." });
+    finalSlug = customSlug;
+  } else {
+    finalSlug = makeSlug(name);
+  }
+
   const source = String(body.source || "");
   const insert = {
-    project_id: req.params.pid, name, slug: makeSlug(name),
+    project_id: req.params.pid, name, slug: finalSlug,
     description: String(body.description || ""),
     protection: ["none", "luraph", "wynfuscate"].includes(body.protection) ? body.protection : "none",
     key_mode: body.key_mode === "keyless" ? "keyless" : "keyed",
@@ -784,7 +800,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D8) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D9) running on port " + PORT);
 });
 
 // ============================================================
