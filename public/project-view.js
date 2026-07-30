@@ -195,18 +195,18 @@ function renderScripts() {
   scripts.forEach(function (s) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td>' +
+      '<td data-label="Script">' +
         '<div class="cell-name">' + escapeHtml(s.name) + '</div>' +
         '<div class="cell-sub">' + escapeHtml(s.slug) + '</div>' +
       '</td>' +
-      '<td>' +
+      '<td data-label="Status">' +
         '<span class="status-pill ' + (s.enabled ? "is-live" : "is-off") + '">' + (s.enabled ? "Active" : "Disabled") + '</span>' +
         '<span class="type-pill">' + (s.key_mode === "keyless" ? "KEYLESS" : "KEYED") + '</span>' +
       '</td>' +
-      '<td>' + escapeHtml(protectionLabel(s.protection)) + '</td>' +
-      '<td style="color:var(--text-soft)">v' + (s.version || 1) + '</td>' +
-      '<td>' + humanSize(s.size_bytes || 0) + '</td>' +
-      '<td style="text-align:right">' +
+      '<td data-label="Protection">' + escapeHtml(protectionLabel(s.protection)) + '</td>' +
+      '<td data-label="Version" style="color:var(--text-soft)">v' + (s.version || 1) + '</td>' +
+      '<td data-label="Size">' + humanSize(s.size_bytes || 0) + '</td>' +
+      '<td data-label="Actions" style="text-align:right">' +
         '<button class="mini-btn is-primary" data-loader>Loader</button> ' +
         '<button class="mini-btn" data-discord>Discord</button> ' +
         '<button class="mini-btn" data-edit>Edit</button> ' +
@@ -626,11 +626,11 @@ function renderBlocklist(entries) {
   entries.forEach(function (e) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
-      '<td><span class="key-code" style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
-      '<td style="color:var(--text-soft)">' + escapeHtml(e.reason || "-") + '</td>' +
-      '<td style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
-      '<td style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
+      '<td data-label="Type"><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
+      '<td data-label="Value"><span class="key-code" style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
+      '<td data-label="Reason" style="color:var(--text-soft)">' + escapeHtml(e.reason || "-") + '</td>' +
+      '<td data-label="Added" style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
+      '<td data-label="Actions" style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
     tr.querySelector("[data-del]").addEventListener("click", async function () {
       if (!window.confirm("Remove this block entry?")) return;
       try {
@@ -674,11 +674,11 @@ function renderAllowlist(entries) {
   entries.forEach(function (e) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
-      '<td><span style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
-      '<td style="color:var(--text-soft)">' + escapeHtml(e.note || "-") + '</td>' +
-      '<td style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
-      '<td style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
+      '<td data-label="Type"><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
+      '<td data-label="Value"><span style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
+      '<td data-label="Note" style="color:var(--text-soft)">' + escapeHtml(e.note || "-") + '</td>' +
+      '<td data-label="Added" style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
+      '<td data-label="Actions" style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
     tr.querySelector("[data-del]").addEventListener("click", async function () {
       if (!window.confirm("Remove this allow entry?")) return;
       try {
