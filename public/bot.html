@@ -6,54 +6,73 @@
     <title>Discord - Solaries</title>
     <link rel="stylesheet" href="app.css" />
     <style>
-      .bot-hero { display:flex; align-items:center; gap:10px; margin-bottom:8px; color:var(--text-soft); font-size:13px; }
-      .bot-hero .arrow { color:var(--text-muted); }
+      .page-sub { color:var(--text-soft); font-size:13px; margin:4px 0 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .page-sub .sep { color:var(--text-muted); }
 
-      .status-strip { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
-      .status-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); font-size:12px; color:var(--text-soft); }
-      .status-chip.is-ok { color:#4ade80; border-color:rgba(74,222,128,0.3); background:rgba(74,222,128,0.08); }
-      .status-chip.is-warn { color:#fbbf24; border-color:rgba(251,191,36,0.3); background:rgba(251,191,36,0.08); }
-      .status-dot { width:8px; height:8px; border-radius:999px; background:currentColor; }
+      .chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+      .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); font-size:12px; color:var(--text-soft); }
+      .chip.ok { color:#4ade80; border-color:rgba(74,222,128,0.25); background:rgba(74,222,128,0.06); }
+      .chip.warn { color:#fbbf24; border-color:rgba(251,191,36,0.25); background:rgba(251,191,36,0.06); }
+      .chip .dot { width:6px; height:6px; border-radius:999px; background:currentColor; }
 
-      .step-card { border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:20px; margin-bottom:16px; }
-      .step-kicker { color:var(--text-muted); font-size:11px; letter-spacing:0.12em; text-transform:uppercase; margin:0 0 4px; font-weight:600; }
-      .step-title { color:var(--white); font-size:16px; font-weight:600; margin:0 0 4px; }
-      .step-copy { color:var(--text-soft); font-size:13px; margin:0 0 16px; line-height:1.5; }
+      .section { border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:18px 20px; margin-bottom:14px; }
+      .section-kicker { color:var(--text-muted); font-size:10px; letter-spacing:0.14em; text-transform:uppercase; margin:0 0 4px; font-weight:700; }
+      .section-title { color:var(--white); font-size:15px; font-weight:600; margin:0 0 4px; }
+      .section-copy { color:var(--text-soft); font-size:13px; margin:0 0 14px; line-height:1.5; }
 
-      .step-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-      .primary-btn.is-lg { padding:10px 18px; font-size:14px; }
-      .ghost-btn.is-lg { padding:10px 18px; font-size:14px; }
+      .btn-row { display:flex; flex-wrap:wrap; gap:8px; }
+      .btn-primary { display:inline-flex; align-items:center; gap:6px; padding:10px 16px; background:var(--accent); color:var(--white); border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; border:none; cursor:pointer; }
+      .btn-primary:hover { filter:brightness(1.1); }
+      .btn-primary svg { width:14px; height:14px; }
+      .btn-ghost { display:inline-flex; align-items:center; padding:10px 16px; background:transparent; color:var(--white); border:1px solid var(--line); border-radius:10px; font-size:13px; font-weight:500; text-decoration:none; cursor:pointer; }
+      .btn-ghost:hover { background:var(--hover); }
+      .btn-mini { padding:6px 12px; background:var(--surface-2); color:var(--white); border:1px solid var(--line); border-radius:8px; font-size:12px; font-weight:500; cursor:pointer; white-space:nowrap; }
+      .btn-mini:hover { background:var(--hover); }
+      .btn-mini.is-accent { background:var(--accent); border-color:var(--accent); color:var(--white); }
 
-      .cmd-box { display:flex; gap:8px; align-items:stretch; margin-top:8px; }
-      .cmd-code { flex:1; padding:12px 14px; background:var(--bg); border:1px solid var(--line); border-radius:10px; font-family:Consolas,Monaco,monospace; font-size:13px; color:var(--white); overflow-x:auto; white-space:nowrap; }
+      .divider { height:1px; background:var(--line-soft); margin:16px 0; }
 
-      .script-panel-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--bg); margin-top:10px; }
-      .script-panel-meta { min-width:0; flex:1; }
-      .script-panel-name { color:var(--white); font-size:14px; font-weight:600; margin:0 0 2px; }
-      .script-panel-sub { color:var(--text-soft); font-size:12px; margin:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-      .script-panel-sub .dot { width:4px; height:4px; border-radius:999px; background:var(--text-muted); }
-      .script-panel-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
-      .script-cmd { font-family:Consolas,Monaco,monospace; font-size:11px; color:var(--text-muted); padding:4px 8px; background:var(--surface-2); border-radius:6px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      @media (max-width: 720px) {
-        .script-cmd { display:none; }
-        .script-panel-item { flex-wrap:wrap; }
-        .script-panel-actions { width:100%; justify-content:flex-end; }
-      }
+      .field-label { color:var(--text-muted); font-size:10px; letter-spacing:0.12em; text-transform:uppercase; font-weight:700; margin:0 0 4px; }
+      .field-help { color:var(--text-soft); font-size:12px; margin:0 0 8px; }
+      .field-inline { display:flex; gap:6px; align-items:center; }
+      .field-inline > .mono { flex:1; min-width:0; }
+      .mono { padding:10px 12px; background:var(--bg); border:1px solid var(--line); border-radius:8px; font-family:Consolas,Monaco,monospace; font-size:12px; color:var(--white); overflow-x:auto; white-space:nowrap; }
 
-      .empty-panel { padding:24px; text-align:center; color:var(--text-soft); font-size:13px; border:1px dashed var(--line); border-radius:12px; }
+      .script-row { display:flex; align-items:center; gap:12px; padding:12px 14px; background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-top:8px; }
+      .script-row + .script-row { margin-top:6px; }
+      .script-icon { width:32px; height:32px; flex-shrink:0; border-radius:8px; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; }
+      .script-icon svg { width:14px; height:14px; color:#c4b5fd; }
+      .script-info { flex:1; min-width:0; }
+      .script-name { color:var(--white); font-size:13px; font-weight:600; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .script-meta { color:var(--text-soft); font-size:11px; margin:2px 0 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .script-meta .tag { padding:1px 6px; border-radius:4px; background:var(--surface-2); font-size:10px; letter-spacing:0.05em; text-transform:uppercase; font-weight:600; }
+      .script-meta .tag.on { color:#4ade80; }
+      .script-meta .tag.off { color:#fbbf24; }
+      .script-action { flex-shrink:0; }
+
+      .empty { padding:20px; text-align:center; color:var(--text-soft); font-size:13px; border:1px dashed var(--line); border-radius:10px; }
 
       .expander { border:1px solid var(--line); border-radius:14px; background:var(--surface); overflow:hidden; }
-      .expander-head { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; cursor:pointer; }
+      .expander-head { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; cursor:pointer; gap:12px; }
       .expander-head:hover { background:var(--hover); }
-      .expander-body { display:none; padding:0 20px 20px; border-top:1px solid var(--line-soft); }
-      .expander.is-open .expander-body { display:block; padding-top:16px; }
-      .expander-plus { color:var(--text-muted); font-size:20px; line-height:1; }
-      .expander.is-open .expander-plus { transform:rotate(45deg); transition:transform 0.2s; }
+      .expander-body { display:none; padding:0 20px 18px; border-top:1px solid var(--line-soft); }
+      .expander.is-open .expander-body { display:block; padding-top:14px; }
+      .expander-plus { color:var(--text-muted); font-size:22px; line-height:1; flex-shrink:0; transition:transform 0.2s; }
+      .expander.is-open .expander-plus { transform:rotate(45deg); }
+
+      @media (max-width: 540px) {
+        .section { padding:16px; }
+        .btn-primary, .btn-ghost { flex:1; justify-content:center; }
+        .script-row { flex-wrap:wrap; }
+        .script-info { flex:1 1 auto; min-width:0; }
+        .script-action { width:100%; margin-top:6px; }
+        .btn-mini { width:100%; text-align:center; }
+      }
     </style>
   </head>
   <body>
     <div class="app">
-      <aside class="sidebar" id="sidebar">
+            <aside class="sidebar" id="sidebar">
         <div class="sidebar-head">
           <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path></svg></div>
           <div class="head-actions">
@@ -73,23 +92,14 @@
             <a class="nav-link" href="dashboard.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect></svg></span><span>Overview</span></a>
             <a class="nav-link" href="projects.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span><span>Projects</span></a>
             <a class="nav-link" href="keys.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span><span>Keys</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H4z"></path><path d="M4 20h11"></path><circle cx="12" cy="10.5" r="2.5"></circle></svg></span><span>Monetization</span></a>
             <a class="nav-link is-active" href="bot.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span><span>Discord</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H7l-3 3z"></path></svg></span><span>Live Chat</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path><path d="M5 5l2 2"></path><path d="M17 17l2 2"></path><path d="M19 5l-2 2"></path><path d="M7 17l-2 2"></path></svg></span><span>Settings</span></a>
           </nav>
+
           <nav class="nav-group">
             <p class="nav-title">Tools</p>
             <a class="nav-link" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span><span>Delivery</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"></path><path d="M8 3v4M16 3v4"></path></svg></span><span>Guide</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5-9 5z"></path><path d="M3 8v8l9 5 9-5V8"></path></svg></span><span>Batches</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M9 8l-4 4 4 4"></path><path d="M15 8l4 4-4 4"></path></svg></span><span>Obfuscator</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9 10h5a2 2 0 010 4h-4"></path></svg></span><span>Earn</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"></rect><path d="M3 10h18"></path></svg></span><span>Billing</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 8h16v12H4z"></path><path d="M4 8l8-5 8 5"></path></svg></span><span>Redeem</span></a>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"></circle><path d="M6 18V6l14 12"></path></svg></span><span>Webhooks</span></a>
           </nav>
+
           <nav class="nav-group">
             <p class="nav-title">Owner</p>
             <a class="nav-link" href="owner.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg></span><span>Accounts</span></a>
@@ -100,7 +110,7 @@
           <div class="user-box">
             <span class="user-avatar" data-user-avatar>?</span>
             <div class="user-copy">
-              <p class="user-name" data-user-name>Loading...</p>
+              <p class="user-name" data-user-name>Loading</p>
               <p class="user-plan" data-user-plan>Free</p>
             </div>
           </div>
@@ -119,63 +129,66 @@
             </button>
             <div>
               <h1 class="page-title">Discord</h1>
-              <p class="bot-hero">Invite bot <span class="arrow">-></span> script slug <span class="arrow">-></span> /panel</p>
+              <p class="page-sub"><span>Invite bot</span><span class="sep">/</span><span>copy panel command</span><span class="sep">/</span><span>share with users</span></p>
             </div>
           </div>
         </header>
 
-        <div class="status-strip">
-          <span class="status-chip" id="chipBot"><span class="status-dot"></span><span id="chipBotText">Checking bot...</span></span>
-          <span class="status-chip" id="chipScripts"><span id="chipScriptsText">0 scripts</span></span>
-          <span class="status-chip" id="chipLinked"><span id="chipLinkedText">Discord not linked</span></span>
+        <div class="chip-row">
+          <span class="chip" id="chipBot"><span class="dot"></span><span id="chipBotText">Checking bot</span></span>
+          <span class="chip" id="chipScripts"><span id="chipScriptsText">0 scripts</span></span>
+          <span class="chip" id="chipLinked"><span id="chipLinkedText">Discord not linked</span></span>
         </div>
 
         <!-- STEP 1 -->
-        <div class="step-card">
-          <p class="step-kicker">Step 1</p>
-          <h2 class="step-title">Invite the bot</h2>
-          <p class="step-copy">Add Solaries bot to your Discord server. Then run <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px">/login</code> in Discord with your API key.</p>
-          <div class="step-actions">
-            <a class="primary-btn is-lg" id="btnInvite" href="#" target="_blank" rel="noopener">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
-              Invite bot (Primary)
+        <div class="section">
+          <p class="section-kicker">Step 1</p>
+          <h2 class="section-title">Invite the bot</h2>
+          <p class="section-copy">Add Solaries to your Discord server, then run <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px;font-size:12px">/login</code> with your API key.</p>
+          <div class="btn-row">
+            <a class="btn-primary" id="btnInvite" href="#" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Invite bot
             </a>
-            <a class="ghost-btn is-lg" id="btnSupport" href="#" target="_blank" rel="noopener">Support</a>
+            <a class="btn-ghost" id="btnSupport" href="index.html">Support</a>
           </div>
 
-          <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line-soft)">
-            <p style="color:var(--text-soft); font-size:13px; margin:0 0 4px">Your API key</p>
-            <p style="color:var(--text-muted); font-size:12px; margin:0 0 8px">Use this key with <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px">/login</code> inside your Discord server.</p>
-            <div class="cmd-box">
-              <code class="cmd-code" id="apiKeyBox">Loading...</code>
-              <button class="btn" id="btnCopyKey">Copy</button>
-            </div>
-          </div>
+          <div class="divider"></div>
+
+          <p class="field-label">Your API key</p>
+          <p class="field-help">Sign in on the login page to copy your key, then run <code style="background:var(--surface-2);padding:2px 6px;border-radius:4px;font-size:12px">/login</code> in Discord.</p>
+          <a class="btn-ghost" href="index.html" style="width:100%;justify-content:center">Open sign-in page</a>
         </div>
 
         <!-- STEP 2 -->
-        <div class="step-card">
-          <p class="step-kicker">Step 2</p>
-          <h2 class="step-title">Post a panel</h2>
-          <p class="step-copy">Copy a script's panel command below, then run it inside your Discord server.</p>
+        <div class="section">
+          <p class="section-kicker">Step 2</p>
+          <h2 class="section-title">Post a panel</h2>
+          <p class="section-copy">Copy a panel command below, then paste it in your Discord server.</p>
           <div id="scriptList"></div>
-          <div class="empty-panel" id="emptyList" style="display:none">
-            No scripts yet. <a href="projects.html" style="color:var(--accent)">Create a script</a> first, then come back here.
+          <div class="empty" id="emptyList" style="display:none">
+            No scripts yet. <a href="projects.html" style="color:var(--accent)">Create a script</a> to get started.
           </div>
         </div>
 
-        <!-- OPTIONAL: expander for future tools -->
+        <!-- OPTIONAL -->
         <div class="expander" id="tools">
           <div class="expander-head" id="toolsToggle">
-            <div>
-              <p class="step-kicker">Optional tools</p>
-              <p style="color:var(--white); font-size:14px; font-weight:600; margin:2px 0 0">Manage panels, staff, and branding</p>
-              <p style="color:var(--text-soft); font-size:12px; margin:2px 0 0">Coming in Phase D3.</p>
+            <div style="min-width:0">
+              <p class="section-kicker">Optional tools</p>
+              <p style="color:var(--white); font-size:14px; font-weight:600; margin:2px 0 0">Panel history, buyer role settings</p>
+              <p style="color:var(--text-soft); font-size:12px; margin:2px 0 0">Manage everything from Discord commands.</p>
             </div>
             <span class="expander-plus">+</span>
           </div>
           <div class="expander-body">
-            <p style="color:var(--text-soft); font-size:13px; margin:0">Buyer role auto-assign, Session Status button, admin commands (/revokekey, /listkeys), and panel deletion tools will land in the next phase.</p>
+            <p style="color:var(--text-soft); font-size:13px; margin:0 0 8px; line-height:1.5">Use these Discord commands to manage panels, roles, and staff access:</p>
+            <ul style="color:var(--text-soft); font-size:12px; margin:0; padding-left:18px; line-height:1.7">
+              <li><code style="background:var(--surface-2);padding:1px 5px;border-radius:4px">/buyerrole set role:@Buyer</code> - auto-assign role on key redeem</li>
+              <li><code style="background:var(--surface-2);padding:1px 5px;border-radius:4px">/managerrole set role:@Staff</code> - grant staff admin access</li>
+              <li><code style="background:var(--surface-2);padding:1px 5px;border-radius:4px">/settings view</code> - configure key prefix, expiry, cooldown</li>
+              <li><code style="background:var(--surface-2);padding:1px 5px;border-radius:4px">/stats</code> - see keys, users, executions</li>
+            </ul>
           </div>
         </div>
       </main>
