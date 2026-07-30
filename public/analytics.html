@@ -49,6 +49,57 @@
         font-size: 10px; font-weight: 600;
         letter-spacing: 0.04em; text-transform: uppercase;
       }
+
+      /* --- New: header actions, range toggle, breakdown, scrollable feed --- */
+      .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .head-tools { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+      .range-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+      .range-toggle button {
+        background: transparent; border: 0; color: var(--text-muted);
+        font-size: 12px; font-weight: 600; padding: 6px 12px; cursor: pointer;
+      }
+      .range-toggle button.is-active { background: var(--surface-2); color: var(--white); }
+
+      .icon-mini {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 32px; height: 32px; border: 1px solid var(--line);
+        border-radius: 8px; background: transparent; color: var(--text-muted);
+        cursor: pointer;
+      }
+      .icon-mini:hover { color: var(--white); border-color: var(--text-soft); }
+      .icon-mini svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+      .danger-mini {
+        display: inline-flex; align-items: center; gap: 6px;
+        border: 1px solid rgba(239,68,68,0.35); border-radius: 8px;
+        background: transparent; color: #fca5a5;
+        font-size: 12px; font-weight: 600; padding: 6px 12px; cursor: pointer;
+      }
+      .danger-mini:hover { background: rgba(239,68,68,0.1); }
+      .danger-mini svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+      .breakdown-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px;
+      }
+      @media (max-width: 640px) { .breakdown-grid { grid-template-columns: 1fr; } }
+      .breakdown-cell {
+        border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+        display: flex; align-items: center; gap: 10px;
+      }
+      .breakdown-dot { width: 10px; height: 10px; border-radius: 999px; flex-shrink: 0; }
+      .breakdown-dot.load { background: var(--good); }
+      .breakdown-dot.login { background: var(--accent); }
+      .breakdown-dot.blocked { background: var(--danger); }
+      .breakdown-copy .b-value { color: var(--white); font-size: 18px; font-weight: 700; margin: 0; line-height: 1; }
+      .breakdown-copy .b-label { color: var(--text-soft); font-size: 11px; margin: 4px 0 0; text-transform: uppercase; letter-spacing: 0.04em; }
+
+      .activity-scroll { max-height: 420px; overflow-y: auto; padding-right: 4px; }
+
+      .reason-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+      .reason-row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+      .reason-row .r-name { color: var(--text-muted); }
+      .reason-row .r-count { color: #fca5a5; font-weight: 600; }
     </style>
   </head>
   <body>
@@ -110,6 +161,9 @@
             </button>
             <h1 class="page-title">Analytics</h1>
           </div>
+          <button class="icon-mini" id="refreshBtn" type="button" aria-label="Refresh" title="Refresh">
+            <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"></path><path d="M21 3v5h-5"></path></svg>
+          </button>
         </header>
 
         <section class="stats-grid">
@@ -139,11 +193,11 @@
           </article>
           <article class="stat-card">
             <div class="stat-head">
-              <p class="stat-label">Top Project</p>
-              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span>
+              <p class="stat-label">Blocked 7d</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M5 5l14 14"></path></svg></span>
             </div>
-            <p class="stat-value" style="font-size:18px" data-stat="top">-</p>
-            <p class="stat-meta" data-stat-meta="top">Most active project (30d)</p>
+            <p class="stat-value" data-stat="blocked7">0</p>
+            <p class="stat-meta" data-stat-meta="blocked">Denied attempts (7d)</p>
           </article>
         </section>
 
@@ -151,12 +205,34 @@
           <div class="card-head">
             <div>
               <p class="card-kicker">Trend</p>
-              <h2 class="card-title">Loads per day - last 30 days</h2>
+              <h2 class="card-title" id="chartTitle">Loads per day - last 30 days</h2>
+            </div>
+            <div class="head-tools">
+              <div class="range-toggle" id="rangeToggle">
+                <button type="button" data-range="7">7d</button>
+                <button type="button" class="is-active" data-range="30">30d</button>
+              </div>
             </div>
           </div>
           <div class="chart-wrap" id="chartWrap">
             <div class="chart-empty" id="chartEmpty" style="display:none">No loads recorded yet. Once your scripts get used, the trend will show here.</div>
             <svg class="chart-svg" id="chartSvg" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+          </div>
+
+          <!-- Event breakdown -->
+          <div class="breakdown-grid" id="breakdownGrid">
+            <div class="breakdown-cell">
+              <span class="breakdown-dot load"></span>
+              <div class="breakdown-copy"><p class="b-value" data-bd="load">0</p><p class="b-label">Loads (30d)</p></div>
+            </div>
+            <div class="breakdown-cell">
+              <span class="breakdown-dot login"></span>
+              <div class="breakdown-copy"><p class="b-value" data-bd="login">0</p><p class="b-label">Logins (30d)</p></div>
+            </div>
+            <div class="breakdown-cell">
+              <span class="breakdown-dot blocked"></span>
+              <div class="breakdown-copy"><p class="b-value" data-bd="blocked">0</p><p class="b-label">Blocked (30d)</p></div>
+            </div>
           </div>
         </div>
 
@@ -184,6 +260,12 @@
                 <p class="empty-copy">Top scripts will appear here once you get traffic.</p>
               </div>
             </div>
+
+            <!-- Top block reasons -->
+            <div id="reasonSection" style="margin-top:20px; display:none">
+              <p class="card-kicker">Top block reasons (30d)</p>
+              <div class="reason-list" id="reasonList"></div>
+            </div>
           </div>
 
           <div class="card">
@@ -192,8 +274,16 @@
                 <p class="card-kicker">Live feed</p>
                 <h2 class="card-title">Recent activity</h2>
               </div>
+              <div class="head-tools">
+                <button class="danger-mini" id="clearLogsBtn" type="button">
+                  <svg viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path></svg>
+                  Clear logs
+                </button>
+              </div>
             </div>
-            <div class="activity-list" id="activityList"></div>
+            <div class="activity-scroll">
+              <div class="activity-list" id="activityList"></div>
+            </div>
             <div class="empty-state" id="activityEmpty" style="display:none">
               <p class="empty-title">Nothing yet</p>
               <p class="empty-copy">Signins and script loads will show here.</p>
@@ -201,6 +291,26 @@
           </div>
         </div>
       </main>
+    </div>
+
+    <!-- Clear logs confirmation modal -->
+    <div class="modal" id="clearModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h3 class="modal-title">Clear all logs?</h3>
+            <p class="modal-subtitle">This permanently deletes every activity record (loads, logins, blocked). Charts and stats will reset to zero. This cannot be undone.</p>
+          </div>
+          <button class="icon-square" id="closeClear" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
+          </button>
+        </div>
+        <div class="modal-foot">
+          <button class="ghost-btn" id="cancelClear" type="button">Cancel</button>
+          <button class="primary-btn" id="confirmClear" type="button" style="background:#ef4444;border-color:#ef4444">Delete all logs</button>
+        </div>
+      </div>
     </div>
 
     <script src="auth.js"></script>
