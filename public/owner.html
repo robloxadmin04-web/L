@@ -32,6 +32,21 @@
       .plan-pill.is-owner { color: #c4b5fd; border-color: rgba(124, 58, 237, 0.4); }
       .plan-pill.is-scale { color: #86efac; border-color: rgba(34, 197, 94, 0.4); }
       .plan-pill.is-creator { color: #fcd34d; border-color: rgba(245, 158, 11, 0.4); }
+
+      /* Discord invite settings card */
+      .settings-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .settings-row .text-field { flex: 1; min-width: 240px; }
+      .settings-note {
+        margin: 10px 0 0;
+        font-size: 12px;
+      }
+      .settings-note.is-ok { color: #86efac; }
+      .settings-note.is-err { color: #fca5a5; }
     </style>
   </head>
   <body>
@@ -136,6 +151,19 @@
             <p class="stat-meta">Scale tier accounts</p>
           </article>
         </section>
+
+        <!-- Discord invite settings -->
+        <div class="card" id="discordSettingsCard" style="margin-bottom:20px; display:none;">
+          <div style="margin-bottom:14px;">
+            <h3 style="margin:0; font-size:15px; color:var(--white);">Discord invite link</h3>
+            <p style="margin:4px 0 0; color:var(--text-soft); font-size:13px;">Shown on the login page's "Request access" button. Update it here when your invite expires — it applies instantly.</p>
+          </div>
+          <div class="settings-row">
+            <input class="text-field" id="discordInvite" type="text" placeholder="https://discord.gg/xxxxxxx" autocomplete="off" spellcheck="false" />
+            <button class="primary-btn" id="saveDiscord" type="button">Save</button>
+          </div>
+          <p class="settings-note" id="discordNote"></p>
+        </div>
 
         <div class="card">
           <div class="toolbar">
@@ -248,5 +276,58 @@
 
     <script src="auth.js"></script>
     <script src="owner.js"></script>
+    <script>
+      // Discord invite settings — owner only. Uses window.SL.api from auth.js.
+      (function () {
+        var card = document.getElementById("discordSettingsCard");
+        var input = document.getElementById("discordInvite");
+        var saveBtn = document.getElementById("saveDiscord");
+        var note = document.getElementById("discordNote");
+        if (!card || !window.SL) return;
+
+        // Only owners see the card
+        if (window.SL.account && window.SL.account.role === "owner") {
+          card.style.display = "block";
+        } else {
+          return;
+        }
+
+        function setNote(msg, kind) {
+          note.textContent = msg || "";
+          note.className = "settings-note" + (kind ? " is-" + kind : "");
+        }
+
+        // Load current invite
+        (async function () {
+          try {
+            var r = await window.SL.api("/api/discord/invite");
+            if (r.ok) input.value = r.invite || "";
+          } catch (e) {}
+        })();
+
+        saveBtn.addEventListener("click", async function () {
+          var invite = input.value.trim();
+          saveBtn.disabled = true;
+          var orig = saveBtn.textContent;
+          saveBtn.textContent = "Saving...";
+          setNote("", "");
+          try {
+            var r = await window.SL.api("/api/settings/discord", {
+              method: "POST",
+              body: JSON.stringify({ invite: invite }),
+            });
+            if (r.ok) {
+              setNote("Saved. The login page now uses this invite.", "ok");
+            } else {
+              setNote(r.error || "Could not save.", "err");
+            }
+          } catch (e) {
+            setNote(e.message || "Could not save.", "err");
+          }
+          saveBtn.disabled = false;
+          saveBtn.textContent = orig;
+        });
+      })();
+    </script>
   </body>
 </html>
