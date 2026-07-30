@@ -303,8 +303,8 @@ if (el.refreshBtn) {
 // ------------------------------------------------------------
 // Clear logs
 // ------------------------------------------------------------
-function openClear() { if (el.clearModal) el.clearModal.setAttribute("aria-hidden", "false"); }
-function closeClearModal() { if (el.clearModal) el.clearModal.setAttribute("aria-hidden", "true"); }
+function openClear() { if (el.clearModal) el.clearModal.classList.add("is-open"); }
+function closeClearModal() { if (el.clearModal) el.clearModal.classList.remove("is-open"); }
 
 if (el.clearLogsBtn) el.clearLogsBtn.addEventListener("click", openClear);
 if (el.closeClear) el.closeClear.addEventListener("click", closeClearModal);
