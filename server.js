@@ -784,6 +784,49 @@ app.delete("/api/discord/panels/:id", requireAuth, async (req, res) => {
 });
 
 // ============================================================
+// STEP 2: Add these routes to server.js
+// ------------------------------------------------------------
+// Paste this block anywhere AFTER `requireOwner` is defined and
+// AFTER `app` + `supabase` are set up. The existing Discord routes
+// section (// DISCORD ...) is a good neighbour to drop it near.
+// ============================================================
+
+// --- PUBLIC: index.html reads the current Discord invite (no auth) ---
+app.get("/api/discord/invite", async (req, res) => {
+  const { data, error } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "discord_invite")
+    .maybeSingle();
+  if (error) return res.status(500).json({ ok: false, error: "Server error" });
+  res.json({ ok: true, invite: (data && data.value) || "" });
+});
+
+// --- OWNER: update the Discord invite from owner.html ---
+app.post("/api/settings/discord", requireAuth, requireOwner, async (req, res) => {
+  const invite = (req.body?.invite || "").trim();
+
+  // Basic validation: must be a discord.gg / discord invite link
+  const ok = /^https:\/\/(discord\.gg|discord\.com\/invite)\/[A-Za-z0-9-]+$/.test(invite);
+  if (!ok) {
+    return res.status(400).json({
+      ok: false,
+      error: "Enter a valid invite, e.g. https://discord.gg/xxxxxxx",
+    });
+  }
+
+  const { error } = await supabase
+    .from("settings")
+    .upsert(
+      { key: "discord_invite", value: invite, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+  if (error) return res.status(500).json({ ok: false, error: "Could not save" });
+  res.json({ ok: true, invite });
+});
+
+
+// ============================================================
 // Health check + keep-alive
 // ============================================================
 app.get("/healthz", (req, res) => {
