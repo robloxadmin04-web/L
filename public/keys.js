@@ -1,5 +1,5 @@
-// keys.js - Solaries Keys page (Phase 6)
-// Adds HWID lock toggle, expiry days, Reset HWID button, expiry column.
+// keys.js - Solaries Keys page (mobile responsive)
+// Card-based layout for all screen sizes. Pure ASCII only.
 
 const el = {
   total: document.querySelector('[data-stat="total"]'),
@@ -7,8 +7,7 @@ const el = {
   revoked: document.querySelector('[data-stat="revoked"]'),
   logins: document.querySelector('[data-stat="logins"]'),
 
-  table: document.getElementById("keysTable"),
-  body: document.getElementById("keysBody"),
+  list: document.getElementById("keysList"),
   empty: document.getElementById("keysEmpty"),
   search: document.getElementById("searchInput"),
   projectFilter: document.getElementById("projectFilter"),
@@ -96,7 +95,8 @@ function populateProjectFilters() {
     o.textContent = p.name;
     el.projectFilter.appendChild(o);
   });
-  if ([...el.projectFilter.options].some(function (o) { return o.value === currentFilter; })) {
+  const opts = Array.from(el.projectFilter.options);
+  if (opts.some(function (o) { return o.value === currentFilter; })) {
     el.projectFilter.value = currentFilter;
   }
 
@@ -133,73 +133,100 @@ function render() {
   document.querySelector('[data-count="revoked"]').textContent = keys.filter(function (k) { return k.revoked; }).length;
   document.querySelector('[data-count="expired"]').textContent = keys.filter(function (k) { return !k.revoked && isExpired(k); }).length;
 
-  el.body.innerHTML = "";
+  el.list.innerHTML = "";
+
   if (list.length === 0) {
-    el.table.style.display = "none";
     if (keys.length === 0) {
       el.empty.style.display = "block";
     } else {
       el.empty.style.display = "none";
-      const p = document.createElement("tr");
-      p.innerHTML = '<td colspan="7" style="text-align:center;color:var(--text-soft);padding:32px;">No keys match your filter.</td>';
-      el.body.appendChild(p);
+      const p = document.createElement("p");
+      p.style.cssText = "text-align:center;color:var(--text-soft);padding:32px;font-size:13px;";
+      p.textContent = "No keys match your filter.";
+      el.list.appendChild(p);
     }
     return;
   }
-  el.table.style.display = "";
   el.empty.style.display = "none";
 
   list.forEach(function (k) {
-    const tr = document.createElement("tr");
     const pName = projectName(k.project_id);
-    const scope = pName
-      ? '<span class="key-scope"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg>' + escapeHtml(pName) + '</span>'
-      : '<span class="key-scope">Global</span>';
+    const scopeChip = pName
+      ? '<span class="key-scope-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/></svg>' + escapeHtml(pName) + '</span>'
+      : '<span class="key-scope-chip">Global</span>';
 
-    let lockCell;
+    let lockBadge;
     if (k.hwid_locked) {
       if (k.hwid) {
-        lockCell = '<span class="lock-icon lock-yes" title="Locked to: ' + escapeHtml(k.hwid) + '"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 018 0v4"></path></svg> Locked</span>';
+        lockBadge = '<span class="lock-badge lock-yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg> Locked</span>';
       } else {
-        lockCell = '<span class="lock-icon lock-no"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 118 0"></path></svg> Awaiting</span>';
+        lockBadge = '<span class="lock-badge lock-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 118 0"/></svg> Awaiting</span>';
       }
     } else {
-      lockCell = '<span class="lock-no">Open</span>';
+      lockBadge = '<span class="lock-badge lock-open">Open</span>';
     }
 
-    let expiryCell = "Lifetime";
-    let statusCell;
-    if (k.revoked) {
-      statusCell = '<span class="status-pill is-revoked">Revoked</span>';
-    } else if (isExpired(k)) {
-      statusCell = '<span class="status-pill is-off">Expired</span>';
-    } else {
-      statusCell = '<span class="status-pill is-live">Active</span>';
-    }
+    let expiryText = "Lifetime";
+    let expiryClass = "dim";
     if (k.expires_at) {
       const days = Math.ceil((new Date(k.expires_at).getTime() - Date.now()) / 86400000);
-      expiryCell = formatDate(k.expires_at) + (days > 0 ? ' <span style="color:var(--text-soft)">(' + days + 'd)</span>' : ' <span style="color:#fca5a5">(expired)</span>');
+      if (days > 0) {
+        expiryText = formatDate(k.expires_at) + " (" + days + "d)";
+        expiryClass = "";
+      } else {
+        expiryText = "Expired " + formatDate(k.expires_at);
+        expiryClass = "dim";
+      }
     }
 
-    const resetBtn = k.hwid_locked && k.hwid ? '<button class="mini-btn" data-reset>Reset HWID</button>' : '';
+    let statusPill;
+    if (k.revoked) {
+      statusPill = '<span class="status-pill is-revoked">Revoked</span>';
+    } else if (isExpired(k)) {
+      statusPill = '<span class="status-pill is-off">Expired</span>';
+    } else {
+      statusPill = '<span class="status-pill is-live">Active</span>';
+    }
 
-    tr.innerHTML =
-      '<td><span class="key-code">' + escapeHtml(k.key) + '</span></td>' +
-      '<td>' + escapeHtml(k.label || "-") + '</td>' +
-      '<td>' + scope + '</td>' +
-      '<td>' + lockCell + '</td>' +
-      '<td style="color:var(--text-soft)">' + expiryCell + '</td>' +
-      '<td>' + statusCell + '</td>' +
-      '<td>' +
-        '<div class="row-actions">' +
-          '<button class="mini-btn" data-copy>Copy</button>' +
-          resetBtn +
-          '<button class="mini-btn is-danger" data-toggle>' + (k.revoked ? "Restore" : "Revoke") + '</button>' +
-          '<button class="mini-btn is-danger" data-del>Delete</button>' +
+    const resetBtn = k.hwid_locked && k.hwid
+      ? '<button class="mini-btn" data-reset type="button">Reset HWID</button>'
+      : '';
+
+    const card = document.createElement("div");
+    card.className = "key-card";
+    card.innerHTML =
+      '<div class="key-card-head">' +
+        '<span class="key-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="14" r="3"/><path d="M11 14h9"/><path d="M17 11v6"/></svg></span>' +
+        '<div class="key-card-body">' +
+          '<span class="key-code">' + escapeHtml(k.key) + '</span>' +
+          '<p class="key-label">' + escapeHtml(k.label || "No label") + '</p>' +
         '</div>' +
-      '</td>';
+        statusPill +
+      '</div>' +
 
-    tr.querySelector("[data-copy]").addEventListener("click", async function (e) {
+      '<div class="key-meta">' +
+        '<div class="key-meta-item" style="flex:1 1 45%">' +
+          '<span class="key-meta-label">Project</span>' +
+          '<span class="key-meta-value">' + scopeChip + '</span>' +
+        '</div>' +
+        '<div class="key-meta-item" style="flex:1 1 45%">' +
+          '<span class="key-meta-label">HWID</span>' +
+          '<span class="key-meta-value">' + lockBadge + '</span>' +
+        '</div>' +
+        '<div class="key-meta-item" style="flex:1 1 100%">' +
+          '<span class="key-meta-label">Expiry</span>' +
+          '<span class="key-meta-value ' + expiryClass + '">' + expiryText + '</span>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="key-actions">' +
+        '<button class="mini-btn" data-copy type="button">Copy</button>' +
+        resetBtn +
+        '<button class="mini-btn is-danger" data-toggle type="button">' + (k.revoked ? "Restore" : "Revoke") + '</button>' +
+        '<button class="mini-btn is-danger" data-del type="button">Delete</button>' +
+      '</div>';
+
+    card.querySelector("[data-copy]").addEventListener("click", async function (e) {
       try {
         await navigator.clipboard.writeText(k.key);
         e.target.textContent = "Copied";
@@ -207,7 +234,7 @@ function render() {
       } catch (err) { window.SL.toast("Copy failed", "error"); }
     });
 
-    tr.querySelector("[data-toggle]").addEventListener("click", async function () {
+    card.querySelector("[data-toggle]").addEventListener("click", async function () {
       try {
         const r = await window.SL.api("/api/keys/" + k.id, {
           method: "PATCH",
@@ -218,7 +245,7 @@ function render() {
       } catch (e) { window.SL.toast(e.message, "error"); }
     });
 
-    tr.querySelector("[data-del]").addEventListener("click", async function () {
+    card.querySelector("[data-del]").addEventListener("click", async function () {
       if (!window.confirm("Delete this key permanently?")) return;
       try {
         const r = await window.SL.api("/api/keys/" + k.id, { method: "DELETE" });
@@ -227,7 +254,7 @@ function render() {
       } catch (e) { window.SL.toast(e.message, "error"); }
     });
 
-    const resetEl = tr.querySelector("[data-reset]");
+    const resetEl = card.querySelector("[data-reset]");
     if (resetEl) {
       resetEl.addEventListener("click", async function () {
         if (!window.confirm("Reset HWID for this key? User can bind to a new device on next load.")) return;
@@ -239,7 +266,7 @@ function render() {
       });
     }
 
-    el.body.appendChild(tr);
+    el.list.appendChild(card);
   });
 }
 
