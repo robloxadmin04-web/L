@@ -328,6 +328,14 @@
               <label for="sDesc">Description (optional)</label>
               <input class="text-field" id="sDesc" type="text" placeholder="What this script does" autocomplete="off" style="min-width:0;width:100%" />
             </div>
+            <div class="field" id="slugField">
+              <label for="sSlug">Custom slug (optional)</label>
+              <div style="display:flex; gap:8px;">
+                <input class="text-field" id="sSlug" type="text" placeholder="my-script" autocomplete="off" spellcheck="false" style="min-width:0;flex:1" />
+                <button class="ghost-btn" id="btnAutoSlug" type="button" style="flex-shrink:0">Auto</button>
+              </div>
+              <p class="field-hint" id="sSlugPreview" style="margin-top:6px">Auto: based on name</p>
+            </div>
             <div class="toggle-block" style="margin-top:8px">
               <p class="toggle-block-title">Access</p>
               <div class="toggle-row">
