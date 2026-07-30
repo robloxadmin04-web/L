@@ -692,3 +692,74 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
     word-break: break-word;
   }
 }
+
+
+/* ============================================================
+   LIGHT MODE (Phase 6 - theme toggle)
+   Active only when <html data-theme="light">.
+   Set by the theme toggle button (see auth.js), saved in
+   localStorage. Dark mode is the default and is untouched.
+   These override the :root variables, so every component that
+   uses var(--...) picks up the light palette automatically.
+   ============================================================ */
+html[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f1f4;
+  --sidebar: #ffffff;
+  --line: #e2e4e9;
+  --line-soft: #eceef1;
+  --text: #1a1c20;
+  --text-muted: #4b5058;
+  --text-soft: #8a909a;
+  --white: #0a0a0b;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-soft: rgba(124, 58, 237, 0.10);
+  --good: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --hover: #eef0f3;
+  --shadow: 0 10px 30px rgba(20, 22, 30, 0.10);
+}
+
+/* A few spots use hard-coded dark values instead of variables.
+   Patch those so light mode reads cleanly. */
+html[data-theme="light"] .pill-btn:hover,
+html[data-theme="light"] .icon-square:hover,
+html[data-theme="light"] .mini-btn:hover,
+html[data-theme="light"] .ghost-btn:hover {
+  border-color: #cbd0d8;
+}
+
+html[data-theme="light"] .text-field:focus,
+html[data-theme="light"] .select-field:focus,
+html[data-theme="light"] .textarea-field:focus {
+  border-color: #c4b5fd;
+}
+
+html[data-theme="light"] .user-avatar {
+  background: #e9eaee;
+  color: #1a1c20;
+}
+
+/* Status pills - deepen text so they stay readable on white */
+html[data-theme="light"] .status-pill.is-live { background: rgba(22, 163, 74, 0.10); color: #15803d; }
+html[data-theme="light"] .status-pill.is-paused { background: rgba(217, 119, 6, 0.10); color: #b45309; }
+html[data-theme="light"] .status-pill.is-off { background: rgba(100, 116, 139, 0.12); color: #475569; }
+html[data-theme="light"] .status-pill.is-revoked { background: rgba(220, 38, 38, 0.10); color: #b91c1c; }
+
+html[data-theme="light"] .stat-icon,
+html[data-theme="light"] .project-icon { color: #6d28d9; }
+
+/* Error box - light variant */
+html[data-theme="light"] .field-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+/* Modal backdrop - lighter dim on light mode */
+html[data-theme="light"] .modal-backdrop { background: rgba(20, 22, 30, 0.35); }
+html[data-theme="light"] .modal-card { box-shadow: 0 30px 70px rgba(20, 22, 30, 0.18); }
+
