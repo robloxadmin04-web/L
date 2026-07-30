@@ -1,4 +1,4 @@
-// server.js - Solaries Phase 6 (Discord Bot D6 - hybrid DM + expiry warnings)
+// server.js - Solaries Phase 6 (Discord Bot D7 - strict Get Script)
 // Full command list: /login /logout /whoami /panel /managerrole /stats /settings
 // /key create|stock|delete|extend|revoke|info|list
 // /user info|blacklist|unblacklist|ban|unban  /hwid reset  /whitelist
@@ -784,7 +784,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D6) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D7) running on port " + PORT);
 });
 
 // ============================================================
@@ -1398,22 +1398,34 @@ async function startDiscordBot() {
     let userKey = null;
     if (script.key_mode === "keyed") {
       const { data: existingKey } = await supabase.from("keys")
-        .select("key, revoked").eq("discord_id", discordId)
+        .select("key, revoked, expires_at").eq("discord_id", discordId)
+        .eq("project_id", script.project_id)
         .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
-      if (existingKey && !existingKey.revoked) userKey = existingKey.key;
+
+      if (!existingKey) {
+        const embed = new EmbedBuilder().setColor(0xef4444).setTitle("No Active License")
+          .setDescription("You need to redeem a key first. Click **Redeem Key** on the panel to get started.");
+        return interaction.editReply({ embeds: [embed] });
+      }
+      if (existingKey.revoked) {
+        const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Revoked")
+          .setDescription("Your key has been revoked. Contact the script owner.");
+        return interaction.editReply({ embeds: [embed] });
+      }
+      if (existingKey.expires_at && new Date(existingKey.expires_at).getTime() < Date.now()) {
+        const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Expired")
+          .setDescription("Your key has expired. Renew or contact the script owner.");
+        return interaction.editReply({ embeds: [embed] });
+      }
+      userKey = existingKey.key;
 
       const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-      if (userKey) {
-        loader = '_G.script_key = "' + userKey + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
-      } else {
-        loader = '_G.script_key = "PASTE_YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
-      }
+      loader = '_G.script_key = "' + userKey + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
     } else {
       loader = 'loadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '"))()';
     }
 
-    const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```" +
-      (userKey ? "\n\nKeep this private. Do not share." : "\n\nYou do not have a redeemed key yet. Click Redeem Key on the panel first.");
+    const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
 
     const dmSent = await trySendDM(discordId, { content: dmContent });
     if (dmSent) {
