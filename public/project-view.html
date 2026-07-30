@@ -337,6 +337,15 @@
               <label for="sDesc">Description (optional)</label>
               <input class="text-field" id="sDesc" type="text" placeholder="What this script does" autocomplete="off" style="min-width:0;width:100%" />
             </div>
+            <div class="field" id="slugField">
+              <label for="sSlug">Custom slug (optional)</label>
+              <div style="display:flex;gap:8px;align-items:stretch">
+                <input class="text-field" id="sSlug" type="text" placeholder="my-cool-script" autocomplete="off" maxlength="40" style="min-width:0;flex:1" />
+                <button class="ghost-btn" id="btnAutoSlug" type="button" style="flex:0 0 auto;padding:0 14px;height:38px;font-size:12px">Auto</button>
+              </div>
+              <p class="field-hint">3-40 chars: lowercase a-z, 0-9, and dashes. Leave empty to auto-generate. Cannot be changed later.</p>
+              <p id="sSlugPreview" style="margin:0;font-size:11px;color:var(--text-muted);font-family:Consolas,Monaco,monospace"></p>
+            </div>
             <div class="toggle-block" style="margin-top:8px">
               <p class="toggle-block-title">Access</p>
               <div class="toggle-row">
