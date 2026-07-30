@@ -1,4 +1,4 @@
-// server.js - Solaries Phase 6 (Discord Bot D7 - strict Get Script)
+// server.js - Solaries Phase 6 (Discord Bot D8 - redeem no DM + pause/disable checks)
 // Full command list: /login /logout /whoami /panel /managerrole /stats /settings
 // /key create|stock|delete|extend|revoke|info|list
 // /user info|blacklist|unblacklist|ban|unban  /hwid reset  /whitelist
@@ -784,7 +784,7 @@ setInterval(() => {
 // Start HTTP server
 // ============================================================
 app.listen(PORT, () => {
-  console.log("Solaries server (Phase 6 D7) running on port " + PORT);
+  console.log("Solaries server (Phase 6 D8) running on port " + PORT);
 });
 
 // ============================================================
@@ -1387,11 +1387,21 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
 
     const { data: script } = await supabase.from("scripts")
-      .select("id, name, slug, key_mode, projects!inner(owner_account_id)")
+      .select("id, name, slug, key_mode, enabled, project_id, projects!inner(owner_account_id, status)")
       .eq("id", scriptId).maybeSingle();
     if (!script) {
       await interaction.editReply({ content: "Script not found." });
       return;
+    }
+    if (!script.enabled) {
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Script Disabled")
+        .setDescription("This script is currently disabled. Contact the script owner.");
+      return interaction.editReply({ embeds: [embed] });
+    }
+    if (script.projects.status === "paused") {
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Project Paused")
+        .setDescription("The project is currently paused. Contact the script owner.");
+      return interaction.editReply({ embeds: [embed] });
     }
 
     let loader;
@@ -2395,21 +2405,8 @@ async function startDiscordBot() {
       }
     }
 
-    // Try to DM the loader script
-    const { data: fullScript } = await supabase.from("scripts").select("slug, key_mode").eq("id", script.id).maybeSingle();
-    let dmMsg = "";
-    if (fullScript) {
-      const url = PUBLIC_BASE_URL + "/v1/load/" + fullScript.slug;
-      const loader = fullScript.key_mode === "keyless"
-        ? 'loadstring(game:HttpGet("' + url + '"))()'
-        : '_G.script_key = "' + key + '"\nloadstring(game:HttpGet("' + url + '?key=".._G.script_key))()';
-      const dmContent = "Key redeemed for **" + script.name + "**!\n\nYour loader:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
-      const dmSent = await trySendDM(discordId, { content: dmContent });
-      dmMsg = dmSent ? "\nLoader script sent to your DMs." : "\nCould not DM you (DMs may be closed). Use Get Script button.";
-    }
-
     interaction.editReply({
-      content: "Key redeemed for **" + script.name + "**." + roleMsg + dmMsg,
+      content: "Key redeemed for **" + script.name + "**." + roleMsg + "\n\nClick **Get Script** on the panel to receive your loader.",
     });
   }
 
