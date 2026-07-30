@@ -3,8 +3,146 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Projects</title>
+    <title>Projects - Solaries</title>
     <link rel="stylesheet" href="app.css" />
+    <style>
+      /* Project card layout (mobile-first, works on desktop too) */
+      .proj-card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        margin-bottom: 12px;
+        overflow: hidden;
+      }
+      .proj-card-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        cursor: pointer;
+      }
+      .proj-card-head:hover { background: var(--hover); }
+      .proj-caret {
+        width: 20px; height: 20px; flex-shrink: 0;
+        color: var(--text-soft);
+        display: inline-flex; align-items: center; justify-content: center;
+        transition: transform 0.2s;
+      }
+      .proj-caret svg { width: 12px; height: 12px; }
+      .proj-card.is-open .proj-caret { transform: rotate(90deg); }
+
+      .proj-icon {
+        width: 36px; height: 36px; flex-shrink: 0;
+        border-radius: 10px;
+        background: var(--accent-soft);
+        color: #c4b5fd;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .proj-icon svg { width: 16px; height: 16px; }
+
+      .proj-info { flex: 1; min-width: 0; }
+      .proj-title-row {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        margin-bottom: 3px;
+      }
+      .proj-title {
+        color: var(--white);
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+      }
+      .proj-sub {
+        color: var(--text-soft);
+        font-size: 12px;
+        margin: 0;
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      }
+      .proj-sub code {
+        font-family: Consolas, Monaco, monospace;
+        background: var(--surface-2);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+      }
+      .proj-sub .dot { color: var(--text-muted); }
+
+      .proj-card-body {
+        display: none;
+        padding: 0 14px 14px;
+        border-top: 1px solid var(--line-soft);
+      }
+      .proj-card.is-open .proj-card-body { display: block; padding-top: 14px; }
+
+      .proj-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .proj-actions .mini-btn {
+        flex: 1;
+        justify-content: center;
+        display: inline-flex; align-items: center;
+        height: 36px;
+      }
+
+      /* Desktop: put actions inline with the head */
+      @media (min-width: 721px) {
+        .proj-card-head { padding: 14px 18px; }
+        .proj-actions {
+          margin-top: 0;
+          flex: 0 0 auto;
+        }
+        .proj-actions .mini-btn { flex: 0 0 auto; height: 32px; }
+        .proj-card-head-inline {
+          display: flex; align-items: center; gap: 12px;
+          width: 100%;
+        }
+      }
+
+      /* Mobile: actions stack under the info block */
+      @media (max-width: 720px) {
+        .proj-card-head { flex-wrap: wrap; }
+        .proj-actions {
+          width: 100%;
+          margin-top: 10px;
+          padding-top: 10px;
+          border-top: 1px solid var(--line-soft);
+        }
+      }
+
+      .search-toolbar {
+        display: flex; flex-direction: column; gap: 10px;
+        margin-bottom: 14px;
+      }
+      .search-toolbar .text-field,
+      .search-toolbar .select-field {
+        width: 100%;
+        min-width: 0;
+      }
+      @media (min-width: 721px) {
+        .search-toolbar { flex-direction: row; }
+        .search-toolbar .text-field { flex: 1; }
+        .search-toolbar .select-field { flex: 0 0 160px; }
+      }
+
+      .tabs-strip {
+        display: flex;
+        gap: 4px;
+        padding: 5px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        margin-bottom: 12px;
+      }
+      .tabs-strip .tab-btn {
+        flex: 1;
+        justify-content: center;
+      }
+    </style>
   </head>
   <body>
     <div class="app">
@@ -47,7 +185,7 @@
 
           <nav class="nav-group">
             <p class="nav-title">Tools</p>
-            <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
+            <a class="nav-link" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span><span>Delivery</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"></path><path d="M8 3v4M16 3v4"></path></svg></span><span>Guide</span></a>
             <a class="nav-link" href="#soon"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5-9 5z"></path><path d="M3 8v8l9 5 9-5V8"></path></svg></span><span>Batches</span></a>
@@ -63,7 +201,7 @@
           <div class="user-box">
             <span class="user-avatar" data-user-avatar>?</span>
             <div class="user-copy">
-              <p class="user-name" data-user-name>Loading...</p>
+              <p class="user-name" data-user-name>Loading</p>
               <p class="user-plan" data-user-plan>Free</p>
             </div>
           </div>
@@ -124,20 +262,19 @@
         </section>
 
         <div class="card">
-          <div class="toolbar">
-            <div class="tab-row" id="filterTabs">
-              <button class="tab-btn is-active" type="button" data-filter="all">All <span class="tab-count" data-count="all">0</span></button>
-              <button class="tab-btn" type="button" data-filter="owned">Owned <span class="tab-count" data-count="owned">0</span></button>
-              <button class="tab-btn" type="button" data-filter="shared">Shared <span class="tab-count" data-count="shared">0</span></button>
-            </div>
-            <div class="toolbar-right">
-              <input class="text-field" id="searchInput" type="text" placeholder="Search projects or scripts" autocomplete="off" spellcheck="false" />
-              <select class="select-field" id="sortSelect">
-                <option value="recent">Default</option>
-                <option value="name">Name A-Z</option>
-                <option value="scripts">Most scripts</option>
-              </select>
-            </div>
+          <div class="tabs-strip" id="filterTabs">
+            <button class="tab-btn is-active" type="button" data-filter="all">All <span class="tab-count" data-count="all">0</span></button>
+            <button class="tab-btn" type="button" data-filter="owned">Owned <span class="tab-count" data-count="owned">0</span></button>
+            <button class="tab-btn" type="button" data-filter="shared">Shared <span class="tab-count" data-count="shared">0</span></button>
+          </div>
+
+          <div class="search-toolbar">
+            <input class="text-field" id="searchInput" type="text" placeholder="Search projects or scripts" autocomplete="off" spellcheck="false" />
+            <select class="select-field" id="sortSelect">
+              <option value="recent">Most recent</option>
+              <option value="name">Name A-Z</option>
+              <option value="scripts">Most scripts</option>
+            </select>
           </div>
 
           <div id="projectsList"></div>
