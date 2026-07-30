@@ -1,4 +1,4 @@
-// project-view.js - Solaries Project detail (Phase 6 D3 UI - mobile responsive)
+// project-view.js - Solaries Project detail (Phase 6 D2 UI)
 // Adds: Discord panel modal per script with copy-to-clipboard command
 // Also has: edit script, version history + restore, blocklist, allowlist,
 // whitelist-only toggle, pause/resume, rename, delete project.
@@ -38,6 +38,10 @@ const el = {
 
   sName: document.getElementById("sName"),
   sDesc: document.getElementById("sDesc"),
+  sSlug: document.getElementById("sSlug"),
+  slugField: document.getElementById("slugField"),
+  btnAutoSlug: document.getElementById("btnAutoSlug"),
+  sSlugPreview: document.getElementById("sSlugPreview"),
   sGame: document.getElementById("sGame"),
   sSource: document.getElementById("sSource"),
   sVersionNote: document.getElementById("sVersionNote"),
@@ -107,6 +111,31 @@ function humanSize(b) {
   return (b / 1048576).toFixed(2) + " MB";
 }
 function protectionLabel(v) { return { none: "None", luraph: "Luraph", wynfuscate: "wYnFuscate" }[v] || v; }
+function slugify(text) {
+  return String(text || "").toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 40);
+}
+function isValidSlug(s) {
+  if (!s) return true; // empty is allowed (auto-generate)
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(s) && s.length >= 3 && s.length <= 40;
+}
+function updateSlugPreview() {
+  if (!el.sSlugPreview || !el.sSlug) return;
+  const val = el.sSlug.value.trim().toLowerCase();
+  if (!val) {
+    el.sSlugPreview.textContent = "Auto: " + (el.sName.value.trim() ? slugify(el.sName.value) + "-xxxx" : "based on name");
+    el.sSlugPreview.style.color = "var(--text-muted)";
+  } else if (!isValidSlug(val)) {
+    el.sSlugPreview.textContent = "Invalid: must be 3-40 chars, a-z 0-9 dash only";
+    el.sSlugPreview.style.color = "#fca5a5";
+  } else {
+    el.sSlugPreview.textContent = "URL: /v1/load/" + val;
+    el.sSlugPreview.style.color = "var(--text-muted)";
+  }
+}
 function formatDate(v) {
   if (!v) return "-";
   const d = new Date(v);
@@ -166,18 +195,18 @@ function renderScripts() {
   scripts.forEach(function (s) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td data-label="Script">' +
+      '<td>' +
         '<div class="cell-name">' + escapeHtml(s.name) + '</div>' +
         '<div class="cell-sub">' + escapeHtml(s.slug) + '</div>' +
       '</td>' +
-      '<td data-label="Status">' +
+      '<td>' +
         '<span class="status-pill ' + (s.enabled ? "is-live" : "is-off") + '">' + (s.enabled ? "Active" : "Disabled") + '</span>' +
         '<span class="type-pill">' + (s.key_mode === "keyless" ? "KEYLESS" : "KEYED") + '</span>' +
       '</td>' +
-      '<td data-label="Protection">' + escapeHtml(protectionLabel(s.protection)) + '</td>' +
-      '<td data-label="Version" style="color:var(--text-soft)">v' + (s.version || 1) + '</td>' +
-      '<td data-label="Size">' + humanSize(s.size_bytes || 0) + '</td>' +
-      '<td data-label="Actions" style="text-align:right">' +
+      '<td>' + escapeHtml(protectionLabel(s.protection)) + '</td>' +
+      '<td style="color:var(--text-soft)">v' + (s.version || 1) + '</td>' +
+      '<td>' + humanSize(s.size_bytes || 0) + '</td>' +
+      '<td style="text-align:right">' +
         '<button class="mini-btn is-primary" data-loader>Loader</button> ' +
         '<button class="mini-btn" data-discord>Discord</button> ' +
         '<button class="mini-btn" data-edit>Edit</button> ' +
@@ -267,6 +296,9 @@ function openWizardForCreate() {
   el.sName.value = "";
   el.sDesc.value = "";
   el.sGame.value = "";
+  if (el.sSlug) el.sSlug.value = "";
+  if (el.slugField) el.slugField.style.display = "";
+  updateSlugPreview();
   el.sSource.value = "";
   el.sVersionNote.value = "";
   el.versionNoteField.style.display = "none";
@@ -301,6 +333,7 @@ async function openWizardForEdit(s) {
     el.sName.value = s.name || "";
     el.sDesc.value = s.description || "";
     el.sGame.value = s.game_id || "";
+    if (el.slugField) el.slugField.style.display = "none";
     el.sVersionNote.value = "";
     el.versionNoteField.style.display = "block";
     el.tEnabled.checked = s.enabled !== false;
@@ -349,6 +382,26 @@ el.uiCards.forEach(function (c) {
   });
 });
 
+if (el.sSlug) {
+  el.sSlug.addEventListener("input", function () {
+    // Auto-lowercase + strip invalid chars as user types
+    const cleaned = el.sSlug.value.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (cleaned !== el.sSlug.value) el.sSlug.value = cleaned;
+    updateSlugPreview();
+  });
+}
+if (el.btnAutoSlug) {
+  el.btnAutoSlug.addEventListener("click", function () {
+    const base = slugify(el.sName.value) || "script";
+    const suffix = Math.random().toString(36).slice(2, 6);
+    el.sSlug.value = (base + "-" + suffix).slice(0, 40);
+    updateSlugPreview();
+  });
+}
+if (el.sName) {
+  el.sName.addEventListener("input", updateSlugPreview);
+}
+
 el.sourceDrop.addEventListener("click", function () { el.sourceFile.click(); });
 el.sourceFile.addEventListener("change", function (e) {
   const f = e.target.files[0];
@@ -395,6 +448,14 @@ el.btnNext.addEventListener("click", async function () {
 async function createScript() {
   el.btnNext.disabled = true;
   el.btnNext.textContent = "Creating...";
+  const customSlug = el.sSlug ? el.sSlug.value.trim().toLowerCase() : "";
+  if (customSlug && !isValidSlug(customSlug)) {
+    el.wizardErr.textContent = "Custom slug is invalid. Must be 3-40 chars: lowercase a-z, 0-9, and dashes only.";
+    el.wizardErr.classList.add("is-visible");
+    el.btnNext.disabled = false;
+    el.btnNext.textContent = "Create script";
+    return;
+  }
   try {
     const body = {
       name: el.sName.value.trim(),
@@ -410,6 +471,7 @@ async function createScript() {
       silent_mode: el.tSilent.checked,
       game_id: el.sGame.value.trim(),
     };
+    if (customSlug) body.slug = customSlug;
     const r = await window.SL.api("/api/projects/" + projectId + "/scripts", {
       method: "POST", body: JSON.stringify(body),
     });
@@ -564,11 +626,11 @@ function renderBlocklist(entries) {
   entries.forEach(function (e) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td data-label="Type"><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
-      '<td data-label="Value"><span class="key-code" style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
-      '<td data-label="Reason" style="color:var(--text-soft)">' + escapeHtml(e.reason || "-") + '</td>' +
-      '<td data-label="Added" style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
-      '<td data-label="Actions" style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
+      '<td><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
+      '<td><span class="key-code" style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
+      '<td style="color:var(--text-soft)">' + escapeHtml(e.reason || "-") + '</td>' +
+      '<td style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
+      '<td style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
     tr.querySelector("[data-del]").addEventListener("click", async function () {
       if (!window.confirm("Remove this block entry?")) return;
       try {
@@ -612,11 +674,11 @@ function renderAllowlist(entries) {
   entries.forEach(function (e) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td data-label="Type"><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
-      '<td data-label="Value"><span style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
-      '<td data-label="Note" style="color:var(--text-soft)">' + escapeHtml(e.note || "-") + '</td>' +
-      '<td data-label="Added" style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
-      '<td data-label="Actions" style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
+      '<td><span class="type-pill">' + e.entry_type.toUpperCase() + '</span></td>' +
+      '<td><span style="font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--white)">' + escapeHtml(e.value) + '</span></td>' +
+      '<td style="color:var(--text-soft)">' + escapeHtml(e.note || "-") + '</td>' +
+      '<td style="color:var(--text-soft)">' + formatDate(e.created_at) + '</td>' +
+      '<td style="text-align:right"><button class="mini-btn is-danger" data-del>Remove</button></td>';
     tr.querySelector("[data-del]").addEventListener("click", async function () {
       if (!window.confirm("Remove this allow entry?")) return;
       try {
