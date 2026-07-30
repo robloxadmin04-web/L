@@ -288,14 +288,16 @@ app.get("/api/analytics", requireAuth, async (req, res) => {
   const since24h = new Date(now - day).toISOString();
 
   try {
-    const { data: loads } = await supabase
+    const { data: logs } = await supabase
       .from("access_log")
-      .select("id, project_id, script_id, key_id, created_at")
+      .select("id, event, reason, project_id, script_id, key_id, created_at")
       .eq("owner_account_id", accountId)
-      .eq("event", "load")
       .gte("created_at", since30d)
-      .order("created_at", { ascending: false }).limit(5000);
-    const loadRows = loads || [];
+      .order("created_at", { ascending: false })
+      .limit(8000);
+    const rows = logs || [];
+
+    const loadRows = rows.filter((r) => r.event === "load");
 
     const byDay = new Map();
     for (let i = 29; i >= 0; i--) {
@@ -310,12 +312,35 @@ app.get("/api/analytics", requireAuth, async (req, res) => {
 
     const loads7d = loadRows.filter((r) => r.created_at >= since7d).length;
     const loads30d = loadRows.length;
-    const uniqueKeys24h = new Set(loadRows.filter((r) => r.created_at >= since24h && r.key_id).map((r) => r.key_id)).size;
+    const uniqueKeys24h = new Set(
+      loadRows.filter((r) => r.created_at >= since24h && r.key_id).map((r) => r.key_id)
+    ).size;
+
+    const breakdown = { load: 0, login: 0, blocked: 0, other: 0 };
+    rows.forEach((r) => {
+      if (breakdown[r.event] !== undefined) breakdown[r.event]++;
+      else breakdown.other++;
+    });
+
+    const blockedRows = rows.filter((r) => r.event === "blocked");
+    const blocked7d = blockedRows.filter((r) => r.created_at >= since7d).length;
+    const blocked30d = blockedRows.length;
+    const reasonCounts = new Map();
+    blockedRows.forEach((r) => {
+      const key = r.reason || "unknown";
+      reasonCounts.set(key, (reasonCounts.get(key) || 0) + 1);
+    });
+    const topBlockReasons = Array.from(reasonCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([reason, count]) => ({ reason, count }));
 
     const scriptCounts = new Map();
-    loadRows.forEach((r) => { if (r.script_id) scriptCounts.set(r.script_id, (scriptCounts.get(r.script_id) || 0) + 1); });
-    const topScriptIds = Array.from(scriptCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id);
-
+    loadRows.forEach((r) => {
+      if (r.script_id) scriptCounts.set(r.script_id, (scriptCounts.get(r.script_id) || 0) + 1);
+    });
+    const topScriptIds = Array.from(scriptCounts.entries())
+      .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id);
     let topScripts = [];
     if (topScriptIds.length > 0) {
       const { data: scriptRows } = await supabase
@@ -330,18 +355,19 @@ app.get("/api/analytics", requireAuth, async (req, res) => {
     }
 
     const projectCounts = new Map();
-    loadRows.forEach((r) => { if (r.project_id) projectCounts.set(r.project_id, (projectCounts.get(r.project_id) || 0) + 1); });
+    loadRows.forEach((r) => {
+      if (r.project_id) projectCounts.set(r.project_id, (projectCounts.get(r.project_id) || 0) + 1);
+    });
     const topProjectEntry = Array.from(projectCounts.entries()).sort((a, b) => b[1] - a[1])[0];
     let topProject = null;
     if (topProjectEntry) {
-      const { data: p } = await supabase.from("projects").select("id, name").eq("id", topProjectEntry[0]).eq("owner_account_id", accountId).maybeSingle();
+      const { data: p } = await supabase.from("projects")
+        .select("id, name").eq("id", topProjectEntry[0])
+        .eq("owner_account_id", accountId).maybeSingle();
       if (p) topProject = { name: p.name, loads: topProjectEntry[1] };
     }
 
-    const { data: recentRaw } = await supabase
-      .from("access_log").select("id, event, key_id, project_id, script_id, created_at")
-      .eq("owner_account_id", accountId).order("created_at", { ascending: false }).limit(20);
-    const recent = recentRaw || [];
+    const recent = rows.slice(0, 30);
     const projIds = [...new Set(recent.map((r) => r.project_id).filter(Boolean))];
     const scriptIds = [...new Set(recent.map((r) => r.script_id).filter(Boolean))];
     let projMap = {}, scriptMap = {};
@@ -354,7 +380,7 @@ app.get("/api/analytics", requireAuth, async (req, res) => {
       (data || []).forEach((s) => (scriptMap[s.id] = s.name));
     }
     const activity = recent.map((r) => ({
-      id: r.id, event: r.event, created_at: r.created_at,
+      id: r.id, event: r.event, reason: r.reason || null, created_at: r.created_at,
       project_name: r.project_id ? (projMap[r.project_id] || "(deleted)") : null,
       script_name: r.script_id ? (scriptMap[r.script_id] || "(deleted)") : null,
     }));
@@ -364,13 +390,26 @@ app.get("/api/analytics", requireAuth, async (req, res) => {
       analytics: {
         loads_7d: loads7d, loads_30d: loads30d,
         unique_keys_24h: uniqueKeys24h,
+        blocked_7d: blocked7d, blocked_30d: blocked30d,
+        breakdown, top_block_reasons: topBlockReasons,
         top_project: topProject, series,
         top_scripts: topScripts, activity,
+        total_events_30d: rows.length,
       },
     });
   } catch (e) {
     res.status(500).json({ ok: false, error: "Server error" });
   }
+});
+
+// ---- CLEAR LOGS: deletes all access_log rows for this account ----
+app.delete("/api/analytics/logs", requireAuth, async (req, res) => {
+  const { error } = await supabase
+    .from("access_log")
+    .delete()
+    .eq("owner_account_id", req.session.account_id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not clear logs" });
+  res.json({ ok: true });
 });
 
 // ============================================================
