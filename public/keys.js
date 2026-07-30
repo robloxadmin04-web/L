@@ -1,356 +1,398 @@
-// keys.js - Solaries Keys page (mobile responsive)
-// Card-based layout for all screen sizes. Pure ASCII only.
-
-const el = {
-  total: document.querySelector('[data-stat="total"]'),
-  active: document.querySelector('[data-stat="active"]'),
-  revoked: document.querySelector('[data-stat="revoked"]'),
-  logins: document.querySelector('[data-stat="logins"]'),
-
-  list: document.getElementById("keysList"),
-  empty: document.getElementById("keysEmpty"),
-  search: document.getElementById("searchInput"),
-  projectFilter: document.getElementById("projectFilter"),
-  tabs: document.querySelectorAll("#filterTabs .tab-btn"),
-
-  openGenerate: document.getElementById("openGenerate"),
-  genModal: document.getElementById("genModal"),
-  closeGen: document.getElementById("closeGen"),
-  cancelGen: document.getElementById("cancelGen"),
-  confirmGen: document.getElementById("confirmGen"),
-  kLabel: document.getElementById("kLabel"),
-  kPrefix: document.getElementById("kPrefix"),
-  kProject: document.getElementById("kProject"),
-  kExpires: document.getElementById("kExpires"),
-  kHwidLock: document.getElementById("kHwidLock"),
-  genErr: document.getElementById("genErr"),
-
-  newKeyModal: document.getElementById("newKeyModal"),
-  newKeyCode: document.getElementById("newKeyCode"),
-  closeNewKey: document.getElementById("closeNewKey"),
-  doneNewKey: document.getElementById("doneNewKey"),
-  copyNewKey: document.getElementById("copyNewKey"),
-};
-
-let keys = [];
-let projects = [];
-let filter = "all";
-let limits = { max_keys: 0 };
-
-function escapeHtml(s) {
-  return String(s || "").replace(/[&<>"']/g, function (c) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-  });
-}
-
-function formatDate(v) {
-  if (!v) return "-";
-  const d = new Date(v);
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-}
-
-function isExpired(k) {
-  return k.expires_at && new Date(k.expires_at).getTime() < Date.now();
-}
-
-function projectName(id) {
-  if (!id) return null;
-  const p = projects.find(function (x) { return x.id === id; });
-  return p ? p.name : "(deleted)";
-}
-
-async function loadAll() {
-  try {
-    const [statsRes, projRes, keysRes] = await Promise.all([
-      window.SL.api("/api/stats"),
-      window.SL.api("/api/projects"),
-      window.SL.api("/api/keys"),
-    ]);
-    if (statsRes.ok) {
-      limits = statsRes.limits;
-      el.total.textContent = statsRes.stats.keys + " / " + limits.max_keys;
-      el.active.textContent = statsRes.stats.active_keys;
-      el.revoked.textContent = statsRes.stats.revoked_keys;
-      el.logins.textContent = statsRes.stats.logins_24h;
-    }
-    if (projRes.ok) {
-      projects = projRes.projects || [];
-      populateProjectFilters();
-    }
-    if (keysRes.ok) {
-      keys = keysRes.keys || [];
-      render();
-    }
-  } catch (e) {
-    window.SL.toast(e.message, "error");
-  }
-}
-
-function populateProjectFilters() {
-  const currentFilter = el.projectFilter.value;
-  el.projectFilter.innerHTML = '<option value="all">All projects</option><option value="global">Global (no project)</option>';
-  projects.forEach(function (p) {
-    const o = document.createElement("option");
-    o.value = p.id;
-    o.textContent = p.name;
-    el.projectFilter.appendChild(o);
-  });
-  const opts = Array.from(el.projectFilter.options);
-  if (opts.some(function (o) { return o.value === currentFilter; })) {
-    el.projectFilter.value = currentFilter;
-  }
-
-  el.kProject.innerHTML = '<option value="">Global (works for any project)</option>';
-  projects.forEach(function (p) {
-    const o = document.createElement("option");
-    o.value = p.id;
-    o.textContent = p.name;
-    el.kProject.appendChild(o);
-  });
-}
-
-function render() {
-  const term = el.search.value.trim().toLowerCase();
-  const projFilter = el.projectFilter.value;
-
-  let list = keys.slice();
-
-  if (filter === "active") list = list.filter(function (k) { return !k.revoked && !isExpired(k); });
-  if (filter === "revoked") list = list.filter(function (k) { return k.revoked; });
-  if (filter === "expired") list = list.filter(function (k) { return !k.revoked && isExpired(k); });
-
-  if (projFilter === "global") list = list.filter(function (k) { return !k.project_id; });
-  else if (projFilter !== "all") list = list.filter(function (k) { return k.project_id === projFilter; });
-
-  if (term) {
-    list = list.filter(function (k) {
-      return k.key.toLowerCase().includes(term) || (k.label || "").toLowerCase().includes(term);
-    });
-  }
-
-  document.querySelector('[data-count="all"]').textContent = keys.length;
-  document.querySelector('[data-count="active"]').textContent = keys.filter(function (k) { return !k.revoked && !isExpired(k); }).length;
-  document.querySelector('[data-count="revoked"]').textContent = keys.filter(function (k) { return k.revoked; }).length;
-  document.querySelector('[data-count="expired"]').textContent = keys.filter(function (k) { return !k.revoked && isExpired(k); }).length;
-
-  el.list.innerHTML = "";
-
-  if (list.length === 0) {
-    if (keys.length === 0) {
-      el.empty.style.display = "block";
-    } else {
-      el.empty.style.display = "none";
-      const p = document.createElement("p");
-      p.style.cssText = "text-align:center;color:var(--text-soft);padding:32px;font-size:13px;";
-      p.textContent = "No keys match your filter.";
-      el.list.appendChild(p);
-    }
-    return;
-  }
-  el.empty.style.display = "none";
-
-  list.forEach(function (k) {
-    const pName = projectName(k.project_id);
-    const scopeChip = pName
-      ? '<span class="key-scope-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/></svg>' + escapeHtml(pName) + '</span>'
-      : '<span class="key-scope-chip">Global</span>';
-
-    let lockBadge;
-    if (k.hwid_locked) {
-      if (k.hwid) {
-        lockBadge = '<span class="lock-badge lock-yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg> Locked</span>';
-      } else {
-        lockBadge = '<span class="lock-badge lock-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 118 0"/></svg> Awaiting</span>';
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Keys - Solaries</title>
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      /* Key card layout (mobile-first) */
+      .key-card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        margin-bottom: 10px;
+        padding: 14px;
       }
-    } else {
-      lockBadge = '<span class="lock-badge lock-open">Open</span>';
-    }
-
-    let expiryText = "Lifetime";
-    let expiryClass = "dim";
-    if (k.expires_at) {
-      const days = Math.ceil((new Date(k.expires_at).getTime() - Date.now()) / 86400000);
-      if (days > 0) {
-        expiryText = formatDate(k.expires_at) + " (" + days + "d)";
-        expiryClass = "";
-      } else {
-        expiryText = "Expired " + formatDate(k.expires_at);
-        expiryClass = "dim";
+      .key-card-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 10px;
       }
-    }
+      .key-card-icon {
+        width: 34px; height: 34px; flex-shrink: 0;
+        border-radius: 10px;
+        background: var(--accent-soft);
+        color: #c4b5fd;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .key-card-icon svg { width: 15px; height: 15px; }
+      .key-card-body { flex: 1; min-width: 0; }
 
-    let statusPill;
-    if (k.revoked) {
-      statusPill = '<span class="status-pill is-revoked">Revoked</span>';
-    } else if (isExpired(k)) {
-      statusPill = '<span class="status-pill is-off">Expired</span>';
-    } else {
-      statusPill = '<span class="status-pill is-live">Active</span>';
-    }
+      .key-code {
+        font-family: Consolas, Monaco, monospace;
+        font-size: 13px;
+        color: var(--white);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .key-label {
+        font-size: 12px;
+        color: var(--text-soft);
+        margin: 2px 0 0;
+      }
 
-    const resetBtn = k.hwid_locked && k.hwid
-      ? '<button class="mini-btn" data-reset type="button">Reset HWID</button>'
-      : '';
+      .key-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        margin: 10px 0;
+        padding: 10px 0;
+        border-top: 1px solid var(--line-soft);
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .key-meta-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .key-meta-label {
+        color: var(--text-muted);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .key-meta-value {
+        color: var(--white);
+        font-size: 12px;
+        display: flex; align-items: center; gap: 5px;
+      }
+      .key-meta-value.dim { color: var(--text-soft); }
 
-    const card = document.createElement("div");
-    card.className = "key-card";
-    card.innerHTML =
-      '<div class="key-card-head">' +
-        '<span class="key-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="14" r="3"/><path d="M11 14h9"/><path d="M17 11v6"/></svg></span>' +
-        '<div class="key-card-body">' +
-          '<span class="key-code">' + escapeHtml(k.key) + '</span>' +
-          '<p class="key-label">' + escapeHtml(k.label || "No label") + '</p>' +
-        '</div>' +
-        statusPill +
-      '</div>' +
+      .key-scope-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .key-scope-chip svg { width: 10px; height: 10px; }
 
-      '<div class="key-meta">' +
-        '<div class="key-meta-item" style="flex:1 1 45%">' +
-          '<span class="key-meta-label">Project</span>' +
-          '<span class="key-meta-value">' + scopeChip + '</span>' +
-        '</div>' +
-        '<div class="key-meta-item" style="flex:1 1 45%">' +
-          '<span class="key-meta-label">HWID</span>' +
-          '<span class="key-meta-value">' + lockBadge + '</span>' +
-        '</div>' +
-        '<div class="key-meta-item" style="flex:1 1 100%">' +
-          '<span class="key-meta-label">Expiry</span>' +
-          '<span class="key-meta-value ' + expiryClass + '">' + expiryText + '</span>' +
-        '</div>' +
-      '</div>' +
+      .lock-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+      }
+      .lock-badge svg { width: 12px; height: 12px; }
+      .lock-yes { color: #86efac; }
+      .lock-no { color: var(--text-soft); }
+      .lock-open { color: var(--text-muted); }
 
-      '<div class="key-actions">' +
-        '<button class="mini-btn" data-copy type="button">Copy</button>' +
-        resetBtn +
-        '<button class="mini-btn is-danger" data-toggle type="button">' + (k.revoked ? "Restore" : "Revoke") + '</button>' +
-        '<button class="mini-btn is-danger" data-del type="button">Delete</button>' +
-      '</div>';
+      .key-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .key-actions .mini-btn {
+        flex: 1 1 calc(50% - 3px);
+        min-width: 0;
+        justify-content: center;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+      }
 
-    card.querySelector("[data-copy]").addEventListener("click", async function (e) {
-      try {
-        await navigator.clipboard.writeText(k.key);
-        e.target.textContent = "Copied";
-        setTimeout(function () { e.target.textContent = "Copy"; }, 1200);
-      } catch (err) { window.SL.toast("Copy failed", "error"); }
-    });
+      /* Desktop: horizontal layout */
+      @media (min-width: 721px) {
+        .key-card { padding: 16px 18px; }
+        .key-actions .mini-btn { flex: 0 0 auto; height: 32px; padding: 0 12px; }
+        .key-actions { justify-content: flex-end; }
+      }
 
-    card.querySelector("[data-toggle]").addEventListener("click", async function () {
-      try {
-        const r = await window.SL.api("/api/keys/" + k.id, {
-          method: "PATCH",
-          body: JSON.stringify({ revoked: !k.revoked }),
-        });
-        if (r.ok) { window.SL.toast(k.revoked ? "Key restored" : "Key revoked", "ok"); loadAll(); }
-        else window.SL.toast(r.error || "Could not update", "error");
-      } catch (e) { window.SL.toast(e.message, "error"); }
-    });
+      /* Toolbar */
+      .search-toolbar {
+        display: flex; flex-direction: column; gap: 10px;
+        margin-bottom: 14px;
+      }
+      .search-toolbar .text-field,
+      .search-toolbar .select-field {
+        width: 100%;
+        min-width: 0;
+      }
+      @media (min-width: 721px) {
+        .search-toolbar { flex-direction: row; }
+        .search-toolbar .text-field { flex: 1; }
+        .search-toolbar .select-field { flex: 0 0 200px; }
+      }
 
-    card.querySelector("[data-del]").addEventListener("click", async function () {
-      if (!window.confirm("Delete this key permanently?")) return;
-      try {
-        const r = await window.SL.api("/api/keys/" + k.id, { method: "DELETE" });
-        if (r.ok) { window.SL.toast("Key deleted", "ok"); loadAll(); }
-        else window.SL.toast(r.error || "Could not delete", "error");
-      } catch (e) { window.SL.toast(e.message, "error"); }
-    });
+      .tabs-strip {
+        display: flex;
+        gap: 4px;
+        padding: 5px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        margin-bottom: 12px;
+        overflow-x: auto;
+      }
+      .tabs-strip .tab-btn {
+        flex: 1 0 auto;
+        justify-content: center;
+        white-space: nowrap;
+      }
 
-    const resetEl = card.querySelector("[data-reset]");
-    if (resetEl) {
-      resetEl.addEventListener("click", async function () {
-        if (!window.confirm("Reset HWID for this key? User can bind to a new device on next load.")) return;
-        try {
-          const r = await window.SL.api("/api/keys/" + k.id + "/reset-hwid", { method: "POST" });
-          if (r.ok) { window.SL.toast("HWID reset", "ok"); loadAll(); }
-          else window.SL.toast(r.error || "Could not reset", "error");
-        } catch (e) { window.SL.toast(e.message, "error"); }
-      });
-    }
+      /* Toggle switch reused from other pages */
+      .toggle-block {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+      }
+      .toggle-copy p { margin: 0; }
+      .toggle-name { color: var(--white); font-size: 13px; font-weight: 500; }
+      .toggle-desc { color: var(--text-soft); font-size: 12px; margin-top: 2px; }
+      .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+      .switch input { display: none; }
+      .switch .track {
+        position: absolute; inset: 0;
+        background: #2a2d33; border-radius: 999px;
+        transition: background 0.2s;
+      }
+      .switch .thumb {
+        position: absolute; top: 3px; left: 3px;
+        width: 16px; height: 16px;
+        background: var(--white); border-radius: 999px;
+        transition: transform 0.2s;
+      }
+      .switch input:checked ~ .track { background: var(--accent); }
+      .switch input:checked ~ .thumb { transform: translateX(16px); }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+            <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path></svg></div>
+          <div class="head-actions">
+            <button class="pill-btn" type="button">
+              <span class="pill-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span>
+              <span>Discord</span>
+            </button>
+            <button class="icon-square" id="themeToggle" type="button" aria-label="Toggle theme">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+            </button>
+          </div>
+        </div>
 
-    el.list.appendChild(card);
-  });
-}
+        <div class="sidebar-scroll">
+          <nav class="nav-group">
+            <p class="nav-title">Workspace</p>
+            <a class="nav-link" href="dashboard.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect></svg></span><span>Overview</span></a>
+            <a class="nav-link" href="projects.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span><span>Projects</span></a>
+            <a class="nav-link is-active" href="keys.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span><span>Keys</span></a>
+            <a class="nav-link" href="bot.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span><span>Discord</span></a>
+          </nav>
 
-el.tabs.forEach(function (t) {
-  t.addEventListener("click", function () {
-    el.tabs.forEach(function (x) { x.classList.remove("is-active"); });
-    t.classList.add("is-active");
-    filter = t.getAttribute("data-filter");
-    render();
-  });
-});
-el.search.addEventListener("input", render);
-el.projectFilter.addEventListener("change", render);
+          <nav class="nav-group">
+            <p class="nav-title">Tools</p>
+            <a class="nav-link" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
+          </nav>
 
-function openGen() {
-  el.kLabel.value = "";
-  el.kPrefix.value = "KF";
-  el.kProject.value = "";
-  el.kExpires.value = "";
-  el.kHwidLock.checked = false;
-  el.genErr.classList.remove("is-visible");
-  el.genModal.classList.add("is-open");
-  setTimeout(function () { el.kLabel.focus(); }, 50);
-}
-function closeGen() { el.genModal.classList.remove("is-open"); }
+          <nav class="nav-group">
+            <p class="nav-title">Owner</p>
+            <a class="nav-link" href="owner.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg></span><span>Accounts</span></a>
+          </nav>
+        </div>
 
-el.openGenerate.addEventListener("click", openGen);
-el.closeGen.addEventListener("click", closeGen);
-el.cancelGen.addEventListener("click", closeGen);
-el.genModal.addEventListener("click", function (e) {
-  if (e.target.getAttribute("data-close") === "true") closeGen();
-});
+        <div class="sidebar-foot">
+          <div class="user-box">
+            <span class="user-avatar" data-user-avatar>?</span>
+            <div class="user-copy">
+              <p class="user-name" data-user-name>Loading</p>
+              <p class="user-plan" data-user-plan>Free</p>
+            </div>
+          </div>
+          <a class="signout" href="#" data-signout>
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4"></path><path d="M10 8l-4 4 4 4"></path><path d="M6 12h10"></path></svg></span>
+            <span>Sign out</span>
+          </a>
+        </div>
+      </aside>
 
-el.confirmGen.addEventListener("click", async function () {
-  el.confirmGen.disabled = true;
-  el.confirmGen.textContent = "Creating...";
-  try {
-    const body = {
-      label: el.kLabel.value.trim(),
-      prefix: el.kPrefix.value.trim() || "KF",
-      hwid_locked: el.kHwidLock.checked,
-    };
-    if (el.kProject.value) body.project_id = el.kProject.value;
-    if (el.kExpires.value) body.expires_in_days = parseInt(el.kExpires.value, 10);
-    const r = await window.SL.api("/api/keys", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    if (r.ok) {
-      closeGen();
-      showNewKey(r.key.key);
-      loadAll();
-    } else {
-      el.genErr.textContent = r.error || "Could not create key.";
-      el.genErr.classList.add("is-visible");
-    }
-  } catch (e) {
-    el.genErr.textContent = e.message;
-    el.genErr.classList.add("is-visible");
-  } finally {
-    el.confirmGen.disabled = false;
-    el.confirmGen.textContent = "Create key";
-  }
-});
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="icon-square menu-btn" id="menuToggle" type="button" aria-label="Open menu">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path></svg>
+            </button>
+            <h1 class="page-title">Keys</h1>
+          </div>
+          <button class="primary-btn" id="openGenerate" type="button">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+            Generate key
+          </button>
+        </header>
 
-function showNewKey(k) {
-  el.newKeyCode.textContent = k;
-  el.newKeyModal.classList.add("is-open");
-}
-function closeNewKey() { el.newKeyModal.classList.remove("is-open"); }
-el.closeNewKey.addEventListener("click", closeNewKey);
-el.doneNewKey.addEventListener("click", closeNewKey);
-el.newKeyModal.addEventListener("click", function (e) {
-  if (e.target.getAttribute("data-close") === "true") closeNewKey();
-});
-el.copyNewKey.addEventListener("click", async function () {
-  try {
-    await navigator.clipboard.writeText(el.newKeyCode.textContent);
-    window.SL.toast("Key copied", "ok");
-  } catch (e) { window.SL.toast("Copy failed", "error"); }
-});
+        <section class="stats-grid">
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Total Keys</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span>
+            </div>
+            <p class="stat-value" data-stat="total">0 / 0</p>
+            <p class="stat-meta">Issued on your plan</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Active</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6z"></path><path d="M9 12l2 2 4-4"></path></svg></span>
+            </div>
+            <p class="stat-value" data-stat="active">0</p>
+            <p class="stat-meta">Usable right now</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Revoked</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M6 6l12 12"></path></svg></span>
+            </div>
+            <p class="stat-value" data-stat="revoked">0</p>
+            <p class="stat-meta">Blocked from loading</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Logins 24h</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"></path></svg></span>
+            </div>
+            <p class="stat-value" data-stat="logins">0</p>
+            <p class="stat-meta">Successful key uses</p>
+          </article>
+        </section>
 
-document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape") { closeGen(); closeNewKey(); }
-});
+        <div class="card">
+          <div class="tabs-strip" id="filterTabs">
+            <button class="tab-btn is-active" type="button" data-filter="all">All <span class="tab-count" data-count="all">0</span></button>
+            <button class="tab-btn" type="button" data-filter="active">Active <span class="tab-count" data-count="active">0</span></button>
+            <button class="tab-btn" type="button" data-filter="revoked">Revoked <span class="tab-count" data-count="revoked">0</span></button>
+            <button class="tab-btn" type="button" data-filter="expired">Expired <span class="tab-count" data-count="expired">0</span></button>
+          </div>
 
-loadAll();
+          <div class="search-toolbar">
+            <input class="text-field" id="searchInput" type="text" placeholder="Search key or label" autocomplete="off" spellcheck="false" />
+            <select class="select-field" id="projectFilter">
+              <option value="all">All projects</option>
+              <option value="global">Global (no project)</option>
+            </select>
+          </div>
+
+          <div id="keysList"></div>
+
+          <div class="empty-state" id="keysEmpty" style="display:none">
+            <p class="empty-title">No keys yet</p>
+            <p class="empty-copy">Generate a key to give a user access to your scripts.</p>
+            <button class="primary-btn" type="button" onclick="document.getElementById('openGenerate').click()">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+              Generate key
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div class="modal" id="genModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h3 class="modal-title">Generate key</h3>
+            <p class="modal-subtitle">Issue an access key. Optional label, project binding, HWID lock, and expiry.</p>
+          </div>
+          <button class="icon-square" id="closeGen" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label for="kLabel">Label (optional)</label>
+            <input class="text-field" id="kLabel" type="text" placeholder="Client one" autocomplete="off" style="min-width:0;width:100%" />
+            <p class="field-hint">A name to help you remember who this key is for.</p>
+          </div>
+          <div class="field">
+            <label for="kPrefix">Prefix</label>
+            <input class="text-field" id="kPrefix" type="text" value="KF" maxlength="6" autocomplete="off" style="min-width:0;width:100%" />
+            <p class="field-hint">Short tag placed at the start of the key.</p>
+          </div>
+          <div class="field">
+            <label for="kProject">Project (optional)</label>
+            <select class="select-field" id="kProject" style="min-width:0;width:100%">
+              <option value="">Global (works for any project)</option>
+            </select>
+            <p class="field-hint">Bind this key to a single project. Leave global to allow any script.</p>
+          </div>
+          <div class="field">
+            <label for="kExpires">Expires in days (optional)</label>
+            <input class="text-field" id="kExpires" type="number" min="1" placeholder="30" autocomplete="off" style="min-width:0;width:100%" />
+            <p class="field-hint">Leave empty for lifetime key.</p>
+          </div>
+          <div class="toggle-block">
+            <div class="toggle-row">
+              <div class="toggle-copy">
+                <p class="toggle-name">HWID lock</p>
+                <p class="toggle-desc">Bind to first device on use. Blocks other devices.</p>
+              </div>
+              <label class="switch"><input type="checkbox" id="kHwidLock"><span class="track"></span><span class="thumb"></span></label>
+            </div>
+          </div>
+          <p class="field-error" id="genErr"></p>
+        </div>
+        <div class="modal-foot">
+          <button class="ghost-btn" id="cancelGen" type="button">Cancel</button>
+          <button class="primary-btn" id="confirmGen" type="button">Create key</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="newKeyModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h3 class="modal-title">Key created</h3>
+            <p class="modal-subtitle">Copy it now. You can view it any time from the Keys list.</p>
+          </div>
+          <button class="icon-square" id="closeNewKey" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <pre id="newKeyCode" style="padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:#c4b5fd;font-family:Consolas,Monaco,monospace;font-size:14px;text-align:center;letter-spacing:0.05em;margin:0;word-break:break-all;white-space:pre-wrap"></pre>
+        </div>
+        <div class="modal-foot">
+          <button class="ghost-btn" id="doneNewKey" type="button">Done</button>
+          <button class="primary-btn" id="copyNewKey" type="button">Copy key</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="keys.js"></script>
+  </body>
+</html>
