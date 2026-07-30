@@ -1,5 +1,6 @@
-// bot.js - Solaries Discord page (v2)
+// bot.js - Solaries Discord page (v3)
 // Cleaner script list, mobile-friendly, no "Primary" text
+// Status badge now always shows "Solaries" (no Discord tag)
 
 const INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1532093570327121920&permissions=2416003136&integration_type=0&scope=bot+applications.commands";
 
@@ -46,7 +47,7 @@ async function loadBotStatus() {
     const r = await window.SL.api("/api/discord/status");
     if (r.ok && r.status && r.status.online) {
       el.chipBot.classList.add("ok");
-      el.chipBotText.textContent = "Bot online" + (r.status.username ? " - " + r.status.username : "");
+      el.chipBotText.textContent = "Bot online - Solaries";
     } else {
       el.chipBot.classList.add("warn");
       el.chipBotText.textContent = "Bot offline";
