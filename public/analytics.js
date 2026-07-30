@@ -1,20 +1,38 @@
-// analytics.js — Solaries Analytics page (Phase 4)
-// Renders live stats, a 30-day loads chart (inline SVG), top scripts, and recent activity.
+// analytics.js — Solaries Analytics page (Phase 5 — breakdown, blocked, range toggle, clear logs)
+// Renders live stats, a loads chart (inline SVG, 7d/30d), top scripts, block reasons,
+// event breakdown, and a scrollable recent-activity feed with a Clear Logs action.
 
 const el = {
   loads7: document.querySelector('[data-stat="loads7"]'),
   loads30: document.querySelector('[data-stat="loads30"]'),
   uniq: document.querySelector('[data-stat="uniq"]'),
+  blocked7: document.querySelector('[data-stat="blocked7"]'),
   top: document.querySelector('[data-stat="top"]'),
   topMeta: document.querySelector('[data-stat-meta="top"]'),
   chartSvg: document.getElementById("chartSvg"),
   chartEmpty: document.getElementById("chartEmpty"),
+  chartTitle: document.getElementById("chartTitle"),
+  rangeToggle: document.getElementById("rangeToggle"),
+  bdLoad: document.querySelector('[data-bd="load"]'),
+  bdLogin: document.querySelector('[data-bd="login"]'),
+  bdBlocked: document.querySelector('[data-bd="blocked"]'),
   topTable: document.getElementById("topTable"),
   topBody: document.getElementById("topBody"),
   topEmpty: document.getElementById("topEmpty"),
+  reasonSection: document.getElementById("reasonSection"),
+  reasonList: document.getElementById("reasonList"),
   activityList: document.getElementById("activityList"),
   activityEmpty: document.getElementById("activityEmpty"),
+  refreshBtn: document.getElementById("refreshBtn"),
+  clearLogsBtn: document.getElementById("clearLogsBtn"),
+  clearModal: document.getElementById("clearModal"),
+  closeClear: document.getElementById("closeClear"),
+  cancelClear: document.getElementById("cancelClear"),
+  confirmClear: document.getElementById("confirmClear"),
 };
+
+let currentRange = 30;       // 7 or 30
+let lastSeries = [];         // full 30-day series from the server
 
 function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, function (c) {
@@ -56,19 +74,14 @@ function renderChart(series) {
   el.chartEmpty.style.display = "none";
   svg.style.display = "block";
 
-  const W = 600;
-  const H = 220;
-  const padL = 34;
-  const padR = 12;
-  const padT = 12;
-  const padB = 28;
+  const W = 600, H = 220;
+  const padL = 34, padR = 12, padT = 12, padB = 28;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
   const n = series.length;
   const maxVal = Math.max.apply(null, series.map(function (p) { return p.count; }));
   const yMax = Math.max(4, Math.ceil(maxVal * 1.15));
 
-  // Grid + Y labels (4 gridlines)
   const gridLines = 4;
   for (let i = 0; i <= gridLines; i++) {
     const y = padT + (innerH * i) / gridLines;
@@ -93,7 +106,6 @@ function renderChart(series) {
     svg.appendChild(label);
   }
 
-  // Points to path
   const step = innerW / (n - 1 || 1);
   const points = series.map(function (p, i) {
     const x = padL + i * step;
@@ -101,7 +113,6 @@ function renderChart(series) {
     return { x: x, y: y };
   });
 
-  // Area fill
   let area = "M" + points[0].x + "," + (padT + innerH);
   points.forEach(function (p) { area += " L" + p.x.toFixed(1) + "," + p.y.toFixed(1); });
   area += " L" + points[points.length - 1].x + "," + (padT + innerH) + " Z";
@@ -110,7 +121,6 @@ function renderChart(series) {
   areaPath.setAttribute("fill", "rgba(124, 58, 237, 0.18)");
   svg.appendChild(areaPath);
 
-  // Line
   let line = "M" + points[0].x.toFixed(1) + "," + points[0].y.toFixed(1);
   points.slice(1).forEach(function (p) { line += " L" + p.x.toFixed(1) + "," + p.y.toFixed(1); });
   const linePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -122,7 +132,6 @@ function renderChart(series) {
   linePath.setAttribute("stroke-linejoin", "round");
   svg.appendChild(linePath);
 
-  // Dots on non-zero days
   points.forEach(function (p, i) {
     if (series[i].count === 0) return;
     const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -136,7 +145,6 @@ function renderChart(series) {
     svg.appendChild(c);
   });
 
-  // X labels — every ~5 days
   const xLabelStep = Math.ceil(n / 6);
   for (let i = 0; i < n; i += xLabelStep) {
     const p = points[i];
@@ -150,6 +158,12 @@ function renderChart(series) {
     label.textContent = shortDate(series[i].date);
     svg.appendChild(label);
   }
+}
+
+function applyRange() {
+  const sliced = currentRange === 7 ? lastSeries.slice(-7) : lastSeries;
+  el.chartTitle.textContent = "Loads per day - last " + currentRange + " days";
+  renderChart(sliced);
 }
 
 // ------------------------------------------------------------
@@ -177,6 +191,26 @@ function renderTopScripts(list) {
 }
 
 // ------------------------------------------------------------
+// Block reasons
+// ------------------------------------------------------------
+function renderReasons(list) {
+  el.reasonList.innerHTML = "";
+  if (!list || list.length === 0) {
+    el.reasonSection.style.display = "none";
+    return;
+  }
+  el.reasonSection.style.display = "block";
+  list.forEach(function (r) {
+    const row = document.createElement("div");
+    row.className = "reason-row";
+    row.innerHTML =
+      '<span class="r-name">' + escapeHtml(r.reason) + '</span>' +
+      '<span class="r-count">' + r.count + '</span>';
+    el.reasonList.appendChild(row);
+  });
+}
+
+// ------------------------------------------------------------
 // Activity feed
 // ------------------------------------------------------------
 function renderActivity(list) {
@@ -192,19 +226,15 @@ function renderActivity(list) {
     item.className = "activity-item";
 
     let title = "";
-    let tag = "";
     if (a.event === "login") {
       title = "Signed in";
-      tag = "LOGIN";
     } else if (a.event === "load") {
-      title = a.script_name
-        ? "Loaded " + escapeHtml(a.script_name)
-        : "Script load";
+      title = a.script_name ? "Loaded " + escapeHtml(a.script_name) : "Script load";
       if (a.project_name) title += ' <span class="activity-tag">' + escapeHtml(a.project_name) + '</span>';
-      tag = "LOAD";
+    } else if (a.event === "blocked") {
+      title = "Blocked" + (a.reason ? ": " + escapeHtml(a.reason) : "");
     } else {
-      title = a.event;
-      tag = a.event.toUpperCase();
+      title = escapeHtml(a.event);
     }
 
     item.innerHTML =
@@ -229,20 +259,81 @@ async function load() {
     el.loads7.textContent = a.loads_7d;
     el.loads30.textContent = a.loads_30d;
     el.uniq.textContent = a.unique_keys_24h;
-    if (a.top_project) {
-      el.top.textContent = a.top_project.name;
-      el.topMeta.textContent = a.top_project.loads + " load" + (a.top_project.loads === 1 ? "" : "s") + " in 30d";
-    } else {
-      el.top.textContent = "—";
-      el.topMeta.textContent = "No traffic yet";
-    }
+    el.blocked7.textContent = a.blocked_7d || 0;
 
-    renderChart(a.series || []);
+    if (el.bdLoad) el.bdLoad.textContent = (a.breakdown && a.breakdown.load) || 0;
+    if (el.bdLogin) el.bdLogin.textContent = (a.breakdown && a.breakdown.login) || 0;
+    if (el.bdBlocked) el.bdBlocked.textContent = (a.breakdown && a.breakdown.blocked) || 0;
+
+    lastSeries = a.series || [];
+    applyRange();
     renderTopScripts(a.top_scripts || []);
+    renderReasons(a.top_block_reasons || []);
     renderActivity(a.activity || []);
   } catch (e) {
     window.SL.toast(e.message, "error");
   }
+}
+
+// ------------------------------------------------------------
+// Range toggle
+// ------------------------------------------------------------
+if (el.rangeToggle) {
+  el.rangeToggle.addEventListener("click", function (e) {
+    const btn = e.target.closest("button[data-range]");
+    if (!btn) return;
+    currentRange = parseInt(btn.getAttribute("data-range"), 10);
+    el.rangeToggle.querySelectorAll("button").forEach(function (b) {
+      b.classList.toggle("is-active", b === btn);
+    });
+    applyRange();
+  });
+}
+
+// ------------------------------------------------------------
+// Refresh
+// ------------------------------------------------------------
+if (el.refreshBtn) {
+  el.refreshBtn.addEventListener("click", function () {
+    el.refreshBtn.style.opacity = "0.5";
+    load().finally(function () { el.refreshBtn.style.opacity = ""; });
+  });
+}
+
+// ------------------------------------------------------------
+// Clear logs
+// ------------------------------------------------------------
+function openClear() { if (el.clearModal) el.clearModal.setAttribute("aria-hidden", "false"); }
+function closeClearModal() { if (el.clearModal) el.clearModal.setAttribute("aria-hidden", "true"); }
+
+if (el.clearLogsBtn) el.clearLogsBtn.addEventListener("click", openClear);
+if (el.closeClear) el.closeClear.addEventListener("click", closeClearModal);
+if (el.cancelClear) el.cancelClear.addEventListener("click", closeClearModal);
+if (el.clearModal) {
+  el.clearModal.addEventListener("click", function (e) {
+    if (e.target.hasAttribute("data-close")) closeClearModal();
+  });
+}
+if (el.confirmClear) {
+  el.confirmClear.addEventListener("click", async function () {
+    el.confirmClear.disabled = true;
+    const orig = el.confirmClear.textContent;
+    el.confirmClear.textContent = "Deleting...";
+    try {
+      const r = await window.SL.api("/api/analytics/logs", { method: "DELETE" });
+      if (r.ok) {
+        window.SL.toast("All logs cleared", "ok");
+        closeClearModal();
+        await load();
+      } else {
+        window.SL.toast(r.error || "Could not clear logs", "error");
+      }
+    } catch (e) {
+      window.SL.toast(e.message || "Could not clear logs", "error");
+    }
+    el.confirmClear.disabled = false;
+    el.confirmClear.textContent = orig;
+  });
 }
 
 load();
