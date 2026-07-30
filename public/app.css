@@ -1,6 +1,6 @@
-/* app.css — Solaries design system (Phase 1)
+/* app.css - Solaries design system (Phase 6 D3 UI - mobile responsive)
    Shared by dashboard, projects, keys, and all workspace pages.
-   Palette: black / gray / white + subtle purple accent (matches your concept). */
+   Palette: black / gray / white + subtle purple accent. */
 
 :root {
   --bg: #0a0a0b;
@@ -565,4 +565,130 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 @media (max-width: 640px) {
   .stats-grid { grid-template-columns: 1fr; }
   .page-title { font-size: 22px; }
+}
+
+/* ============================================================
+   MOBILE - RESPONSIVE TABLES (Phase 6 D3 UI addition)
+   Convert data-table rows into stacked cards on small screens
+   ============================================================ */
+@media (max-width: 720px) {
+  .data-table thead { display: none; }
+  .data-table,
+  .data-table tbody,
+  .data-table tr,
+  .data-table td { display: block; width: 100%; }
+
+  .data-table tr {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--bg);
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  .data-table td {
+    padding: 6px 0;
+    border: 0 !important;
+    white-space: normal !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: right;
+  }
+
+  .data-table td::before {
+    content: attr(data-label);
+    color: var(--text-soft);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    flex-shrink: 0;
+    text-align: left;
+  }
+
+  .data-table td[data-label="Script"] {
+    display: block;
+    text-align: left;
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line-soft) !important;
+  }
+  .data-table td[data-label="Script"]::before { display: none; }
+
+  .data-table td[data-label="Actions"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: stretch;
+    padding-top: 10px;
+    border-top: 1px solid var(--line-soft) !important;
+    margin-top: 6px;
+  }
+  .data-table td[data-label="Actions"]::before { display: none; }
+  .data-table td[data-label="Actions"] .mini-btn {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+    height: 34px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-actions .ghost-btn,
+  .header-actions .primary-btn {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .list-input-row { grid-template-columns: 1fr !important; }
+  .list-input-row .primary-btn,
+  .list-input-row .ghost-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .wizard-steps {
+    grid-template-columns: 1fr 1fr !important;
+    padding: 12px !important;
+  }
+  .wizard-step {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+
+  .modal { padding: 12px; }
+  .modal-card { max-height: 95vh; }
+  .modal-head { padding: 16px 16px 8px; }
+  .modal-body { padding: 12px 16px 16px; }
+  .modal-foot { padding: 12px 16px 16px; flex-wrap: wrap; }
+  .modal-foot .ghost-btn,
+  .modal-foot .primary-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .protection-grid,
+  .ui-grid { grid-template-columns: 1fr !important; }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .topbar-left { width: 100%; }
+  .topbar-left > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .page-title {
+    font-size: 20px;
+    word-break: break-word;
+  }
 }
