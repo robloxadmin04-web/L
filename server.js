@@ -130,11 +130,42 @@ function getHwid(req) {
 }
 
 // ============================================================
+// Lightweight Lua syntax sanity check (Syntax check toggle).
+// Not a full parser - catches unbalanced (), {}, and long-bracket
+// mismatches, and empty source. Runs at SAVE time only.
+// ============================================================
+function luaSyntaxError(src) {
+  if (!src || !src.trim()) return "Script is empty";
+  let paren = 0, brace = 0;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === "(") paren++;
+    else if (ch === ")") { paren--; if (paren < 0) return "Unbalanced ) at position " + i; }
+    else if (ch === "{") brace++;
+    else if (ch === "}") { brace--; if (brace < 0) return "Unbalanced } at position " + i; }
+  }
+  if (paren !== 0) return "Unbalanced parentheses ()";
+  if (brace !== 0) return "Unbalanced braces {}";
+  // crude keyword balance: function/if/for/while/do ... end
+  const opens = (src.match(/\\b(function|if|for|while|do)\\b/g) || []).length;
+  const ends = (src.match(/\\bend\\b/g) || []).length;
+  if (opens > 0 && ends === 0) return "Missing 'end' keyword(s)";
+  return null;
+}
+
+// ============================================================
 // Player-interface (GUI) wrappers - injected into script.source
 // based on the script's player_ui setting. Monochrome theme.
-// Robust parenting (gethui -> CoreGui -> PlayerGui) + error surfacing.
+// opts: { silent: bool, fast: bool }
 // ============================================================
-function wrapLoadingGui(source) {
+function wrapLoadingGui(source, opts) {
+  opts = opts || {};
+  const warnLine = opts.silent ? "" : 'if not __sol_ok then warn("[Solaries] loading GUI error:", __sol_err) end\n';
+  const warnLoad = opts.silent ? 'if __sol_fn then __sol_fn() end' : 'if __sol_fn then __sol_fn() else warn("[Solaries] script load error:", __sol_load_err) end';
+  const t1 = opts.fast ? "0.25" : "0.5";
+  const t2 = opts.fast ? "0.45" : "1.1";
+  const w1 = opts.fast ? "0.25" : "0.5";
+  const w2 = opts.fast ? "0.5" : "1.2";
   return [
     'local __sol_ok, __sol_err = pcall(function()',
     '  local Players = game:GetService("Players")',
@@ -195,15 +226,15 @@ function wrapLoadingGui(source) {
     '  fill.BackgroundTransparency = 1',
     '  fill.Parent = track',
     '  local fcn = Instance.new("UICorner"); fcn.CornerRadius = UDim.new(1, 0); fcn.Parent = fill',
-    '  local ti = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)',
+    '  local ti = TweenInfo.new(' + t1 + ', Enum.EasingStyle.Quad, Enum.EasingDirection.Out)',
     '  TweenService:Create(bg, ti, { BackgroundTransparency = 0 }):Play()',
     '  TweenService:Create(title, ti, { TextTransparency = 0 }):Play()',
     '  TweenService:Create(sub, ti, { TextTransparency = 0 }):Play()',
     '  TweenService:Create(track, ti, { BackgroundTransparency = 0 }):Play()',
     '  TweenService:Create(fill, ti, { BackgroundTransparency = 0 }):Play()',
-    '  task.wait(0.5)',
-    '  TweenService:Create(fill, TweenInfo.new(1.1, Enum.EasingStyle.Quad), { Size = UDim2.fromScale(1, 1) }):Play()',
-    '  task.wait(1.2)',
+    '  task.wait(' + w1 + ')',
+    '  TweenService:Create(fill, TweenInfo.new(' + t2 + ', Enum.EasingStyle.Quad), { Size = UDim2.fromScale(1, 1) }):Play()',
+    '  task.wait(' + w2 + ')',
     '  local fo = TweenInfo.new(0.4, Enum.EasingStyle.Quad)',
     '  TweenService:Create(bg, fo, { BackgroundTransparency = 1 }):Play()',
     '  TweenService:Create(title, fo, { TextTransparency = 1 }):Play()',
@@ -213,16 +244,18 @@ function wrapLoadingGui(source) {
     '  task.wait(0.45)',
     '  gui:Destroy()',
     'end)',
-    'if not __sol_ok then warn("[Solaries] loading GUI error:", __sol_err) end',
-    'local __sol_fn, __sol_load_err = loadstring([==[',
+    warnLine + 'local __sol_fn, __sol_load_err = loadstring([==[',
     source,
     ']==])',
-    'if __sol_fn then __sol_fn() else warn("[Solaries] script load error:", __sol_load_err) end',
+    warnLoad,
     ''
   ].join("\n");
 }
 
-function wrapKeyGui(source, scriptSlug, baseUrl) {
+function wrapKeyGui(source, scriptSlug, baseUrl, opts) {
+  opts = opts || {};
+  const warnKey = opts.silent ? "" : 'if not __sol_ok then warn("[Solaries] key GUI error:", __sol_err) end\n';
+  const warnLoad = opts.silent ? 'if fn then fn() end' : 'if fn then fn() else warn("[Solaries] script load error:", lerr) end';
   return [
     'local __sol_ok, __sol_err = pcall(function()',
     '  local Players = game:GetService("Players")',
@@ -342,11 +375,10 @@ function wrapKeyGui(source, scriptSlug, baseUrl) {
     '    task.wait(0.35)',
     '    gui:Destroy()',
     '    local fn, lerr = loadstring(body)',
-    '    if fn then fn() else warn("[Solaries] script load error:", lerr) end',
+    '    ' + warnLoad,
     '  end)',
     'end)',
-    'if not __sol_ok then warn("[Solaries] key GUI error:", __sol_err) end',
-    ''
+    warnKey.trimEnd()
   ].join("\n");
 }
 
@@ -418,7 +450,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 
   const { data: script } = await supabase
     .from("scripts")
-    .select("id, project_id, source, key_mode, enabled, player_ui, projects!inner(id, status, whitelist_only, owner_account_id)")
+    .select("id, project_id, source, key_mode, enabled, player_ui, same_device, silent_mode, fast_mode, projects!inner(id, status, whitelist_only, owner_account_id)")
     .eq("slug", scriptSlug)
     .maybeSingle();
 
@@ -458,7 +490,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   if (script.key_mode === "keyed") {
     if (!key) {
       if (script.player_ui === "key_gui") {
-        return res.status(200).send(wrapKeyGui(script.source || "-- empty script", scriptSlug, PUBLIC_BASE_URL));
+        return res.status(200).send(wrapKeyGui(script.source || "-- empty script", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }));
       }
       return block("missing key", 401, null, projectId, script.id);
     }
@@ -521,6 +553,26 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 }
 
 
+    // SAME DEVICE (soft): if the key loaded from a different IP recently, log it (don't block).
+    if (script.same_device && ip) {
+      const sinceIp = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      const { data: ipRows } = await supabase
+        .from("access_log")
+        .select("ip")
+        .eq("key_id", keyRow.id).eq("event", "load")
+        .gte("created_at", sinceIp);
+      const ips = new Set((ipRows || []).map((r) => r.ip).filter(Boolean));
+      if (ips.size > 0 && !ips.has(ip)) {
+        await supabase.from("access_log").insert({
+          owner_account_id: keyRow.owner_account_id,
+          key_id: keyRow.id, project_id: projectId, script_id: script.id,
+          event: "blocked",
+          reason: "same-device flag: new IP " + ip + " (allowed, logged)",
+          hwid: hwid || null, ip: ip || null,
+        });
+      }
+    }
+
     await supabase.from("keys").update({ last_used_at: new Date().toISOString() }).eq("id", keyRow.id);
     await supabase.from("access_log").insert({
       owner_account_id: keyRow.owner_account_id,
@@ -564,11 +616,12 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   }
 
   const __raw = script.source || "-- empty script";
+  const __opts = { silent: script.silent_mode, fast: script.fast_mode };
   if (script.player_ui === "key_gui" && !key) {
-    return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL));
+    return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL, __opts));
   }
   if (script.player_ui === "loading") {
-    return res.status(200).send(wrapLoadingGui(__raw));
+    return res.status(200).send(wrapLoadingGui(__raw, __opts));
   }
   return res.status(200).send(__raw);
 });
@@ -844,6 +897,10 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
   }
 
   const source = String(body.source || "");
+  if (body.syntax_check !== false) {
+    const synErr = luaSyntaxError(source);
+    if (synErr) return res.status(400).json({ ok: false, error: "Syntax check failed: " + synErr });
+  }
   const insert = {
     project_id: req.params.pid, name, slug: finalSlug,
     description: String(body.description || ""),
@@ -878,6 +935,10 @@ app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
   if (["none", "luraph", "wynfuscate"].includes(body.protection)) patch.protection = body.protection;
   if (body.key_mode === "keyed" || body.key_mode === "keyless") patch.key_mode = body.key_mode;
   if (typeof body.source === "string" && body.source !== existing.source) {
+    if (body.syntax_check !== false) {
+      const synErr = luaSyntaxError(body.source);
+      if (synErr) return res.status(400).json({ ok: false, error: "Syntax check failed: " + synErr });
+    }
     patch.source = body.source;
     patch.size_bytes = Buffer.byteLength(body.source, "utf8");
     newVersion = (existing.version || 1) + 1;
