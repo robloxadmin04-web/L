@@ -627,6 +627,92 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 });
 
 // ============================================================
+// STATUS - per-script + per-key live status (active/idle/expired)
+// "active" = a load happened within the last ACTIVE_WINDOW_MIN minutes
+// ============================================================
+app.get("/api/status", requireAuth, async (req, res) => {
+  const accountId = req.session.account_id;
+  const ACTIVE_WINDOW_MIN = 15;
+  const now = Date.now();
+  const daySince = new Date(now - 24 * 3600 * 1000).toISOString();
+
+  try {
+    const { data: projects } = await supabase
+      .from("projects").select("id, name")
+      .eq("owner_account_id", accountId);
+    const projById = {};
+    (projects || []).forEach((p) => { projById[p.id] = p.name; });
+
+    const { data: scripts } = await supabase
+      .from("scripts")
+      .select("id, name, slug, project_id, enabled, key_mode, last_used_at, projects!inner(owner_account_id)")
+      .eq("projects.owner_account_id", accountId);
+
+    const { data: loads } = await supabase
+      .from("access_log")
+      .select("script_id, key_id, hwid, created_at")
+      .eq("owner_account_id", accountId)
+      .eq("event", "load")
+      .gte("created_at", daySince)
+      .order("created_at", { ascending: false })
+      .limit(8000);
+    const loadRows = loads || [];
+
+    const scriptStatus = (scripts || []).map((sc) => {
+      const rows = loadRows.filter((r) => r.script_id === sc.id);
+      const last = rows.length ? rows[0].created_at : sc.last_used_at;
+      const isActive = last && (now - new Date(last).getTime()) <= ACTIVE_WINDOW_MIN * 60 * 1000;
+      const uniqueHwids = new Set(rows.map((r) => r.hwid).filter(Boolean)).size;
+      return {
+        id: sc.id, name: sc.name, slug: sc.slug,
+        project_name: projById[sc.project_id] || "-",
+        enabled: sc.enabled, key_mode: sc.key_mode,
+        status: !sc.enabled ? "disabled" : (isActive ? "active" : "idle"),
+        last_used_at: last || null,
+        loads_24h: rows.length,
+        unique_devices_24h: uniqueHwids,
+      };
+    });
+
+    const { data: keys } = await supabase
+      .from("keys")
+      .select("id, key, label, revoked, project_id, hwid, hwid_locked, expires_at, last_used_at")
+      .eq("owner_account_id", accountId)
+      .order("created_at", { ascending: false });
+
+    const keyStatus = (keys || []).map((k) => {
+      const expired = k.expires_at && new Date(k.expires_at).getTime() < now;
+      const last = k.last_used_at;
+      const isActive = last && (now - new Date(last).getTime()) <= ACTIVE_WINDOW_MIN * 60 * 1000;
+      let status = "idle";
+      if (k.revoked) status = "revoked";
+      else if (expired) status = "expired";
+      else if (isActive) status = "active";
+      return {
+        id: k.id,
+        key: k.key,
+        label: k.label || null,
+        project_name: projById[k.project_id] || "Global",
+        status,
+        hwid_bound: !!k.hwid,
+        hwid_locked: !!k.hwid_locked,
+        expires_at: k.expires_at || null,
+        last_used_at: last || null,
+      };
+    });
+
+    res.json({
+      ok: true,
+      active_window_min: ACTIVE_WINDOW_MIN,
+      scripts: scriptStatus,
+      keys: keyStatus,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "Could not load status" });
+  }
+});
+
+// ============================================================
 // STATS
 // ============================================================
 app.get("/api/stats", requireAuth, async (req, res) => {
