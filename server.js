@@ -18,24 +18,6 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
 
-// Build a Lua loader that sends the HWID via header (request) with a
-// game:HttpGet + ?hwid= fallback, so HWID binding works on all executors.
-function buildLoader(loaderUrl, key) {
-  const keyLine = key ? ('_G.script_key = "' + key + '"\n') : '';
-  const urlKey = key ? '?key=".._G.script_key.."&' : '?';
-  const urlNoKey = key ? '?key=".._G.script_key' : '';
-  return keyLine +
-    'local u="' + loaderUrl + '"\n' +
-    'local h=(gethwid and gethwid()) or game:GetService("RbxAnalyticsService"):GetClientId()\n' +
-    'local rq=(syn and syn.request) or (http and http.request) or request or http_request\n' +
-    'if rq then\n' +
-    '  local r=rq({Url=u.."' + urlKey + 'hwid="..h,Method="GET",Headers={["x-hwid"]=h}})\n' +
-    '  loadstring(r.Body or r.body)()\n' +
-    'else\n' +
-    '  loadstring(game:HttpGet(u.."' + urlKey + 'hwid="..h))()\n' +
-    'end';
-}
-
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY");
 }
@@ -145,6 +127,25 @@ function getClientIp(req) {
 }
 function getHwid(req) {
   return String(req.headers["x-hwid"] || req.query.hwid || "").trim();
+}
+
+// Tiny server-side bootstrap: grabs the HWID and re-hits the loader with it.
+// Returned on the first keyed hit that has no HWID, so the user's loader
+// can stay a short one-liner while HWID binding still works.
+function wrapHwidBootstrap(scriptSlug, key) {
+  const url = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug;
+  return [
+    'local h=(gethwid and gethwid()) or game:GetService("RbxAnalyticsService"):GetClientId()',
+    'local rq=(syn and syn.request) or (http and http.request) or request or http_request',
+    'local u="' + url + '?key=' + key + '&hwid="..h',
+    'if rq then',
+    '  local r=rq({Url=u,Method="GET",Headers={["x-hwid"]=h}})',
+    '  local fn=loadstring(r.Body or r.body); if fn then fn() end',
+    'else',
+    '  loadstring(game:HttpGet(u))()',
+    'end',
+    ''
+  ].join("\n");
 }
 
 // ============================================================
@@ -540,7 +541,10 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     }
 
     if (keyRow.hwid_locked) {
-  if (!hwid) return block("missing hwid header", 401, keyRow.id, projectId, script.id);
+  if (!hwid) {
+    // No HWID yet: hand back a tiny bootstrap that grabs it and re-requests.
+    return res.status(200).send(wrapHwidBootstrap(scriptSlug, key));
+  }
 
   if (!keyRow.hwid) {
     // Atomic claim: mag-bind LANG kung null pa talaga sa DB sa mismong sandaling ito.
@@ -2021,9 +2025,9 @@ async function startDiscordBot() {
       userKey = existingKey.key;
 
       const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-      loader = buildLoader(loaderUrl, userKey);
+      loader = '_G.script_key = "' + userKey + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
     } else {
-      loader = buildLoader(PUBLIC_BASE_URL + "/v1/load/" + script.slug, null);
+      loader = 'loadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '"))()';
     }
 
     const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
@@ -2689,16 +2693,16 @@ async function startDiscordBot() {
     const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
     let loader;
     if (script.key_mode === "keyless") {
-      loader = buildLoader(loaderUrl, null);
+      loader = 'loadstring(game:HttpGet("' + loaderUrl + '"))()';
     } else {
       const { data: keyRow } = await supabase.from("keys")
         .select("key, revoked").eq("discord_id", discordId)
         .eq("project_id", script.project_id)
         .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
       if (keyRow && !keyRow.revoked) {
-        loader = buildLoader(loaderUrl, keyRow.key);
+        loader = '_G.script_key = "' + keyRow.key + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
       } else {
-        loader = buildLoader(loaderUrl, "YOUR_KEY_HERE");
+        loader = '_G.script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
       }
     }
 
