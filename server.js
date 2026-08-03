@@ -682,7 +682,7 @@ app.get("/api/status", requireAuth, async (req, res) => {
 
     const { data: scripts } = await supabase
       .from("scripts")
-      .select("id, name, slug, project_id, enabled, key_mode, last_used_at, projects!inner(owner_account_id)")
+      .select("id, name, slug, project_id, enabled, key_mode, projects!inner(owner_account_id)")
       .eq("projects.owner_account_id", accountId);
 
     const { data: loads } = await supabase
@@ -697,7 +697,7 @@ app.get("/api/status", requireAuth, async (req, res) => {
 
     const scriptStatus = (scripts || []).map((sc) => {
       const rows = loadRows.filter((r) => r.script_id === sc.id);
-      const last = rows.length ? rows[0].created_at : sc.last_used_at;
+      const last = rows.length ? rows[0].created_at : null;
       const isActive = last && (now - new Date(last).getTime()) <= ACTIVE_WINDOW_MIN * 60 * 1000;
       const uniqueHwids = new Set(rows.map((r) => r.hwid).filter(Boolean)).size;
       return {
