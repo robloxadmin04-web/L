@@ -177,8 +177,9 @@ function luaSyntaxError(src) {
 // based on the script's player_ui setting. Monochrome theme.
 // opts: { silent: bool, fast: bool }
 // ============================================================
-function wrapLoadingGui(source, opts) {
+function wrapLoadingGui(source, opts, rawUrl) {
   opts = opts || {};
+  rawUrl = rawUrl || "";
   const warnLine = opts.silent ? "" : 'if not __sol_ok then warn("[Solaries] loading GUI error:", __sol_err) end\n';
   const warnLoad = opts.silent ? 'if __sol_fn then __sol_fn() end' : 'if __sol_fn then __sol_fn() else warn("[Solaries] script load error:", __sol_load_err) end';
   const t1 = opts.fast ? "0.25" : "0.5";
@@ -263,12 +264,19 @@ function wrapLoadingGui(source, opts) {
     '  task.wait(0.45)',
     '  gui:Destroy()',
     'end)',
-    warnLine + 'local __sol_fn, __sol_load_err = loadstring([==[',
-    source,
-    ']==])',
-    warnLoad,
+    'local __u = "' + "RAWURL" + '"',
+    'local __rq = (syn and syn.request) or (http and http.request) or request or http_request',
+    'local __body',
+    'if __rq then',
+    '  local __r = __rq({ Url = __u, Method = "GET", Headers = { ["x-hwid"] = (gethwid and gethwid()) or "" } })',
+    '  __body = __r.Body or __r.body',
+    'else',
+    '  __body = game:HttpGet(__u)',
+    'end',
+    'local __sol_fn = loadstring(__body)',
+    (opts.silent ? 'if __sol_fn then __sol_fn() end' : 'if __sol_fn then __sol_fn() else warn("[Solaries] script load failed") end'),
     ''
-  ].join("\n");
+  ].join("\n").replace("RAWURL", rawUrl);
 }
 
 function wrapKeyGui(source, scriptSlug, baseUrl, opts) {
@@ -639,11 +647,18 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 
   const __raw = script.source || "-- empty script";
   const __opts = { silent: script.silent_mode, fast: script.fast_mode };
+  // Raw passthrough: the GUI wrappers re-fetch the script with ?raw=1 so we
+  // never embed the source inside loadstring([==[...]==]) (which can break on
+  // scripts containing ]] or [[). This returns the plain script only.
+  if (req.query.raw) {
+    return res.status(200).send(__raw);
+  }
+  const __rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug + "?key=" + encodeURIComponent(key || "") + "&raw=1";
   if (script.player_ui === "key_gui" && !key) {
     return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL, __opts));
   }
   if (script.player_ui === "loading") {
-    return res.status(200).send(wrapLoadingGui(__raw, __opts));
+    return res.status(200).send(wrapLoadingGui(__raw, __opts, __rawUrl));
   }
   return res.status(200).send(__raw);
 });
