@@ -26,7 +26,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "10mb" }));
 app.set("trust proxy", true);
 app.use(express.static(path.join(__dirname, "public")));
 
