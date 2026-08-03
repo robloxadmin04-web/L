@@ -287,14 +287,14 @@
         <div class="modal-head">
           <div>
             <h3 class="modal-title" id="wizardTitle">New script</h3>
-            <p class="modal-subtitle">4 steps: protection, details, player interface, source.</p>
+            <p class="modal-subtitle">4 steps: overview, details, player interface, source.</p>
           </div>
           <button class="icon-square" id="closeWizard" type="button" aria-label="Close">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
           </button>
         </div>
         <div class="wizard-steps">
-          <div class="wizard-step is-current" data-step="1"><span class="step-num">1</span><span>Protection</span></div>
+          <div class="wizard-step is-current" data-step="1"><span class="step-num">1</span><span>Overview</span></div>
           <div class="wizard-step" data-step="2"><span class="step-num">2</span><span>Details</span></div>
           <div class="wizard-step" data-step="3"><span class="step-num">3</span><span>Player interface</span></div>
           <div class="wizard-step" data-step="4"><span class="step-num">4</span><span>Source</span></div>
@@ -303,18 +303,26 @@
           <p class="field-error" id="wizardErr"></p>
 
           <div class="wizard-panel is-current" data-panel="1">
-            <div class="protection-grid">
-              <div class="option-card is-selected" data-protection="none">
-                <p class="option-card-title">None</p>
-                <p class="option-card-desc">Ship the script as-is. Fastest, no protection.</p>
+            <div class="option-card is-selected" data-protection="none" style="cursor:default;">
+              <p class="option-card-title">How this works</p>
+              <p class="option-card-desc">Set up your script in 4 quick steps. Here's what each one does.</p>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:10px; margin-top:14px;">
+              <div class="option-card" style="cursor:default;">
+                <p class="option-card-title">1 &middot; Overview</p>
+                <p class="option-card-desc">This page. A quick guide to the steps below.</p>
               </div>
-              <div class="option-card" data-protection="luraph">
-                <p class="option-card-title">Luraph <span class="option-badge">Popular</span></p>
-                <p class="option-card-desc">Industry-standard Lua obfuscation.</p>
+              <div class="option-card" style="cursor:default;">
+                <p class="option-card-title">2 &middot; Details</p>
+                <p class="option-card-desc">Name your script, set delivery options (syntax check, same device, silent/fast mode), and choose keyed or keyless access.</p>
               </div>
-              <div class="option-card" data-protection="wynfuscate">
-                <p class="option-card-title">wYnFuscate <span class="option-badge">Monthly quota</span></p>
-                <p class="option-card-desc">Solaries in-house obfuscator. Uses your monthly limit.</p>
+              <div class="option-card" style="cursor:default;">
+                <p class="option-card-title">3 &middot; Player interface</p>
+                <p class="option-card-desc">Pick what the user sees in Roblox before the script runs: No GUI, a loading screen, or a key entry box.</p>
+              </div>
+              <div class="option-card" style="cursor:default;">
+                <p class="option-card-title">4 &middot; Source</p>
+                <p class="option-card-desc">Paste or upload your .lua / .txt script, add a version note, and save. You'll get a loader to share.</p>
               </div>
             </div>
           </div>
@@ -327,14 +335,6 @@
             <div class="field">
               <label for="sDesc">Description (optional)</label>
               <input class="text-field" id="sDesc" type="text" placeholder="What this script does" autocomplete="off" style="min-width:0;width:100%" />
-            </div>
-            <div class="field" id="slugField">
-              <label for="sSlug">Custom slug (optional)</label>
-              <div style="display:flex; gap:8px;">
-                <input class="text-field" id="sSlug" type="text" placeholder="my-script" autocomplete="off" spellcheck="false" style="min-width:0;flex:1" />
-                <button class="ghost-btn" id="btnAutoSlug" type="button" style="flex-shrink:0">Auto</button>
-              </div>
-              <p class="field-hint" id="sSlugPreview" style="margin-top:6px">Auto: based on name</p>
             </div>
             <div class="toggle-block" style="margin-top:8px">
               <p class="toggle-block-title">Access</p>
