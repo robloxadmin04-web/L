@@ -26,9 +26,40 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.set("trust proxy", true);
 app.use(express.static(path.join(__dirname, "public")));
+
+// ============================================================
+// Security headers (FIX F)
+// ============================================================
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
+
+// ============================================================
+// Rate limiter (shared by FIX A signin + FIX B loader)
+// In-memory per-id bucket. Move to Redis/DB if you run multi-instance.
+// ============================================================
+const rlBuckets = new Map(); // id -> { count, resetAt }
+function rateLimit(id, max, windowMs) {
+  const now = Date.now();
+  const b = rlBuckets.get(id);
+  if (!b || now > b.resetAt) {
+    rlBuckets.set(id, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (b.count >= max) return false;
+  b.count++;
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of rlBuckets) if (now > b.resetAt) rlBuckets.delete(k);
+}, 60 * 1000).unref();
 
 // ============================================================
 // Sessions
@@ -105,6 +136,12 @@ app.post("/api/signin", async (req, res) => {
   const apiKey = (req.body?.key || "").trim();
   if (!apiKey) return res.status(400).json({ ok: false, error: "Missing key" });
 
+  // FIX A: throttle sign-in attempts per IP to stop API-key bruteforce
+  const ipKey = "signin:" + getClientIp(req);
+  if (!rateLimit(ipKey, 10, 60 * 1000)) {
+    return res.status(429).json({ ok: false, error: "Too many attempts. Wait a minute." });
+  }
+
   const { data: account, error } = await supabase
     .from("accounts").select("id, name, api_key, plan, role")
     .eq("api_key", apiKey).maybeSingle();
@@ -138,6 +175,11 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   const key = (req.query.key || "").trim();
   const hwid = getHwid(req);
   const ip = getClientIp(req);
+
+  // FIX B: throttle loader hits per IP to blunt abuse / scraping
+  if (!rateLimit("load:" + ip, 30, 60 * 1000)) {
+    return res.status(429).send("-- rate limited");
+  }
 
   async function block(reason, code, keyId, projectId, scriptId) {
     await supabase.from("access_log").insert({
@@ -222,13 +264,36 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     }
 
     if (keyRow.hwid_locked) {
-      if (!hwid) return block("missing hwid header", 401, keyRow.id, projectId, script.id);
-      if (!keyRow.hwid) {
-        await supabase.from("keys").update({ hwid: hwid }).eq("id", keyRow.id);
-      } else if (keyRow.hwid !== hwid) {
+  if (!hwid) return block("missing hwid header", 401, keyRow.id, projectId, script.id);
+
+  if (!keyRow.hwid) {
+    // Atomic claim: mag-bind LANG kung null pa talaga sa DB sa mismong sandaling ito.
+    // Kung may ibang device na nauna kahit ilang millisecond, 0 rows ang maa-update.
+    const { data: claimed } = await supabase
+      .from("keys")
+      .update({ hwid: hwid })
+      .eq("id", keyRow.id)
+      .is("hwid", null)          // <-- ito ang nagpapa-atomic; guard sa DB level
+      .select("id");
+
+    if (!claimed || !claimed.length) {
+      // May ibang device na nakauna mag-bind. Basahin ulit ang totoong laman at i-enforce.
+      const { data: fresh } = await supabase
+        .from("keys")
+        .select("hwid")
+        .eq("id", keyRow.id)
+        .maybeSingle();
+
+      if (fresh && fresh.hwid && fresh.hwid !== hwid) {
         return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
       }
+      // (Kung fresh.hwid === hwid, ibig sabihin parehong device — hayaan lang dumaan.)
     }
+  } else if (keyRow.hwid !== hwid) {
+    return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
+  }
+}
+
 
     await supabase.from("keys").update({ last_used_at: new Date().toISOString() }).eq("id", keyRow.id);
     await supabase.from("access_log").insert({
@@ -242,6 +307,34 @@ app.get("/v1/load/:script_slug", async (req, res) => {
       project_id: projectId, script_id: script.id,
       event: "load", hwid: hwid || null, ip: ip || null,
     });
+  }
+
+  // FIX 3: sharing detection — auto-revoke a key used from too many devices in 24h
+  if (script.key_mode === "keyed" && key) {
+    const { data: kr } = await supabase
+      .from("keys").select("id, owner_account_id").eq("key", key).maybeSingle();
+    if (kr) {
+      const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      const { data: recent } = await supabase
+        .from("access_log")
+        .select("hwid")
+        .eq("key_id", kr.id)
+        .eq("event", "load")
+        .gte("created_at", since);
+      const distinct = new Set((recent || []).map((r) => r.hwid).filter(Boolean));
+      const THRESHOLD = 3; // >3 devices/24h = suspicious; tune to your users
+      if (distinct.size > THRESHOLD) {
+        await supabase.from("keys").update({ revoked: true }).eq("id", kr.id);
+        await supabase.from("access_log").insert({
+          owner_account_id: kr.owner_account_id,
+          key_id: kr.id, project_id: projectId, script_id: script.id,
+          event: "blocked",
+          reason: "auto-revoked: shared across " + distinct.size + " devices",
+          hwid: hwid || null, ip: ip || null,
+        });
+        return block("key auto-revoked for sharing", 403, kr.id, projectId, script.id);
+      }
+    }
   }
 
   return res.status(200).send(script.source || "-- empty script");
@@ -707,6 +800,7 @@ app.post("/api/projects/:pid/blocklist", requireAuth, async (req, res) => {
   const entryType = ["hwid", "ip", "key"].includes(body.entry_type) ? body.entry_type : null;
   const value = String(body.value || "").trim();
   if (!entryType || !value) return res.status(400).json({ ok: false, error: "entry_type and value are required" });
+  if (value.length > 256) return res.status(400).json({ ok: false, error: "Value too long" });
   const { data, error } = await supabase.from("blocklist").insert({
     owner_account_id: req.session.account_id, project_id: req.params.pid,
     entry_type: entryType, value, reason: body.reason || null,
@@ -738,6 +832,7 @@ app.post("/api/projects/:pid/allowlist", requireAuth, async (req, res) => {
   const entryType = ["hwid", "key"].includes(body.entry_type) ? body.entry_type : null;
   const value = String(body.value || "").trim();
   if (!entryType || !value) return res.status(400).json({ ok: false, error: "entry_type and value are required" });
+  if (value.length > 256) return res.status(400).json({ ok: false, error: "Value too long" });
   const { data, error } = await supabase.from("allowlist").insert({
     owner_account_id: req.session.account_id, project_id: req.params.pid,
     entry_type: entryType, value, note: body.note || null,
