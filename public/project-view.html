@@ -91,7 +91,6 @@
           <nav class="nav-group">
             <p class="nav-title">Tools</p>
             <a class="nav-link" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
-            <a class="nav-link is-active" href="status.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span><span>Status</span></a>
           </nav>
 
           <nav class="nav-group">
@@ -315,7 +314,7 @@
               </div>
               <div class="option-card" style="cursor:default;">
                 <p class="option-card-title">2 &middot; Details</p>
-                <p class="option-card-desc">Name your script, set delivery options (syntax check, same device, silent/fast mode), and choose keyed or keyless access.</p>
+                <p class="option-card-desc">Name your script, set its custom loader URL (slug), delivery options, and choose keyed or keyless access.</p>
               </div>
               <div class="option-card" style="cursor:default;">
                 <p class="option-card-title">3 &middot; Player interface</p>
@@ -336,6 +335,14 @@
             <div class="field">
               <label for="sDesc">Description (optional)</label>
               <input class="text-field" id="sDesc" type="text" placeholder="What this script does" autocomplete="off" style="min-width:0;width:100%" />
+            </div>
+            <div class="field" id="slugField">
+              <label for="sSlug">Custom loader URL (optional)</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input class="text-field" id="sSlug" type="text" placeholder="my-script" autocomplete="off" spellcheck="false" style="min-width:0;width:100%" />
+                <button class="ghost-btn" id="btnAutoSlug" type="button" style="white-space:nowrap;">Auto</button>
+              </div>
+              <p id="sSlugPreview" style="margin:6px 0 0; font-size:12px; color:var(--text-muted); font-family:Consolas,Monaco,monospace;">Auto: based on name</p>
             </div>
             <div class="toggle-block" style="margin-top:8px">
               <p class="toggle-block-title">Access</p>
