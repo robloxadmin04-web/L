@@ -130,6 +130,208 @@ function getHwid(req) {
 }
 
 // ============================================================
+// Player-interface (GUI) wrappers - injected into script.source
+// based on the script's player_ui setting. Monochrome theme.
+// ============================================================
+function wrapLoadingGui(source) {
+  return [
+    'local __sol_ok = pcall(function()',
+    '  local Players = game:GetService("Players")',
+    '  local TweenService = game:GetService("TweenService")',
+    '  local plr = Players.LocalPlayer',
+    '  local gui = Instance.new("ScreenGui")',
+    '  gui.Name = "SolariesLoader"',
+    '  gui.IgnoreGuiInset = true',
+    '  gui.ResetOnSpawn = false',
+    '  gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling',
+    '  gui.Parent = (gethui and gethui()) or plr:WaitForChild("PlayerGui")',
+    '  local bg = Instance.new("Frame")',
+    '  bg.Size = UDim2.fromScale(1, 1)',
+    '  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)',
+    '  bg.BackgroundTransparency = 1',
+    '  bg.BorderSizePixel = 0',
+    '  bg.Parent = gui',
+    '  local title = Instance.new("TextLabel")',
+    '  title.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  title.Position = UDim2.fromScale(0.5, 0.46)',
+    '  title.Size = UDim2.fromScale(0.8, 0.15)',
+    '  title.BackgroundTransparency = 1',
+    '  title.Font = Enum.Font.GothamBold',
+    '  title.Text = "SOLARIES"',
+    '  title.TextColor3 = Color3.fromRGB(245, 245, 245)',
+    '  title.TextTransparency = 1',
+    '  title.TextScaled = true',
+    '  title.Parent = bg',
+    '  local sub = Instance.new("TextLabel")',
+    '  sub.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  sub.Position = UDim2.fromScale(0.5, 0.57)',
+    '  sub.Size = UDim2.fromScale(0.6, 0.05)',
+    '  sub.BackgroundTransparency = 1',
+    '  sub.Font = Enum.Font.Gotham',
+    '  sub.Text = "Loading..."',
+    '  sub.TextColor3 = Color3.fromRGB(150, 150, 155)',
+    '  sub.TextTransparency = 1',
+    '  sub.TextScaled = true',
+    '  sub.Parent = bg',
+    '  local track = Instance.new("Frame")',
+    '  track.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  track.Position = UDim2.fromScale(0.5, 0.66)',
+    '  track.Size = UDim2.fromScale(0.34, 0.008)',
+    '  track.BackgroundColor3 = Color3.fromRGB(55, 55, 60)',
+    '  track.BorderSizePixel = 0',
+    '  track.BackgroundTransparency = 1',
+    '  track.Parent = bg',
+    '  local tcn = Instance.new("UICorner"); tcn.CornerRadius = UDim.new(1, 0); tcn.Parent = track',
+    '  local fill = Instance.new("Frame")',
+    '  fill.Size = UDim2.fromScale(0, 1)',
+    '  fill.BackgroundColor3 = Color3.fromRGB(235, 235, 235)',
+    '  fill.BorderSizePixel = 0',
+    '  fill.BackgroundTransparency = 1',
+    '  fill.Parent = track',
+    '  local fcn = Instance.new("UICorner"); fcn.CornerRadius = UDim.new(1, 0); fcn.Parent = fill',
+    '  local ti = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)',
+    '  TweenService:Create(bg, ti, { BackgroundTransparency = 0 }):Play()',
+    '  TweenService:Create(title, ti, { TextTransparency = 0 }):Play()',
+    '  TweenService:Create(sub, ti, { TextTransparency = 0 }):Play()',
+    '  TweenService:Create(track, ti, { BackgroundTransparency = 0 }):Play()',
+    '  TweenService:Create(fill, ti, { BackgroundTransparency = 0 }):Play()',
+    '  task.wait(0.5)',
+    '  TweenService:Create(fill, TweenInfo.new(1.1, Enum.EasingStyle.Quad), { Size = UDim2.fromScale(1, 1) }):Play()',
+    '  task.wait(1.2)',
+    '  local fo = TweenInfo.new(0.4, Enum.EasingStyle.Quad)',
+    '  TweenService:Create(bg, fo, { BackgroundTransparency = 1 }):Play()',
+    '  TweenService:Create(title, fo, { TextTransparency = 1 }):Play()',
+    '  TweenService:Create(sub, fo, { TextTransparency = 1 }):Play()',
+    '  TweenService:Create(track, fo, { BackgroundTransparency = 1 }):Play()',
+    '  TweenService:Create(fill, fo, { BackgroundTransparency = 1 }):Play()',
+    '  task.wait(0.45)',
+    '  gui:Destroy()',
+    'end)',
+    'local __sol_fn = loadstring([==[',
+    source,
+    ']==])',
+    'if __sol_fn then __sol_fn() end',
+    ''
+  ].join("\n");
+}
+
+function wrapKeyGui(source, scriptSlug, baseUrl) {
+  return [
+    'local __sol_ok = pcall(function()',
+    '  local Players = game:GetService("Players")',
+    '  local TweenService = game:GetService("TweenService")',
+    '  local plr = Players.LocalPlayer',
+    '  local httpGet = (syn and syn.request) or (http and http.request) or request or (function(o)',
+    '    return { Body = game:HttpGet(o.Url) }',
+    '  end)',
+    '  local gui = Instance.new("ScreenGui")',
+    '  gui.Name = "SolariesKey"',
+    '  gui.IgnoreGuiInset = true',
+    '  gui.ResetOnSpawn = false',
+    '  gui.Parent = (gethui and gethui()) or plr:WaitForChild("PlayerGui")',
+    '  local bg = Instance.new("Frame")',
+    '  bg.Size = UDim2.fromScale(1, 1)',
+    '  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)',
+    '  bg.BackgroundTransparency = 1',
+    '  bg.BorderSizePixel = 0',
+    '  bg.Parent = gui',
+    '  TweenService:Create(bg, TweenInfo.new(0.4), { BackgroundTransparency = 0.15 }):Play()',
+    '  local card = Instance.new("Frame")',
+    '  card.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  card.Position = UDim2.fromScale(0.5, 0.5)',
+    '  card.Size = UDim2.fromOffset(340, 220)',
+    '  card.BackgroundColor3 = Color3.fromRGB(28, 28, 31)',
+    '  card.BorderSizePixel = 0',
+    '  card.Parent = bg',
+    '  local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 14); cc.Parent = card',
+    '  local cst = Instance.new("UIStroke"); cst.Color = Color3.fromRGB(60,60,66); cst.Thickness = 1; cst.Parent = card',
+    '  local head = Instance.new("TextLabel")',
+    '  head.Position = UDim2.fromOffset(24, 22)',
+    '  head.Size = UDim2.fromOffset(292, 26)',
+    '  head.BackgroundTransparency = 1',
+    '  head.Font = Enum.Font.GothamBold',
+    '  head.Text = "SOLARIES"',
+    '  head.TextColor3 = Color3.fromRGB(245,245,245)',
+    '  head.TextXAlignment = Enum.TextXAlignment.Left',
+    '  head.TextSize = 20',
+    '  head.Parent = card',
+    '  local sub = Instance.new("TextLabel")',
+    '  sub.Position = UDim2.fromOffset(24, 50)',
+    '  sub.Size = UDim2.fromOffset(292, 18)',
+    '  sub.BackgroundTransparency = 1',
+    '  sub.Font = Enum.Font.Gotham',
+    '  sub.Text = "Enter your key to continue"',
+    '  sub.TextColor3 = Color3.fromRGB(150,150,155)',
+    '  sub.TextXAlignment = Enum.TextXAlignment.Left',
+    '  sub.TextSize = 13',
+    '  sub.Parent = card',
+    '  local box = Instance.new("TextBox")',
+    '  box.Position = UDim2.fromOffset(24, 86)',
+    '  box.Size = UDim2.fromOffset(292, 40)',
+    '  box.BackgroundColor3 = Color3.fromRGB(38,38,42)',
+    '  box.BorderSizePixel = 0',
+    '  box.Font = Enum.Font.Gotham',
+    '  box.PlaceholderText = "KF-XXXX-XXXX-XXXX"',
+    '  box.PlaceholderColor3 = Color3.fromRGB(110,110,115)',
+    '  box.Text = ""',
+    '  box.TextColor3 = Color3.fromRGB(240,240,240)',
+    '  box.TextSize = 15',
+    '  box.ClearTextOnFocus = false',
+    '  box.Parent = card',
+    '  local bcn = Instance.new("UICorner"); bcn.CornerRadius = UDim.new(0, 9); bcn.Parent = box',
+    '  local btn = Instance.new("TextButton")',
+    '  btn.Position = UDim2.fromOffset(24, 138)',
+    '  btn.Size = UDim2.fromOffset(292, 42)',
+    '  btn.BackgroundColor3 = Color3.fromRGB(235,235,235)',
+    '  btn.BorderSizePixel = 0',
+    '  btn.Font = Enum.Font.GothamBold',
+    '  btn.Text = "Continue"',
+    '  btn.TextColor3 = Color3.fromRGB(20,20,22)',
+    '  btn.TextSize = 15',
+    '  btn.Parent = card',
+    '  local btcn = Instance.new("UICorner"); btcn.CornerRadius = UDim.new(0, 9); btcn.Parent = btn',
+    '  local status = Instance.new("TextLabel")',
+    '  status.Position = UDim2.fromOffset(24, 186)',
+    '  status.Size = UDim2.fromOffset(292, 18)',
+    '  status.BackgroundTransparency = 1',
+    '  status.Font = Enum.Font.Gotham',
+    '  status.Text = ""',
+    '  status.TextColor3 = Color3.fromRGB(200,120,120)',
+    '  status.TextXAlignment = Enum.TextXAlignment.Left',
+    '  status.TextSize = 12',
+    '  status.Parent = card',
+    '  local done = false',
+    '  btn.MouseButton1Click:Connect(function()',
+    '    if done then return end',
+    '    local k = box.Text:gsub("%s+", "")',
+    '    if k == "" then status.Text = "Please enter a key."; return end',
+    '    status.TextColor3 = Color3.fromRGB(150,150,155)',
+    '    status.Text = "Verifying..."',
+    '    btn.Text = "..."',
+    '    local url = "' + baseUrl + '/v1/load/' + scriptSlug + '?key=" .. k',
+    '    local resp = httpGet({ Url = url, Method = "GET" })',
+    '    local body = resp.Body or resp.body or ""',
+    '    if body:sub(1,3) == "-- " then',
+    '      status.TextColor3 = Color3.fromRGB(210,110,110)',
+    '      status.Text = body:sub(4)',
+    '      btn.Text = "Continue"',
+    '      return',
+    '    end',
+    '    done = true',
+    '    status.TextColor3 = Color3.fromRGB(120,190,120)',
+    '    status.Text = "Success"',
+    '    TweenService:Create(bg, TweenInfo.new(0.35), { BackgroundTransparency = 1 }):Play()',
+    '    task.wait(0.35)',
+    '    gui:Destroy()',
+    '    local fn = loadstring(body)',
+    '    if fn then fn() end',
+    '  end)',
+    'end)',
+    ''
+  ].join("\n");
+}
+
+// ============================================================
 // AUTH
 // ============================================================
 app.post("/api/signin", async (req, res) => {
@@ -197,7 +399,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 
   const { data: script } = await supabase
     .from("scripts")
-    .select("id, project_id, source, key_mode, enabled, projects!inner(id, status, whitelist_only, owner_account_id)")
+    .select("id, project_id, source, key_mode, enabled, player_ui, projects!inner(id, status, whitelist_only, owner_account_id)")
     .eq("slug", scriptSlug)
     .maybeSingle();
 
@@ -235,7 +437,12 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   }
 
   if (script.key_mode === "keyed") {
-    if (!key) return block("missing key", 401, null, projectId, script.id);
+    if (!key) {
+      if (script.player_ui === "key_gui") {
+        return res.status(200).send(wrapKeyGui(script.source || "-- empty script", scriptSlug, PUBLIC_BASE_URL));
+      }
+      return block("missing key", 401, null, projectId, script.id);
+    }
 
     const { data: keyRow } = await supabase
       .from("keys")
@@ -337,7 +544,14 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     }
   }
 
-  return res.status(200).send(script.source || "-- empty script");
+  const __raw = script.source || "-- empty script";
+  if (script.player_ui === "key_gui" && !key) {
+    return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL));
+  }
+  if (script.player_ui === "loading") {
+    return res.status(200).send(wrapLoadingGui(__raw));
+  }
+  return res.status(200).send(__raw);
 });
 
 // ============================================================
