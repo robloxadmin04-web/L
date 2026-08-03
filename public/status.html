@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Status</title>
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      .status-badge { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+      .status-badge .dot { width:7px; height:7px; border-radius:50%; }
+      .st-active { background:rgba(60,190,110,.14); color:#4ade80; }
+      .st-active .dot { background:#4ade80; box-shadow:0 0 8px #4ade80; }
+      .st-idle { background:rgba(140,140,150,.14); color:#9ca3af; }
+      .st-idle .dot { background:#9ca3af; }
+      .st-expired { background:rgba(230,140,90,.14); color:#fb923c; }
+      .st-expired .dot { background:#fb923c; }
+      .st-revoked { background:rgba(230,90,90,.14); color:#f87171; }
+      .st-revoked .dot { background:#f87171; }
+      .st-disabled { background:rgba(120,120,130,.12); color:#6b7280; }
+      .st-disabled .dot { background:#6b7280; }
+      .status-table { width:100%; border-collapse:collapse; }
+      .status-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-soft); padding:10px 12px; border-bottom:1px solid var(--border); }
+      .status-table td { padding:12px; border-bottom:1px solid var(--border); font-size:13px; }
+      .status-table tr:last-child td { border-bottom:none; }
+      .st-mono { font-family:ui-monospace,monospace; font-size:12px; color:var(--text-soft); }
+      .st-empty { text-align:center; color:var(--text-soft); padding:32px; }
+      .st-tabs { display:flex; gap:8px; margin-bottom:16px; }
+      .st-tab { padding:8px 16px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--text-soft); cursor:pointer; font-size:13px; font-weight:600; }
+      .st-tab.is-active { background:var(--accent,#8b5cf6); color:#fff; border-color:transparent; }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path></svg></div>
+          <div class="head-actions">
+            <button class="pill-btn" type="button">
+              <span class="pill-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span>
+              <span>Discord</span>
+            </button>
+            <button class="icon-square" id="themeToggle" type="button" aria-label="Toggle theme">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <nav class="nav-group">
+            <p class="nav-title">Workspace</p>
+            <a class="nav-link" href="dashboard.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect></svg></span><span>Overview</span></a>
+            <a class="nav-link" href="projects.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span><span>Projects</span></a>
+            <a class="nav-link" href="keys.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span><span>Keys</span></a>
+            <a class="nav-link" href="bot.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span><span>Discord</span></a>
+          </nav>
+
+          <nav class="nav-group">
+            <p class="nav-title">Tools</p>
+            <a class="nav-link" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
+            <a class="nav-link is-active" href="status.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span><span>Status</span></a>
+          </nav>
+
+          <nav class="nav-group">
+            <p class="nav-title">Owner</p>
+            <a class="nav-link" href="owner.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg></span><span>Accounts</span></a>
+          </nav>
+        </div>
+
+        <div class="sidebar-foot">
+          <div class="user-box">
+            <span class="user-avatar" data-user-avatar>?</span>
+            <div class="user-copy">
+              <p class="user-name" data-user-name>Loading</p>
+              <p class="user-plan" data-user-plan>Free</p>
+            </div>
+          </div>
+          <a class="signout" href="#" data-signout>
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4"></path><path d="M10 8l-4 4 4 4"></path><path d="M6 12h10"></path></svg></span>
+            <span>Sign out</span>
+          </a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="icon-square menu-btn" id="menuToggle" type="button" aria-label="Open menu">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path></svg>
+            </button>
+            <h1 class="page-title">Status</h1>
+          </div>
+          <button class="primary-btn" type="button" id="refreshBtn">
+            <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>
+            Refresh
+          </button>
+        </header>
+
+        <div class="st-tabs">
+          <button class="st-tab is-active" data-view="scripts">Scripts</button>
+          <button class="st-tab" data-view="keys">Keys</button>
+        </div>
+
+        <div class="card" id="scriptsCard">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Live within 15 minutes</p>
+              <h2 class="card-title">Script status</h2>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="status-table">
+              <thead>
+                <tr><th>Script</th><th>Project</th><th>Status</th><th>Loads 24h</th><th>Devices 24h</th><th>Last used</th></tr>
+              </thead>
+              <tbody id="scriptsBody"></tbody>
+            </table>
+          </div>
+          <p class="st-empty" id="scriptsEmpty" style="display:none;">No scripts yet.</p>
+        </div>
+
+        <div class="card" id="keysCard" style="display:none;">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Per-key status</p>
+              <h2 class="card-title">Key status</h2>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="status-table">
+              <thead>
+                <tr><th>Key</th><th>Label</th><th>Project</th><th>Status</th><th>HWID</th><th>Expires</th><th>Last used</th></tr>
+              </thead>
+              <tbody id="keysBody"></tbody>
+            </table>
+          </div>
+          <p class="st-empty" id="keysEmpty" style="display:none;">No keys yet.</p>
+        </div>
+      </main>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="status.js"></script>
+  </body>
+</html>
