@@ -132,19 +132,25 @@ function getHwid(req) {
 // ============================================================
 // Player-interface (GUI) wrappers - injected into script.source
 // based on the script's player_ui setting. Monochrome theme.
+// Robust parenting (gethui -> CoreGui -> PlayerGui) + error surfacing.
 // ============================================================
 function wrapLoadingGui(source) {
   return [
-    'local __sol_ok = pcall(function()',
+    'local __sol_ok, __sol_err = pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
     '  local plr = Players.LocalPlayer',
+    '  local parentGui = nil',
+    '  pcall(function() if gethui then parentGui = gethui() end end)',
+    '  if not parentGui then pcall(function() parentGui = game:GetService("CoreGui") end) end',
+    '  if not parentGui then parentGui = plr:WaitForChild("PlayerGui") end',
     '  local gui = Instance.new("ScreenGui")',
     '  gui.Name = "SolariesLoader"',
     '  gui.IgnoreGuiInset = true',
     '  gui.ResetOnSpawn = false',
+    '  gui.DisplayOrder = 999999',
     '  gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling',
-    '  gui.Parent = (gethui and gethui()) or plr:WaitForChild("PlayerGui")',
+    '  gui.Parent = parentGui',
     '  local bg = Instance.new("Frame")',
     '  bg.Size = UDim2.fromScale(1, 1)',
     '  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)',
@@ -207,20 +213,25 @@ function wrapLoadingGui(source) {
     '  task.wait(0.45)',
     '  gui:Destroy()',
     'end)',
-    'local __sol_fn = loadstring([==[',
+    'if not __sol_ok then warn("[Solaries] loading GUI error:", __sol_err) end',
+    'local __sol_fn, __sol_load_err = loadstring([==[',
     source,
     ']==])',
-    'if __sol_fn then __sol_fn() end',
+    'if __sol_fn then __sol_fn() else warn("[Solaries] script load error:", __sol_load_err) end',
     ''
   ].join("\n");
 }
 
 function wrapKeyGui(source, scriptSlug, baseUrl) {
   return [
-    'local __sol_ok = pcall(function()',
+    'local __sol_ok, __sol_err = pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
     '  local plr = Players.LocalPlayer',
+    '  local parentGui = nil',
+    '  pcall(function() if gethui then parentGui = gethui() end end)',
+    '  if not parentGui then pcall(function() parentGui = game:GetService("CoreGui") end) end',
+    '  if not parentGui then parentGui = plr:WaitForChild("PlayerGui") end',
     '  local httpGet = (syn and syn.request) or (http and http.request) or request or (function(o)',
     '    return { Body = game:HttpGet(o.Url) }',
     '  end)',
@@ -228,7 +239,8 @@ function wrapKeyGui(source, scriptSlug, baseUrl) {
     '  gui.Name = "SolariesKey"',
     '  gui.IgnoreGuiInset = true',
     '  gui.ResetOnSpawn = false',
-    '  gui.Parent = (gethui and gethui()) or plr:WaitForChild("PlayerGui")',
+    '  gui.DisplayOrder = 999999',
+    '  gui.Parent = parentGui',
     '  local bg = Instance.new("Frame")',
     '  bg.Size = UDim2.fromScale(1, 1)',
     '  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)',
@@ -309,7 +321,13 @@ function wrapKeyGui(source, scriptSlug, baseUrl) {
     '    status.Text = "Verifying..."',
     '    btn.Text = "..."',
     '    local url = "' + baseUrl + '/v1/load/' + scriptSlug + '?key=" .. k',
-    '    local resp = httpGet({ Url = url, Method = "GET" })',
+    '    local ok, resp = pcall(function() return httpGet({ Url = url, Method = "GET" }) end)',
+    '    if not ok or not resp then',
+    '      status.TextColor3 = Color3.fromRGB(210,110,110)',
+    '      status.Text = "Network error. Try again."',
+    '      btn.Text = "Continue"',
+    '      return',
+    '    end',
     '    local body = resp.Body or resp.body or ""',
     '    if body:sub(1,3) == "-- " then',
     '      status.TextColor3 = Color3.fromRGB(210,110,110)',
@@ -323,10 +341,11 @@ function wrapKeyGui(source, scriptSlug, baseUrl) {
     '    TweenService:Create(bg, TweenInfo.new(0.35), { BackgroundTransparency = 1 }):Play()',
     '    task.wait(0.35)',
     '    gui:Destroy()',
-    '    local fn = loadstring(body)',
-    '    if fn then fn() end',
+    '    local fn, lerr = loadstring(body)',
+    '    if fn then fn() else warn("[Solaries] script load error:", lerr) end',
     '  end)',
     'end)',
+    'if not __sol_ok then warn("[Solaries] key GUI error:", __sol_err) end',
     ''
   ].join("\n");
 }
