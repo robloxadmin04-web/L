@@ -18,6 +18,24 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
 
+// Build a Lua loader that sends the HWID via header (request) with a
+// game:HttpGet + ?hwid= fallback, so HWID binding works on all executors.
+function buildLoader(loaderUrl, key) {
+  const keyLine = key ? ('_G.script_key = "' + key + '"\n') : '';
+  const urlKey = key ? '?key=".._G.script_key.."&' : '?';
+  const urlNoKey = key ? '?key=".._G.script_key' : '';
+  return keyLine +
+    'local u="' + loaderUrl + '"\n' +
+    'local h=(gethwid and gethwid()) or game:GetService("RbxAnalyticsService"):GetClientId()\n' +
+    'local rq=(syn and syn.request) or (http and http.request) or request or http_request\n' +
+    'if rq then\n' +
+    '  local r=rq({Url=u.."' + urlKey + 'hwid="..h,Method="GET",Headers={["x-hwid"]=h}})\n' +
+    '  loadstring(r.Body or r.body)()\n' +
+    'else\n' +
+    '  loadstring(game:HttpGet(u.."' + urlKey + 'hwid="..h))()\n' +
+    'end';
+}
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY");
 }
@@ -2003,9 +2021,9 @@ async function startDiscordBot() {
       userKey = existingKey.key;
 
       const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-      loader = '_G.script_key = "' + userKey + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
+      loader = buildLoader(loaderUrl, userKey);
     } else {
-      loader = 'loadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '"))()';
+      loader = buildLoader(PUBLIC_BASE_URL + "/v1/load/" + script.slug, null);
     }
 
     const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
@@ -2671,16 +2689,16 @@ async function startDiscordBot() {
     const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
     let loader;
     if (script.key_mode === "keyless") {
-      loader = 'loadstring(game:HttpGet("' + loaderUrl + '"))()';
+      loader = buildLoader(loaderUrl, null);
     } else {
       const { data: keyRow } = await supabase.from("keys")
         .select("key, revoked").eq("discord_id", discordId)
         .eq("project_id", script.project_id)
         .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
       if (keyRow && !keyRow.revoked) {
-        loader = '_G.script_key = "' + keyRow.key + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
+        loader = buildLoader(loaderUrl, keyRow.key);
       } else {
-        loader = '_G.script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
+        loader = buildLoader(loaderUrl, "YOUR_KEY_HERE");
       }
     }
 
