@@ -16,8 +16,7 @@ const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const PUBLIC_BASE_URL =
-  process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY");
@@ -83,18 +82,14 @@ function createSession(account) {
 function getSession(token) {
   const s = sessions.get(token);
   if (!s) return null;
-  if (Date.now() > s.expires_at) {
-    sessions.delete(token);
-    return null;
-  }
+  if (Date.now() > s.expires_at) { sessions.delete(token); return null; }
   return s;
 }
 
 function requireAuth(req, res, next) {
   const token = req.header("x-session-token");
   const session = token ? getSession(token) : null;
-  if (!session)
-    return res.status(401).json({ ok: false, error: "Not signed in" });
+  if (!session) return res.status(401).json({ ok: false, error: "Not signed in" });
   req.session = session;
   next();
 }
@@ -112,48 +107,23 @@ function requireOwner(req, res, next) {
 function randomBlock() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
-  for (let i = 0; i < 4; i++)
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < 4; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
   return out;
 }
 function makeKey(prefix) {
-  const safe =
-    (prefix || "KF")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "")
-      .slice(0, 6) || "KF";
+  const safe = (prefix || "KF").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) || "KF";
   return `${safe}-${randomBlock()}-${randomBlock()}-${randomBlock()}`;
 }
 function makeSlug(name) {
-  const base =
-    String(name || "item")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 40) || "item";
+  const base = String(name || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
   return base + "-" + randomBlock().toLowerCase();
 }
 async function getPlanLimits(plan) {
-  const { data } = await supabase
-    .from("plan_limits")
-    .select("*")
-    .eq("plan", plan)
-    .maybeSingle();
-  return (
-    data || {
-      max_projects: 1,
-      max_scripts_per_project: 3,
-      max_keys: 50,
-      max_obfuscations_per_month: 20,
-    }
-  );
+  const { data } = await supabase.from("plan_limits").select("*").eq("plan", plan).maybeSingle();
+  return data || { max_projects: 1, max_scripts_per_project: 3, max_keys: 50, max_obfuscations_per_month: 20 };
 }
 function getClientIp(req) {
-  return (
-    (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
-    req.socket?.remoteAddress ||
-    ""
-  );
+  return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
 }
 function getHwid(req) {
   return String(req.headers["x-hwid"] || req.query.hwid || "").trim();
@@ -166,15 +136,15 @@ function wrapHwidBootstrap(scriptSlug, key) {
   const url = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug;
   return [
     'local h=(gethwid and gethwid()) or game:GetService("RbxAnalyticsService"):GetClientId()',
-    "local rq=(syn and syn.request) or (http and http.request) or request or http_request",
-    'local u="' + url + "?key=" + key + '&hwid="..h',
-    "if rq then",
+    'local rq=(syn and syn.request) or (http and http.request) or request or http_request',
+    'local u="' + url + '?key=' + key + '&hwid="..h',
+    'if rq then',
     '  local r=rq({Url=u,Method="GET",Headers={["x-hwid"]=h}})',
-    "  local fn=loadstring(r.Body or r.body); if fn then fn() end",
-    "else",
-    "  loadstring(game:HttpGet(u))()",
-    "end",
-    "",
+    '  local fn=loadstring(r.Body or r.body); if fn then fn() end',
+    'else',
+    '  loadstring(game:HttpGet(u))()',
+    'end',
+    ''
   ].join("\n");
 }
 
@@ -185,19 +155,13 @@ function wrapHwidBootstrap(scriptSlug, key) {
 // ============================================================
 function luaSyntaxError(src) {
   if (!src || !src.trim()) return "Script is empty";
-  let paren = 0,
-    brace = 0;
+  let paren = 0, brace = 0;
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
     if (ch === "(") paren++;
-    else if (ch === ")") {
-      paren--;
-      if (paren < 0) return "Unbalanced ) at position " + i;
-    } else if (ch === "{") brace++;
-    else if (ch === "}") {
-      brace--;
-      if (brace < 0) return "Unbalanced } at position " + i;
-    }
+    else if (ch === ")") { paren--; if (paren < 0) return "Unbalanced ) at position " + i; }
+    else if (ch === "{") brace++;
+    else if (ch === "}") { brace--; if (brace < 0) return "Unbalanced } at position " + i; }
   }
   if (paren !== 0) return "Unbalanced parentheses ()";
   if (brace !== 0) return "Unbalanced braces {}";
@@ -216,248 +180,232 @@ function luaSyntaxError(src) {
 function wrapLoadingGui(source, opts, rawUrl) {
   opts = opts || {};
   rawUrl = rawUrl || "";
-  const warnLine = opts.silent
-    ? ""
-    : 'if not __sol_ok then warn("[Solaries] loading GUI error:", __sol_err) end\n';
-  const warnLoad = opts.silent
-    ? "if __sol_fn then __sol_fn() end"
-    : 'if __sol_fn then __sol_fn() else warn("[Solaries] script load error:", __sol_load_err) end';
+  const warnLine = opts.silent ? "" : 'if not __sol_ok then warn("[Solaries] loading GUI error:", __sol_err) end\n';
+  const warnLoad = opts.silent ? 'if __sol_fn then __sol_fn() end' : 'if __sol_fn then __sol_fn() else warn("[Solaries] script load error:", __sol_load_err) end';
   const t1 = opts.fast ? "0.25" : "0.5";
   const t2 = opts.fast ? "0.45" : "1.1";
   const w1 = opts.fast ? "0.25" : "0.5";
   const w2 = opts.fast ? "0.5" : "1.2";
   return [
-    "local __sol_ok, __sol_err = pcall(function()",
+    'local __sol_ok, __sol_err = pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
-    "  local plr = Players.LocalPlayer",
-    "  local parentGui = nil",
-    "  pcall(function() if gethui then parentGui = gethui() end end)",
+    '  local plr = Players.LocalPlayer',
+    '  local parentGui = nil',
+    '  pcall(function() if gethui then parentGui = gethui() end end)',
     '  if not parentGui then pcall(function() parentGui = game:GetService("CoreGui") end) end',
     '  if not parentGui then parentGui = plr:WaitForChild("PlayerGui") end',
     '  local gui = Instance.new("ScreenGui")',
     '  gui.Name = "SolariesLoader"',
-    "  gui.IgnoreGuiInset = true",
-    "  gui.ResetOnSpawn = false",
-    "  gui.DisplayOrder = 999999",
-    "  gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling",
-    "  gui.Parent = parentGui",
+    '  gui.IgnoreGuiInset = true',
+    '  gui.ResetOnSpawn = false',
+    '  gui.DisplayOrder = 999999',
+    '  gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling',
+    '  gui.Parent = parentGui',
     '  local bg = Instance.new("Frame")',
-    "  bg.Size = UDim2.fromScale(1, 1)",
-    "  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)",
-    "  bg.BackgroundTransparency = 1",
-    "  bg.BorderSizePixel = 0",
-    "  bg.Parent = gui",
+    '  bg.Size = UDim2.fromScale(1, 1)',
+    '  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)',
+    '  bg.BackgroundTransparency = 1',
+    '  bg.BorderSizePixel = 0',
+    '  bg.Parent = gui',
     '  local title = Instance.new("TextLabel")',
-    "  title.AnchorPoint = Vector2.new(0.5, 0.5)",
-    "  title.Position = UDim2.fromScale(0.5, 0.46)",
-    "  title.Size = UDim2.fromScale(0.8, 0.15)",
-    "  title.BackgroundTransparency = 1",
-    "  title.Font = Enum.Font.GothamBold",
+    '  title.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  title.Position = UDim2.fromScale(0.5, 0.46)',
+    '  title.Size = UDim2.fromScale(0.8, 0.15)',
+    '  title.BackgroundTransparency = 1',
+    '  title.Font = Enum.Font.GothamBold',
     '  title.Text = "SOLARIES"',
-    "  title.TextColor3 = Color3.fromRGB(245, 245, 245)",
-    "  title.TextTransparency = 1",
-    "  title.TextScaled = true",
-    "  title.Parent = bg",
+    '  title.TextColor3 = Color3.fromRGB(245, 245, 245)',
+    '  title.TextTransparency = 1',
+    '  title.TextScaled = true',
+    '  title.Parent = bg',
     '  local sub = Instance.new("TextLabel")',
-    "  sub.AnchorPoint = Vector2.new(0.5, 0.5)",
-    "  sub.Position = UDim2.fromScale(0.5, 0.57)",
-    "  sub.Size = UDim2.fromScale(0.6, 0.05)",
-    "  sub.BackgroundTransparency = 1",
-    "  sub.Font = Enum.Font.Gotham",
+    '  sub.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  sub.Position = UDim2.fromScale(0.5, 0.57)',
+    '  sub.Size = UDim2.fromScale(0.6, 0.05)',
+    '  sub.BackgroundTransparency = 1',
+    '  sub.Font = Enum.Font.Gotham',
     '  sub.Text = "Loading..."',
-    "  sub.TextColor3 = Color3.fromRGB(150, 150, 155)",
-    "  sub.TextTransparency = 1",
-    "  sub.TextScaled = true",
-    "  sub.Parent = bg",
+    '  sub.TextColor3 = Color3.fromRGB(150, 150, 155)',
+    '  sub.TextTransparency = 1',
+    '  sub.TextScaled = true',
+    '  sub.Parent = bg',
     '  local track = Instance.new("Frame")',
-    "  track.AnchorPoint = Vector2.new(0.5, 0.5)",
-    "  track.Position = UDim2.fromScale(0.5, 0.66)",
-    "  track.Size = UDim2.fromScale(0.34, 0.008)",
-    "  track.BackgroundColor3 = Color3.fromRGB(55, 55, 60)",
-    "  track.BorderSizePixel = 0",
-    "  track.BackgroundTransparency = 1",
-    "  track.Parent = bg",
+    '  track.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  track.Position = UDim2.fromScale(0.5, 0.66)',
+    '  track.Size = UDim2.fromScale(0.34, 0.008)',
+    '  track.BackgroundColor3 = Color3.fromRGB(55, 55, 60)',
+    '  track.BorderSizePixel = 0',
+    '  track.BackgroundTransparency = 1',
+    '  track.Parent = bg',
     '  local tcn = Instance.new("UICorner"); tcn.CornerRadius = UDim.new(1, 0); tcn.Parent = track',
     '  local fill = Instance.new("Frame")',
-    "  fill.Size = UDim2.fromScale(0, 1)",
-    "  fill.BackgroundColor3 = Color3.fromRGB(235, 235, 235)",
-    "  fill.BorderSizePixel = 0",
-    "  fill.BackgroundTransparency = 1",
-    "  fill.Parent = track",
+    '  fill.Size = UDim2.fromScale(0, 1)',
+    '  fill.BackgroundColor3 = Color3.fromRGB(235, 235, 235)',
+    '  fill.BorderSizePixel = 0',
+    '  fill.BackgroundTransparency = 1',
+    '  fill.Parent = track',
     '  local fcn = Instance.new("UICorner"); fcn.CornerRadius = UDim.new(1, 0); fcn.Parent = fill',
-    "  local ti = TweenInfo.new(" +
-      t1 +
-      ", Enum.EasingStyle.Quad, Enum.EasingDirection.Out)",
-    "  TweenService:Create(bg, ti, { BackgroundTransparency = 0 }):Play()",
-    "  TweenService:Create(title, ti, { TextTransparency = 0 }):Play()",
-    "  TweenService:Create(sub, ti, { TextTransparency = 0 }):Play()",
-    "  TweenService:Create(track, ti, { BackgroundTransparency = 0 }):Play()",
-    "  TweenService:Create(fill, ti, { BackgroundTransparency = 0 }):Play()",
-    "  task.wait(" + w1 + ")",
-    "  TweenService:Create(fill, TweenInfo.new(" +
-      t2 +
-      ", Enum.EasingStyle.Quad), { Size = UDim2.fromScale(1, 1) }):Play()",
-    "  task.wait(" + w2 + ")",
-    "  local fo = TweenInfo.new(0.4, Enum.EasingStyle.Quad)",
-    "  TweenService:Create(bg, fo, { BackgroundTransparency = 1 }):Play()",
-    "  TweenService:Create(title, fo, { TextTransparency = 1 }):Play()",
-    "  TweenService:Create(sub, fo, { TextTransparency = 1 }):Play()",
-    "  TweenService:Create(track, fo, { BackgroundTransparency = 1 }):Play()",
-    "  TweenService:Create(fill, fo, { BackgroundTransparency = 1 }):Play()",
-    "  task.wait(0.45)",
-    "  gui:Destroy()",
-    "end)",
+    '  local ti = TweenInfo.new(' + t1 + ', Enum.EasingStyle.Quad, Enum.EasingDirection.Out)',
+    '  TweenService:Create(bg, ti, { BackgroundTransparency = 0 }):Play()',
+    '  TweenService:Create(title, ti, { TextTransparency = 0 }):Play()',
+    '  TweenService:Create(sub, ti, { TextTransparency = 0 }):Play()',
+    '  TweenService:Create(track, ti, { BackgroundTransparency = 0 }):Play()',
+    '  TweenService:Create(fill, ti, { BackgroundTransparency = 0 }):Play()',
+    '  task.wait(' + w1 + ')',
+    '  TweenService:Create(fill, TweenInfo.new(' + t2 + ', Enum.EasingStyle.Quad), { Size = UDim2.fromScale(1, 1) }):Play()',
+    '  task.wait(' + w2 + ')',
+    '  local fo = TweenInfo.new(0.4, Enum.EasingStyle.Quad)',
+    '  TweenService:Create(bg, fo, { BackgroundTransparency = 1 }):Play()',
+    '  TweenService:Create(title, fo, { TextTransparency = 1 }):Play()',
+    '  TweenService:Create(sub, fo, { TextTransparency = 1 }):Play()',
+    '  TweenService:Create(track, fo, { BackgroundTransparency = 1 }):Play()',
+    '  TweenService:Create(fill, fo, { BackgroundTransparency = 1 }):Play()',
+    '  task.wait(0.45)',
+    '  gui:Destroy()',
+    'end)',
     'local __u = "' + "RAWURL" + '"',
-    "local __rq = (syn and syn.request) or (http and http.request) or request or http_request",
-    "local __body",
-    "if __rq then",
+    'local __rq = (syn and syn.request) or (http and http.request) or request or http_request',
+    'local __body',
+    'if __rq then',
     '  local __r = __rq({ Url = __u, Method = "GET", Headers = { ["x-hwid"] = (gethwid and gethwid()) or "" } })',
-    "  __body = __r.Body or __r.body",
-    "else",
-    "  __body = game:HttpGet(__u)",
-    "end",
-    "local __sol_fn = loadstring(__body)",
-    opts.silent
-      ? "if __sol_fn then __sol_fn() end"
-      : 'if __sol_fn then __sol_fn() else warn("[Solaries] script load failed") end',
-    "",
-  ]
-    .join("\n")
-    .replace("RAWURL", rawUrl);
+    '  __body = __r.Body or __r.body',
+    'else',
+    '  __body = game:HttpGet(__u)',
+    'end',
+    'local __sol_fn = loadstring(__body)',
+    (opts.silent ? 'if __sol_fn then __sol_fn() end' : 'if __sol_fn then __sol_fn() else warn("[Solaries] script load failed") end'),
+    ''
+  ].join("\n").replace("RAWURL", rawUrl);
 }
 
 function wrapKeyGui(source, scriptSlug, baseUrl, opts) {
   opts = opts || {};
-  const warnKey = opts.silent
-    ? ""
-    : 'if not __sol_ok then warn("[Solaries] key GUI error:", __sol_err) end\n';
-  const warnLoad = opts.silent
-    ? "if fn then fn() end"
-    : 'if fn then fn() else warn("[Solaries] script load error:", lerr) end';
+  const warnKey = opts.silent ? "" : 'if not __sol_ok then warn("[Solaries] key GUI error:", __sol_err) end\n';
+  const warnLoad = opts.silent ? 'if fn then fn() end' : 'if fn then fn() else warn("[Solaries] script load error:", lerr) end';
   return [
-    "local __sol_ok, __sol_err = pcall(function()",
+    'local __sol_ok, __sol_err = pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
-    "  local plr = Players.LocalPlayer",
-    "  local parentGui = nil",
-    "  pcall(function() if gethui then parentGui = gethui() end end)",
+    '  local plr = Players.LocalPlayer',
+    '  local parentGui = nil',
+    '  pcall(function() if gethui then parentGui = gethui() end end)',
     '  if not parentGui then pcall(function() parentGui = game:GetService("CoreGui") end) end',
     '  if not parentGui then parentGui = plr:WaitForChild("PlayerGui") end',
-    "  local httpGet = (syn and syn.request) or (http and http.request) or request or (function(o)",
-    "    return { Body = game:HttpGet(o.Url) }",
-    "  end)",
+    '  local httpGet = (syn and syn.request) or (http and http.request) or request or (function(o)',
+    '    return { Body = game:HttpGet(o.Url) }',
+    '  end)',
     '  local gui = Instance.new("ScreenGui")',
     '  gui.Name = "SolariesKey"',
-    "  gui.IgnoreGuiInset = true",
-    "  gui.ResetOnSpawn = false",
-    "  gui.DisplayOrder = 999999",
-    "  gui.Parent = parentGui",
+    '  gui.IgnoreGuiInset = true',
+    '  gui.ResetOnSpawn = false',
+    '  gui.DisplayOrder = 999999',
+    '  gui.Parent = parentGui',
     '  local bg = Instance.new("Frame")',
-    "  bg.Size = UDim2.fromScale(1, 1)",
-    "  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)",
-    "  bg.BackgroundTransparency = 1",
-    "  bg.BorderSizePixel = 0",
-    "  bg.Parent = gui",
-    "  TweenService:Create(bg, TweenInfo.new(0.4), { BackgroundTransparency = 0.15 }):Play()",
+    '  bg.Size = UDim2.fromScale(1, 1)',
+    '  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)',
+    '  bg.BackgroundTransparency = 1',
+    '  bg.BorderSizePixel = 0',
+    '  bg.Parent = gui',
+    '  TweenService:Create(bg, TweenInfo.new(0.4), { BackgroundTransparency = 0.15 }):Play()',
     '  local card = Instance.new("Frame")',
-    "  card.AnchorPoint = Vector2.new(0.5, 0.5)",
-    "  card.Position = UDim2.fromScale(0.5, 0.5)",
-    "  card.Size = UDim2.fromOffset(340, 220)",
-    "  card.BackgroundColor3 = Color3.fromRGB(28, 28, 31)",
-    "  card.BorderSizePixel = 0",
-    "  card.Parent = bg",
+    '  card.AnchorPoint = Vector2.new(0.5, 0.5)',
+    '  card.Position = UDim2.fromScale(0.5, 0.5)',
+    '  card.Size = UDim2.fromOffset(340, 220)',
+    '  card.BackgroundColor3 = Color3.fromRGB(28, 28, 31)',
+    '  card.BorderSizePixel = 0',
+    '  card.Parent = bg',
     '  local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 14); cc.Parent = card',
     '  local cst = Instance.new("UIStroke"); cst.Color = Color3.fromRGB(60,60,66); cst.Thickness = 1; cst.Parent = card',
     '  local head = Instance.new("TextLabel")',
-    "  head.Position = UDim2.fromOffset(24, 22)",
-    "  head.Size = UDim2.fromOffset(292, 26)",
-    "  head.BackgroundTransparency = 1",
-    "  head.Font = Enum.Font.GothamBold",
+    '  head.Position = UDim2.fromOffset(24, 22)',
+    '  head.Size = UDim2.fromOffset(292, 26)',
+    '  head.BackgroundTransparency = 1',
+    '  head.Font = Enum.Font.GothamBold',
     '  head.Text = "SOLARIES"',
-    "  head.TextColor3 = Color3.fromRGB(245,245,245)",
-    "  head.TextXAlignment = Enum.TextXAlignment.Left",
-    "  head.TextSize = 20",
-    "  head.Parent = card",
+    '  head.TextColor3 = Color3.fromRGB(245,245,245)',
+    '  head.TextXAlignment = Enum.TextXAlignment.Left',
+    '  head.TextSize = 20',
+    '  head.Parent = card',
     '  local sub = Instance.new("TextLabel")',
-    "  sub.Position = UDim2.fromOffset(24, 50)",
-    "  sub.Size = UDim2.fromOffset(292, 18)",
-    "  sub.BackgroundTransparency = 1",
-    "  sub.Font = Enum.Font.Gotham",
+    '  sub.Position = UDim2.fromOffset(24, 50)',
+    '  sub.Size = UDim2.fromOffset(292, 18)',
+    '  sub.BackgroundTransparency = 1',
+    '  sub.Font = Enum.Font.Gotham',
     '  sub.Text = "Enter your key to continue"',
-    "  sub.TextColor3 = Color3.fromRGB(150,150,155)",
-    "  sub.TextXAlignment = Enum.TextXAlignment.Left",
-    "  sub.TextSize = 13",
-    "  sub.Parent = card",
+    '  sub.TextColor3 = Color3.fromRGB(150,150,155)',
+    '  sub.TextXAlignment = Enum.TextXAlignment.Left',
+    '  sub.TextSize = 13',
+    '  sub.Parent = card',
     '  local box = Instance.new("TextBox")',
-    "  box.Position = UDim2.fromOffset(24, 86)",
-    "  box.Size = UDim2.fromOffset(292, 40)",
-    "  box.BackgroundColor3 = Color3.fromRGB(38,38,42)",
-    "  box.BorderSizePixel = 0",
-    "  box.Font = Enum.Font.Gotham",
+    '  box.Position = UDim2.fromOffset(24, 86)',
+    '  box.Size = UDim2.fromOffset(292, 40)',
+    '  box.BackgroundColor3 = Color3.fromRGB(38,38,42)',
+    '  box.BorderSizePixel = 0',
+    '  box.Font = Enum.Font.Gotham',
     '  box.PlaceholderText = "KF-XXXX-XXXX-XXXX"',
-    "  box.PlaceholderColor3 = Color3.fromRGB(110,110,115)",
+    '  box.PlaceholderColor3 = Color3.fromRGB(110,110,115)',
     '  box.Text = ""',
-    "  box.TextColor3 = Color3.fromRGB(240,240,240)",
-    "  box.TextSize = 15",
-    "  box.ClearTextOnFocus = false",
-    "  box.Parent = card",
+    '  box.TextColor3 = Color3.fromRGB(240,240,240)',
+    '  box.TextSize = 15',
+    '  box.ClearTextOnFocus = false',
+    '  box.Parent = card',
     '  local bcn = Instance.new("UICorner"); bcn.CornerRadius = UDim.new(0, 9); bcn.Parent = box',
     '  local btn = Instance.new("TextButton")',
-    "  btn.Position = UDim2.fromOffset(24, 138)",
-    "  btn.Size = UDim2.fromOffset(292, 42)",
-    "  btn.BackgroundColor3 = Color3.fromRGB(235,235,235)",
-    "  btn.BorderSizePixel = 0",
-    "  btn.Font = Enum.Font.GothamBold",
+    '  btn.Position = UDim2.fromOffset(24, 138)',
+    '  btn.Size = UDim2.fromOffset(292, 42)',
+    '  btn.BackgroundColor3 = Color3.fromRGB(235,235,235)',
+    '  btn.BorderSizePixel = 0',
+    '  btn.Font = Enum.Font.GothamBold',
     '  btn.Text = "Continue"',
-    "  btn.TextColor3 = Color3.fromRGB(20,20,22)",
-    "  btn.TextSize = 15",
-    "  btn.Parent = card",
+    '  btn.TextColor3 = Color3.fromRGB(20,20,22)',
+    '  btn.TextSize = 15',
+    '  btn.Parent = card',
     '  local btcn = Instance.new("UICorner"); btcn.CornerRadius = UDim.new(0, 9); btcn.Parent = btn',
     '  local status = Instance.new("TextLabel")',
-    "  status.Position = UDim2.fromOffset(24, 186)",
-    "  status.Size = UDim2.fromOffset(292, 18)",
-    "  status.BackgroundTransparency = 1",
-    "  status.Font = Enum.Font.Gotham",
+    '  status.Position = UDim2.fromOffset(24, 186)',
+    '  status.Size = UDim2.fromOffset(292, 18)',
+    '  status.BackgroundTransparency = 1',
+    '  status.Font = Enum.Font.Gotham',
     '  status.Text = ""',
-    "  status.TextColor3 = Color3.fromRGB(200,120,120)",
-    "  status.TextXAlignment = Enum.TextXAlignment.Left",
-    "  status.TextSize = 12",
-    "  status.Parent = card",
-    "  local done = false",
-    "  btn.MouseButton1Click:Connect(function()",
-    "    if done then return end",
+    '  status.TextColor3 = Color3.fromRGB(200,120,120)',
+    '  status.TextXAlignment = Enum.TextXAlignment.Left',
+    '  status.TextSize = 12',
+    '  status.Parent = card',
+    '  local done = false',
+    '  btn.MouseButton1Click:Connect(function()',
+    '    if done then return end',
     '    local k = box.Text:gsub("%s+", "")',
     '    if k == "" then status.Text = "Please enter a key."; return end',
-    "    status.TextColor3 = Color3.fromRGB(150,150,155)",
+    '    status.TextColor3 = Color3.fromRGB(150,150,155)',
     '    status.Text = "Verifying..."',
     '    btn.Text = "..."',
-    '    local url = "' + baseUrl + "/v1/load/" + scriptSlug + '?key=" .. k',
+    '    local url = "' + baseUrl + '/v1/load/' + scriptSlug + '?key=" .. k',
     '    local ok, resp = pcall(function() return httpGet({ Url = url, Method = "GET" }) end)',
-    "    if not ok or not resp then",
-    "      status.TextColor3 = Color3.fromRGB(210,110,110)",
+    '    if not ok or not resp then',
+    '      status.TextColor3 = Color3.fromRGB(210,110,110)',
     '      status.Text = "Network error. Try again."',
     '      btn.Text = "Continue"',
-    "      return",
-    "    end",
+    '      return',
+    '    end',
     '    local body = resp.Body or resp.body or ""',
     '    if body:sub(1,3) == "-- " then',
-    "      status.TextColor3 = Color3.fromRGB(210,110,110)",
-    "      status.Text = body:sub(4)",
+    '      status.TextColor3 = Color3.fromRGB(210,110,110)',
+    '      status.Text = body:sub(4)',
     '      btn.Text = "Continue"',
-    "      return",
-    "    end",
-    "    done = true",
-    "    status.TextColor3 = Color3.fromRGB(120,190,120)",
+    '      return',
+    '    end',
+    '    done = true',
+    '    status.TextColor3 = Color3.fromRGB(120,190,120)',
     '    status.Text = "Success"',
-    "    TweenService:Create(bg, TweenInfo.new(0.35), { BackgroundTransparency = 1 }):Play()",
-    "    task.wait(0.35)",
-    "    gui:Destroy()",
-    "    local fn, lerr = loadstring(body)",
-    "    " + warnLoad,
-    "  end)",
-    "end)",
-    warnKey.trimEnd(),
+    '    TweenService:Create(bg, TweenInfo.new(0.35), { BackgroundTransparency = 1 }):Play()',
+    '    task.wait(0.35)',
+    '    gui:Destroy()',
+    '    local fn, lerr = loadstring(body)',
+    '    ' + warnLoad,
+    '  end)',
+    'end)',
+    warnKey.trimEnd()
   ].join("\n");
 }
 
@@ -471,39 +419,21 @@ app.post("/api/signin", async (req, res) => {
   // FIX A: throttle sign-in attempts per IP to stop API-key bruteforce
   const ipKey = "signin:" + getClientIp(req);
   if (!rateLimit(ipKey, 10, 60 * 1000)) {
-    return res
-      .status(429)
-      .json({ ok: false, error: "Too many attempts. Wait a minute." });
+    return res.status(429).json({ ok: false, error: "Too many attempts. Wait a minute." });
   }
 
   const { data: account, error } = await supabase
-    .from("accounts")
-    .select("id, name, api_key, plan, role")
-    .eq("api_key", apiKey)
-    .maybeSingle();
+    .from("accounts").select("id, name, api_key, plan, role")
+    .eq("api_key", apiKey).maybeSingle();
 
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   if (!account) return res.json({ ok: false, error: "Invalid API key" });
 
-  await supabase
-    .from("accounts")
-    .update({ last_login: new Date().toISOString() })
-    .eq("id", account.id);
-  await supabase
-    .from("access_log")
-    .insert({ owner_account_id: account.id, event: "login" });
+  await supabase.from("accounts").update({ last_login: new Date().toISOString() }).eq("id", account.id);
+  await supabase.from("access_log").insert({ owner_account_id: account.id, event: "login" });
 
   const token = createSession(account);
-  res.json({
-    ok: true,
-    token,
-    account: {
-      id: account.id,
-      name: account.name,
-      plan: account.plan,
-      role: account.role,
-    },
-  });
+  res.json({ ok: true, token, account: { id: account.id, name: account.name, plan: account.plan, role: account.role } });
 });
 
 app.post("/api/signout", requireAuth, (req, res) => {
@@ -547,17 +477,13 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 
   const { data: script } = await supabase
     .from("scripts")
-    .select(
-      "id, project_id, source, key_mode, enabled, player_ui, same_device, silent_mode, fast_mode, projects!inner(id, status, whitelist_only, owner_account_id)",
-    )
+    .select("id, project_id, source, key_mode, enabled, player_ui, same_device, silent_mode, fast_mode, projects!inner(id, status, whitelist_only, owner_account_id)")
     .eq("slug", scriptSlug)
     .maybeSingle();
 
   if (!script) return res.status(404).send("-- script not found");
-  if (!script.enabled)
-    return block("script disabled", 403, null, script.project_id, script.id);
-  if (script.projects.status === "paused")
-    return block("project paused", 403, null, script.project_id, script.id);
+  if (!script.enabled) return block("script disabled", 403, null, script.project_id, script.id);
+  if (script.projects.status === "paused") return block("project paused", 403, null, script.project_id, script.id);
 
   const projectId = script.project_id;
   const accountId = script.projects.owner_account_id;
@@ -573,8 +499,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
         .eq("project_id", projectId)
         .or(orParts.join(","))
         .limit(1);
-      if (blocked && blocked.length)
-        return block("blocked device or ip", 403, null, projectId, script.id);
+      if (blocked && blocked.length) return block("blocked device or ip", 403, null, projectId, script.id);
     }
   }
 
@@ -586,38 +511,25 @@ app.get("/v1/load/:script_slug", async (req, res) => {
       .eq("entry_type", "hwid")
       .eq("value", hwid)
       .maybeSingle();
-    if (!allowed)
-      return block("device not on allowlist", 403, null, projectId, script.id);
+    if (!allowed) return block("device not on allowlist", 403, null, projectId, script.id);
   }
 
   if (script.key_mode === "keyed") {
     if (!key) {
       if (script.player_ui === "key_gui") {
-        return res
-          .status(200)
-          .send(
-            wrapKeyGui(
-              script.source || "-- empty script",
-              scriptSlug,
-              PUBLIC_BASE_URL,
-              { silent: script.silent_mode },
-            ),
-          );
+        return res.status(200).send(wrapKeyGui(script.source || "-- empty script", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }));
       }
       return block("missing key", 401, null, projectId, script.id);
     }
 
     const { data: keyRow } = await supabase
       .from("keys")
-      .select(
-        "id, revoked, project_id, owner_account_id, hwid, hwid_locked, expires_at",
-      )
+      .select("id, revoked, project_id, owner_account_id, hwid, hwid_locked, expires_at")
       .eq("key", key)
       .maybeSingle();
 
     if (!keyRow) return block("invalid key", 403, null, projectId, script.id);
-    if (keyRow.revoked)
-      return block("revoked key", 403, keyRow.id, projectId, script.id);
+    if (keyRow.revoked) return block("revoked key", 403, keyRow.id, projectId, script.id);
 
     const { data: keyBlocked } = await supabase
       .from("blocklist")
@@ -626,71 +538,50 @@ app.get("/v1/load/:script_slug", async (req, res) => {
       .eq("entry_type", "key")
       .eq("value", key)
       .maybeSingle();
-    if (keyBlocked)
-      return block("key blocked", 403, keyRow.id, projectId, script.id);
+    if (keyBlocked) return block("key blocked", 403, keyRow.id, projectId, script.id);
 
     if (keyRow.project_id && keyRow.project_id !== projectId) {
-      return block(
-        "key not valid for this script",
-        403,
-        keyRow.id,
-        projectId,
-        script.id,
-      );
+      return block("key not valid for this script", 403, keyRow.id, projectId, script.id);
     }
 
-    if (
-      keyRow.expires_at &&
-      new Date(keyRow.expires_at).getTime() < Date.now()
-    ) {
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
       return block("key expired", 403, keyRow.id, projectId, script.id);
     }
 
     if (keyRow.hwid_locked) {
-      if (!hwid) {
-        // No HWID yet: hand back a tiny bootstrap that grabs it and re-requests.
-        return res.status(200).send(wrapHwidBootstrap(scriptSlug, key));
+  if (!hwid) {
+    // No HWID yet: hand back a tiny bootstrap that grabs it and re-requests.
+    return res.status(200).send(wrapHwidBootstrap(scriptSlug, key));
+  }
+
+  if (!keyRow.hwid) {
+    // Atomic claim: mag-bind LANG kung null pa talaga sa DB sa mismong sandaling ito.
+    // Kung may ibang device na nauna kahit ilang millisecond, 0 rows ang maa-update.
+    const { data: claimed } = await supabase
+      .from("keys")
+      .update({ hwid: hwid })
+      .eq("id", keyRow.id)
+      .is("hwid", null)          // <-- ito ang nagpapa-atomic; guard sa DB level
+      .select("id");
+
+    if (!claimed || !claimed.length) {
+      // May ibang device na nakauna mag-bind. Basahin ulit ang totoong laman at i-enforce.
+      const { data: fresh } = await supabase
+        .from("keys")
+        .select("hwid")
+        .eq("id", keyRow.id)
+        .maybeSingle();
+
+      if (fresh && fresh.hwid && fresh.hwid !== hwid) {
+        return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
       }
-
-      if (!keyRow.hwid) {
-        // Atomic claim: mag-bind LANG kung null pa talaga sa DB sa mismong sandaling ito.
-        // Kung may ibang device na nauna kahit ilang millisecond, 0 rows ang maa-update.
-        const { data: claimed } = await supabase
-          .from("keys")
-          .update({ hwid: hwid })
-          .eq("id", keyRow.id)
-          .is("hwid", null) // <-- ito ang nagpapa-atomic; guard sa DB level
-          .select("id");
-
-        if (!claimed || !claimed.length) {
-          // May ibang device na nakauna mag-bind. Basahin ulit ang totoong laman at i-enforce.
-          const { data: fresh } = await supabase
-            .from("keys")
-            .select("hwid")
-            .eq("id", keyRow.id)
-            .maybeSingle();
-
-          if (fresh && fresh.hwid && fresh.hwid !== hwid) {
-            return block(
-              "key locked to a different device",
-              403,
-              keyRow.id,
-              projectId,
-              script.id,
-            );
-          }
-          // (Kung fresh.hwid === hwid, ibig sabihin parehong device — hayaan lang dumaan.)
-        }
-      } else if (keyRow.hwid !== hwid) {
-        return block(
-          "key locked to a different device",
-          403,
-          keyRow.id,
-          projectId,
-          script.id,
-        );
-      }
+      // (Kung fresh.hwid === hwid, ibig sabihin parehong device — hayaan lang dumaan.)
     }
+  } else if (keyRow.hwid !== hwid) {
+    return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
+  }
+}
+
 
     // SAME DEVICE (soft): if the key loaded from a different IP recently, log it (don't block).
     if (script.same_device && ip) {
@@ -698,55 +589,38 @@ app.get("/v1/load/:script_slug", async (req, res) => {
       const { data: ipRows } = await supabase
         .from("access_log")
         .select("ip")
-        .eq("key_id", keyRow.id)
-        .eq("event", "load")
+        .eq("key_id", keyRow.id).eq("event", "load")
         .gte("created_at", sinceIp);
       const ips = new Set((ipRows || []).map((r) => r.ip).filter(Boolean));
       if (ips.size > 0 && !ips.has(ip)) {
         await supabase.from("access_log").insert({
           owner_account_id: keyRow.owner_account_id,
-          key_id: keyRow.id,
-          project_id: projectId,
-          script_id: script.id,
+          key_id: keyRow.id, project_id: projectId, script_id: script.id,
           event: "blocked",
           reason: "same-device flag: new IP " + ip + " (allowed, logged)",
-          hwid: hwid || null,
-          ip: ip || null,
+          hwid: hwid || null, ip: ip || null,
         });
       }
     }
 
-    await supabase
-      .from("keys")
-      .update({ last_used_at: new Date().toISOString() })
-      .eq("id", keyRow.id);
+    await supabase.from("keys").update({ last_used_at: new Date().toISOString() }).eq("id", keyRow.id);
     await supabase.from("access_log").insert({
       owner_account_id: keyRow.owner_account_id,
-      key_id: keyRow.id,
-      project_id: projectId,
-      script_id: script.id,
-      event: "load",
-      hwid: hwid || null,
-      ip: ip || null,
+      key_id: keyRow.id, project_id: projectId, script_id: script.id,
+      event: "load", hwid: hwid || null, ip: ip || null,
     });
   } else {
     await supabase.from("access_log").insert({
       owner_account_id: accountId,
-      project_id: projectId,
-      script_id: script.id,
-      event: "load",
-      hwid: hwid || null,
-      ip: ip || null,
+      project_id: projectId, script_id: script.id,
+      event: "load", hwid: hwid || null, ip: ip || null,
     });
   }
 
   // FIX 3: sharing detection — auto-revoke a key used from too many devices in 24h
   if (script.key_mode === "keyed" && key) {
     const { data: kr } = await supabase
-      .from("keys")
-      .select("id, owner_account_id")
-      .eq("key", key)
-      .maybeSingle();
+      .from("keys").select("id, owner_account_id").eq("key", key).maybeSingle();
     if (kr) {
       const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
       const { data: recent } = await supabase
@@ -755,29 +629,18 @@ app.get("/v1/load/:script_slug", async (req, res) => {
         .eq("key_id", kr.id)
         .eq("event", "load")
         .gte("created_at", since);
-      const distinct = new Set(
-        (recent || []).map((r) => r.hwid).filter(Boolean),
-      );
+      const distinct = new Set((recent || []).map((r) => r.hwid).filter(Boolean));
       const THRESHOLD = 3; // >3 devices/24h = suspicious; tune to your users
       if (distinct.size > THRESHOLD) {
         await supabase.from("keys").update({ revoked: true }).eq("id", kr.id);
         await supabase.from("access_log").insert({
           owner_account_id: kr.owner_account_id,
-          key_id: kr.id,
-          project_id: projectId,
-          script_id: script.id,
+          key_id: kr.id, project_id: projectId, script_id: script.id,
           event: "blocked",
           reason: "auto-revoked: shared across " + distinct.size + " devices",
-          hwid: hwid || null,
-          ip: ip || null,
+          hwid: hwid || null, ip: ip || null,
         });
-        return block(
-          "key auto-revoked for sharing",
-          403,
-          kr.id,
-          projectId,
-          script.id,
-        );
+        return block("key auto-revoked for sharing", 403, kr.id, projectId, script.id);
       }
     }
   }
@@ -790,17 +653,9 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   if (req.query.raw) {
     return res.status(200).send(__raw);
   }
-  const __rawUrl =
-    PUBLIC_BASE_URL +
-    "/v1/load/" +
-    scriptSlug +
-    "?key=" +
-    encodeURIComponent(key || "") +
-    "&raw=1";
+  const __rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug + "?key=" + encodeURIComponent(key || "") + "&raw=1";
   if (script.player_ui === "key_gui" && !key) {
-    return res
-      .status(200)
-      .send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL, __opts));
+    return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL, __opts));
   }
   if (script.player_ui === "loading") {
     return res.status(200).send(wrapLoadingGui(__raw, __opts, __rawUrl));
@@ -820,19 +675,14 @@ app.get("/api/status", requireAuth, async (req, res) => {
 
   try {
     const { data: projects } = await supabase
-      .from("projects")
-      .select("id, name")
+      .from("projects").select("id, name")
       .eq("owner_account_id", accountId);
     const projById = {};
-    (projects || []).forEach((p) => {
-      projById[p.id] = p.name;
-    });
+    (projects || []).forEach((p) => { projById[p.id] = p.name; });
 
     const { data: scripts } = await supabase
       .from("scripts")
-      .select(
-        "id, name, slug, project_id, enabled, key_mode, projects!inner(owner_account_id)",
-      )
+      .select("id, name, slug, project_id, enabled, key_mode, projects!inner(owner_account_id)")
       .eq("projects.owner_account_id", accountId);
 
     const { data: loads } = await supabase
@@ -848,17 +698,13 @@ app.get("/api/status", requireAuth, async (req, res) => {
     const scriptStatus = (scripts || []).map((sc) => {
       const rows = loadRows.filter((r) => r.script_id === sc.id);
       const last = rows.length ? rows[0].created_at : null;
-      const isActive =
-        last && now - new Date(last).getTime() <= ACTIVE_WINDOW_MIN * 60 * 1000;
+      const isActive = last && (now - new Date(last).getTime()) <= ACTIVE_WINDOW_MIN * 60 * 1000;
       const uniqueHwids = new Set(rows.map((r) => r.hwid).filter(Boolean)).size;
       return {
-        id: sc.id,
-        name: sc.name,
-        slug: sc.slug,
+        id: sc.id, name: sc.name, slug: sc.slug,
         project_name: projById[sc.project_id] || "-",
-        enabled: sc.enabled,
-        key_mode: sc.key_mode,
-        status: !sc.enabled ? "disabled" : isActive ? "active" : "idle",
+        enabled: sc.enabled, key_mode: sc.key_mode,
+        status: !sc.enabled ? "disabled" : (isActive ? "active" : "idle"),
         last_used_at: last || null,
         loads_24h: rows.length,
         unique_devices_24h: uniqueHwids,
@@ -867,17 +713,14 @@ app.get("/api/status", requireAuth, async (req, res) => {
 
     const { data: keys } = await supabase
       .from("keys")
-      .select(
-        "id, key, label, revoked, project_id, hwid, hwid_locked, expires_at, last_used_at",
-      )
+      .select("id, key, label, revoked, project_id, hwid, hwid_locked, expires_at, last_used_at")
       .eq("owner_account_id", accountId)
       .order("created_at", { ascending: false });
 
     const keyStatus = (keys || []).map((k) => {
       const expired = k.expires_at && new Date(k.expires_at).getTime() < now;
       const last = k.last_used_at;
-      const isActive =
-        last && now - new Date(last).getTime() <= ACTIVE_WINDOW_MIN * 60 * 1000;
+      const isActive = last && (now - new Date(last).getTime()) <= ACTIVE_WINDOW_MIN * 60 * 1000;
       let status = "idle";
       if (k.revoked) status = "revoked";
       else if (expired) status = "expired";
@@ -911,41 +754,14 @@ app.get("/api/status", requireAuth, async (req, res) => {
 // ============================================================
 app.get("/api/stats", requireAuth, async (req, res) => {
   const accountId = req.session.account_id;
-  const [projects, scripts, keys, revoked, loadsToday, loginsToday] =
-    await Promise.all([
-      supabase
-        .from("projects")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId),
-      supabase
-        .from("scripts")
-        .select("id, projects!inner(owner_account_id)", {
-          count: "exact",
-          head: true,
-        })
-        .eq("projects.owner_account_id", accountId),
-      supabase
-        .from("keys")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId),
-      supabase
-        .from("keys")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId)
-        .eq("revoked", true),
-      supabase
-        .from("access_log")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId)
-        .eq("event", "load")
-        .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
-      supabase
-        .from("access_log")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId)
-        .eq("event", "login")
-        .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
-    ]);
+  const [projects, scripts, keys, revoked, loadsToday, loginsToday] = await Promise.all([
+    supabase.from("projects").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId),
+    supabase.from("scripts").select("id, projects!inner(owner_account_id)", { count: "exact", head: true }).eq("projects.owner_account_id", accountId),
+    supabase.from("keys").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId),
+    supabase.from("keys").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId).eq("revoked", true),
+    supabase.from("access_log").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId).eq("event", "load").gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+    supabase.from("access_log").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId).eq("event", "login").gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+  ]);
   const limits = await getPlanLimits(req.session.plan);
   res.json({
     ok: true,
@@ -994,17 +810,12 @@ app.get("/api/analytics", requireAuth, async (req, res) => {
       const label = String(r.created_at).slice(0, 10);
       if (byDay.has(label)) byDay.set(label, byDay.get(label) + 1);
     });
-    const series = Array.from(byDay.entries()).map(([date, count]) => ({
-      date,
-      count,
-    }));
+    const series = Array.from(byDay.entries()).map(([date, count]) => ({ date, count }));
 
     const loads7d = loadRows.filter((r) => r.created_at >= since7d).length;
     const loads30d = loadRows.length;
     const uniqueKeys24h = new Set(
-      loadRows
-        .filter((r) => r.created_at >= since24h && r.key_id)
-        .map((r) => r.key_id),
+      loadRows.filter((r) => r.created_at >= since24h && r.key_id).map((r) => r.key_id)
     ).size;
 
     const breakdown = { load: 0, login: 0, blocked: 0, other: 0 };
@@ -1028,101 +839,63 @@ app.get("/api/analytics", requireAuth, async (req, res) => {
 
     const scriptCounts = new Map();
     loadRows.forEach((r) => {
-      if (r.script_id)
-        scriptCounts.set(r.script_id, (scriptCounts.get(r.script_id) || 0) + 1);
+      if (r.script_id) scriptCounts.set(r.script_id, (scriptCounts.get(r.script_id) || 0) + 1);
     });
     const topScriptIds = Array.from(scriptCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([id]) => id);
+      .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id);
     let topScripts = [];
     if (topScriptIds.length > 0) {
       const { data: scriptRows } = await supabase
         .from("scripts")
-        .select(
-          "id, name, slug, project_id, projects!inner(name, owner_account_id)",
-        )
-        .in("id", topScriptIds)
-        .eq("projects.owner_account_id", accountId);
-      topScripts = (scriptRows || [])
-        .map((s) => ({
-          id: s.id,
-          name: s.name,
-          slug: s.slug,
-          project_name: s.projects?.name || "(deleted)",
-          loads: scriptCounts.get(s.id) || 0,
-        }))
-        .sort((a, b) => b.loads - a.loads);
+        .select("id, name, slug, project_id, projects!inner(name, owner_account_id)")
+        .in("id", topScriptIds).eq("projects.owner_account_id", accountId);
+      topScripts = (scriptRows || []).map((s) => ({
+        id: s.id, name: s.name, slug: s.slug,
+        project_name: s.projects?.name || "(deleted)",
+        loads: scriptCounts.get(s.id) || 0,
+      })).sort((a, b) => b.loads - a.loads);
     }
 
     const projectCounts = new Map();
     loadRows.forEach((r) => {
-      if (r.project_id)
-        projectCounts.set(
-          r.project_id,
-          (projectCounts.get(r.project_id) || 0) + 1,
-        );
+      if (r.project_id) projectCounts.set(r.project_id, (projectCounts.get(r.project_id) || 0) + 1);
     });
-    const topProjectEntry = Array.from(projectCounts.entries()).sort(
-      (a, b) => b[1] - a[1],
-    )[0];
+    const topProjectEntry = Array.from(projectCounts.entries()).sort((a, b) => b[1] - a[1])[0];
     let topProject = null;
     if (topProjectEntry) {
-      const { data: p } = await supabase
-        .from("projects")
-        .select("id, name")
-        .eq("id", topProjectEntry[0])
-        .eq("owner_account_id", accountId)
-        .maybeSingle();
+      const { data: p } = await supabase.from("projects")
+        .select("id, name").eq("id", topProjectEntry[0])
+        .eq("owner_account_id", accountId).maybeSingle();
       if (p) topProject = { name: p.name, loads: topProjectEntry[1] };
     }
 
     const recent = rows.slice(0, 30);
-    const projIds = [
-      ...new Set(recent.map((r) => r.project_id).filter(Boolean)),
-    ];
-    const scriptIds = [
-      ...new Set(recent.map((r) => r.script_id).filter(Boolean)),
-    ];
-    let projMap = {},
-      scriptMap = {};
+    const projIds = [...new Set(recent.map((r) => r.project_id).filter(Boolean))];
+    const scriptIds = [...new Set(recent.map((r) => r.script_id).filter(Boolean))];
+    let projMap = {}, scriptMap = {};
     if (projIds.length) {
-      const { data } = await supabase
-        .from("projects")
-        .select("id, name")
-        .in("id", projIds);
+      const { data } = await supabase.from("projects").select("id, name").in("id", projIds);
       (data || []).forEach((p) => (projMap[p.id] = p.name));
     }
     if (scriptIds.length) {
-      const { data } = await supabase
-        .from("scripts")
-        .select("id, name")
-        .in("id", scriptIds);
+      const { data } = await supabase.from("scripts").select("id, name").in("id", scriptIds);
       (data || []).forEach((s) => (scriptMap[s.id] = s.name));
     }
     const activity = recent.map((r) => ({
-      id: r.id,
-      event: r.event,
-      reason: r.reason || null,
-      created_at: r.created_at,
-      project_name: r.project_id ? projMap[r.project_id] || "(deleted)" : null,
-      script_name: r.script_id ? scriptMap[r.script_id] || "(deleted)" : null,
+      id: r.id, event: r.event, reason: r.reason || null, created_at: r.created_at,
+      project_name: r.project_id ? (projMap[r.project_id] || "(deleted)") : null,
+      script_name: r.script_id ? (scriptMap[r.script_id] || "(deleted)") : null,
     }));
 
     res.json({
       ok: true,
       analytics: {
-        loads_7d: loads7d,
-        loads_30d: loads30d,
+        loads_7d: loads7d, loads_30d: loads30d,
         unique_keys_24h: uniqueKeys24h,
-        blocked_7d: blocked7d,
-        blocked_30d: blocked30d,
-        breakdown,
-        top_block_reasons: topBlockReasons,
-        top_project: topProject,
-        series,
-        top_scripts: topScripts,
-        activity,
+        blocked_7d: blocked7d, blocked_30d: blocked30d,
+        breakdown, top_block_reasons: topBlockReasons,
+        top_project: topProject, series,
+        top_scripts: topScripts, activity,
         total_events_30d: rows.length,
       },
     });
@@ -1137,8 +910,7 @@ app.delete("/api/analytics/logs", requireAuth, async (req, res) => {
     .from("access_log")
     .delete()
     .eq("owner_account_id", req.session.account_id);
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not clear logs" });
+  if (error) return res.status(500).json({ ok: false, error: "Could not clear logs" });
   res.json({ ok: true });
 });
 
@@ -1146,62 +918,33 @@ app.delete("/api/analytics/logs", requireAuth, async (req, res) => {
 // PROJECTS
 // ============================================================
 app.get("/api/projects", requireAuth, async (req, res) => {
-  const { data, error } = await supabase
-    .from("projects")
+  const { data, error } = await supabase.from("projects")
     .select("id, name, slug, note, status, whitelist_only, created_at")
-    .eq("owner_account_id", req.session.account_id)
-    .order("created_at", { ascending: false });
+    .eq("owner_account_id", req.session.account_id).order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
-  const withCounts = await Promise.all(
-    (data || []).map(async (p) => {
-      const [scr, kys] = await Promise.all([
-        supabase
-          .from("scripts")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", p.id),
-        supabase
-          .from("keys")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", p.id),
-      ]);
-      return { ...p, script_count: scr.count || 0, key_count: kys.count || 0 };
-    }),
-  );
+  const withCounts = await Promise.all((data || []).map(async (p) => {
+    const [scr, kys] = await Promise.all([
+      supabase.from("scripts").select("id", { count: "exact", head: true }).eq("project_id", p.id),
+      supabase.from("keys").select("id", { count: "exact", head: true }).eq("project_id", p.id),
+    ]);
+    return { ...p, script_count: scr.count || 0, key_count: kys.count || 0 };
+  }));
   res.json({ ok: true, projects: withCounts });
 });
 
 app.post("/api/projects", requireAuth, async (req, res) => {
   const name = String(req.body?.name || "").trim();
   const note = String(req.body?.note || "").trim();
-  if (!name)
-    return res
-      .status(400)
-      .json({ ok: false, error: "Project name is required" });
+  if (!name) return res.status(400).json({ ok: false, error: "Project name is required" });
   const limits = await getPlanLimits(req.session.plan);
-  const { count } = await supabase
-    .from("projects")
-    .select("id", { count: "exact", head: true })
-    .eq("owner_account_id", req.session.account_id);
+  const { count } = await supabase.from("projects").select("id", { count: "exact", head: true }).eq("owner_account_id", req.session.account_id);
   if ((count || 0) >= limits.max_projects) {
-    return res.status(403).json({
-      ok: false,
-      error: `Project limit reached (${limits.max_projects}).`,
-    });
+    return res.status(403).json({ ok: false, error: `Project limit reached (${limits.max_projects}).` });
   }
-  const { data, error } = await supabase
-    .from("projects")
-    .insert({
-      owner_account_id: req.session.account_id,
-      name,
-      note,
-      slug: makeSlug(name),
-    })
-    .select()
-    .single();
-  if (error)
-    return res
-      .status(500)
-      .json({ ok: false, error: "Could not create project" });
+  const { data, error } = await supabase.from("projects")
+    .insert({ owner_account_id: req.session.account_id, name, note, slug: makeSlug(name) })
+    .select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not create project" });
   res.json({ ok: true, project: data });
 });
 
@@ -1209,32 +952,18 @@ app.patch("/api/projects/:id", requireAuth, async (req, res) => {
   const patch = {};
   if (typeof req.body?.name === "string") patch.name = req.body.name.trim();
   if (typeof req.body?.note === "string") patch.note = req.body.note;
-  if (req.body?.status === "active" || req.body?.status === "paused")
-    patch.status = req.body.status;
-  if (typeof req.body?.whitelist_only === "boolean")
-    patch.whitelist_only = req.body.whitelist_only;
-  const { data, error } = await supabase
-    .from("projects")
-    .update(patch)
-    .eq("id", req.params.id)
-    .eq("owner_account_id", req.session.account_id)
-    .select()
-    .single();
-  if (error)
-    return res
-      .status(500)
-      .json({ ok: false, error: "Could not update project" });
+  if (req.body?.status === "active" || req.body?.status === "paused") patch.status = req.body.status;
+  if (typeof req.body?.whitelist_only === "boolean") patch.whitelist_only = req.body.whitelist_only;
+  const { data, error } = await supabase.from("projects").update(patch)
+    .eq("id", req.params.id).eq("owner_account_id", req.session.account_id).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not update project" });
   res.json({ ok: true, project: data });
 });
 
 app.delete("/api/projects/:id", requireAuth, async (req, res) => {
-  const { error } = await supabase
-    .from("projects")
-    .delete()
-    .eq("id", req.params.id)
-    .eq("owner_account_id", req.session.account_id);
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not delete" });
+  const { error } = await supabase.from("projects").delete()
+    .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
   res.json({ ok: true });
 });
 
@@ -1242,87 +971,49 @@ app.delete("/api/projects/:id", requireAuth, async (req, res) => {
 // SCRIPTS + version snapshots
 // ============================================================
 async function ownsProject(pid, accountId) {
-  const { data } = await supabase
-    .from("projects")
-    .select("id")
-    .eq("id", pid)
-    .eq("owner_account_id", accountId)
-    .maybeSingle();
+  const { data } = await supabase.from("projects").select("id").eq("id", pid).eq("owner_account_id", accountId).maybeSingle();
   return !!data;
 }
 async function loadScriptOwned(scriptId, accountId) {
-  const { data } = await supabase
-    .from("scripts")
+  const { data } = await supabase.from("scripts")
     .select("id, project_id, source, version, projects!inner(owner_account_id)")
-    .eq("id", scriptId)
-    .maybeSingle();
+    .eq("id", scriptId).maybeSingle();
   if (!data || data.projects.owner_account_id !== accountId) return null;
   return data;
 }
 
 app.get("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
-  if (!(await ownsProject(req.params.pid, req.session.account_id)))
+  if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
-  const { data, error } = await supabase
-    .from("scripts")
-    .select(
-      "id, name, description, slug, protection, key_mode, size_bytes, version, enabled, created_at, updated_at",
-    )
-    .eq("project_id", req.params.pid)
-    .order("created_at", { ascending: false });
+  const { data, error } = await supabase.from("scripts")
+    .select("id, name, description, slug, protection, key_mode, size_bytes, version, enabled, created_at, updated_at")
+    .eq("project_id", req.params.pid).order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   res.json({ ok: true, scripts: data });
 });
 
 app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
-  if (!(await ownsProject(req.params.pid, req.session.account_id)))
+  if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
   const limits = await getPlanLimits(req.session.plan);
-  const { count } = await supabase
-    .from("scripts")
-    .select("id", { count: "exact", head: true })
-    .eq("project_id", req.params.pid);
+  const { count } = await supabase.from("scripts").select("id", { count: "exact", head: true }).eq("project_id", req.params.pid);
   if ((count || 0) >= limits.max_scripts_per_project) {
-    return res.status(403).json({
-      ok: false,
-      error: `Script limit reached (${limits.max_scripts_per_project} per project).`,
-    });
+    return res.status(403).json({ ok: false, error: `Script limit reached (${limits.max_scripts_per_project} per project).` });
   }
   const body = req.body || {};
   const name = String(body.name || "").trim();
-  if (!name)
-    return res
-      .status(400)
-      .json({ ok: false, error: "Script name is required" });
+  if (!name) return res.status(400).json({ ok: false, error: "Script name is required" });
 
   // Custom slug handling with validation + uniqueness check
   let finalSlug;
-  const customSlug = String(body.slug || "")
-    .trim()
-    .toLowerCase();
+  const customSlug = String(body.slug || "").trim().toLowerCase();
   if (customSlug) {
-    if (
-      !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(customSlug) ||
-      customSlug.length < 3 ||
-      customSlug.length > 40
-    ) {
-      return res.status(400).json({
-        ok: false,
-        error:
-          "Slug must be 3-40 chars, lowercase a-z, 0-9, and dashes only. Cannot start/end with dash.",
-      });
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(customSlug) || customSlug.length < 3 || customSlug.length > 40) {
+      return res.status(400).json({ ok: false, error: "Slug must be 3-40 chars, lowercase a-z, 0-9, and dashes only. Cannot start/end with dash." });
     }
-    const { data: existing } = await supabase
-      .from("scripts")
-      .select("id")
-      .eq("project_id", req.params.pid)
-      .eq("slug", customSlug)
-      .maybeSingle();
-    if (existing)
-      return res.status(400).json({
-        ok: false,
-        error: "Slug already used in this project. Pick a different one.",
-      });
+    const { data: existing } = await supabase.from("scripts")
+      .select("id").eq("project_id", req.params.pid).eq("slug", customSlug).maybeSingle();
+    if (existing) return res.status(400).json({ ok: false, error: "Slug already used in this project. Pick a different one." });
     finalSlug = customSlug;
   } else {
     finalSlug = makeSlug(name);
@@ -1331,47 +1022,24 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
   const source = String(body.source || "");
   if (body.syntax_check !== false) {
     const synErr = luaSyntaxError(source);
-    if (synErr)
-      return res
-        .status(400)
-        .json({ ok: false, error: "Syntax check failed: " + synErr });
+    if (synErr) return res.status(400).json({ ok: false, error: "Syntax check failed: " + synErr });
   }
   const insert = {
-    project_id: req.params.pid,
-    name,
-    slug: finalSlug,
+    project_id: req.params.pid, name, slug: finalSlug,
     description: String(body.description || ""),
-    protection: ["none", "luraph", "wynfuscate"].includes(body.protection)
-      ? body.protection
-      : "none",
+    protection: ["none", "luraph", "wynfuscate"].includes(body.protection) ? body.protection : "none",
     key_mode: body.key_mode === "keyless" ? "keyless" : "keyed",
-    source,
-    size_bytes: Buffer.byteLength(source, "utf8"),
-    enabled: body.enabled !== false,
-    syntax_check: body.syntax_check !== false,
-    fast_mode: !!body.fast_mode,
-    same_device: body.same_device !== false,
+    source, size_bytes: Buffer.byteLength(source, "utf8"),
+    enabled: body.enabled !== false, syntax_check: body.syntax_check !== false,
+    fast_mode: !!body.fast_mode, same_device: body.same_device !== false,
     silent_mode: body.silent_mode !== false,
-    player_ui: ["no_gui", "loading", "key_gui", "custom"].includes(
-      body.player_ui,
-    )
-      ? body.player_ui
-      : "no_gui",
+    player_ui: ["no_gui", "loading", "key_gui", "custom"].includes(body.player_ui) ? body.player_ui : "no_gui",
     game_id: body.game_id ? String(body.game_id) : null,
   };
-  const { data, error } = await supabase
-    .from("scripts")
-    .insert(insert)
-    .select()
-    .single();
-  if (error)
-    return res
-      .status(500)
-      .json({ ok: false, error: "Could not create script" });
+  const { data, error } = await supabase.from("scripts").insert(insert).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not create script" });
   await supabase.from("script_versions").insert({
-    script_id: data.id,
-    version: 1,
-    source: source,
+    script_id: data.id, version: 1, source: source,
     size_bytes: Buffer.byteLength(source, "utf8"),
     note: "Initial",
   });
@@ -1380,26 +1048,19 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
 
 app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
-  if (!existing)
-    return res.status(404).json({ ok: false, error: "Script not found" });
+  if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
   const body = req.body || {};
   const patch = { updated_at: new Date().toISOString() };
   let bumped = false;
   let newVersion = existing.version || 1;
   if (typeof body.name === "string") patch.name = body.name.trim();
-  if (typeof body.description === "string")
-    patch.description = body.description;
-  if (["none", "luraph", "wynfuscate"].includes(body.protection))
-    patch.protection = body.protection;
-  if (body.key_mode === "keyed" || body.key_mode === "keyless")
-    patch.key_mode = body.key_mode;
+  if (typeof body.description === "string") patch.description = body.description;
+  if (["none", "luraph", "wynfuscate"].includes(body.protection)) patch.protection = body.protection;
+  if (body.key_mode === "keyed" || body.key_mode === "keyless") patch.key_mode = body.key_mode;
   if (typeof body.source === "string" && body.source !== existing.source) {
     if (body.syntax_check !== false) {
       const synErr = luaSyntaxError(body.source);
-      if (synErr)
-        return res
-          .status(400)
-          .json({ ok: false, error: "Syntax check failed: " + synErr });
+      if (synErr) return res.status(400).json({ ok: false, error: "Syntax check failed: " + synErr });
     }
     patch.source = body.source;
     patch.size_bytes = Buffer.byteLength(body.source, "utf8");
@@ -1408,34 +1069,20 @@ app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
     bumped = true;
   }
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
-  if (typeof body.syntax_check === "boolean")
-    patch.syntax_check = body.syntax_check;
+  if (typeof body.syntax_check === "boolean") patch.syntax_check = body.syntax_check;
   if (typeof body.fast_mode === "boolean") patch.fast_mode = body.fast_mode;
-  if (typeof body.same_device === "boolean")
-    patch.same_device = body.same_device;
-  if (typeof body.silent_mode === "boolean")
-    patch.silent_mode = body.silent_mode;
-  if (["no_gui", "loading", "key_gui", "custom"].includes(body.player_ui))
-    patch.player_ui = body.player_ui;
+  if (typeof body.same_device === "boolean") patch.same_device = body.same_device;
+  if (typeof body.silent_mode === "boolean") patch.silent_mode = body.silent_mode;
+  if (["no_gui", "loading", "key_gui", "custom"].includes(body.player_ui)) patch.player_ui = body.player_ui;
   if (typeof body.game_id === "string") patch.game_id = body.game_id;
 
-  const { data, error } = await supabase
-    .from("scripts")
-    .update(patch)
-    .eq("id", req.params.id)
-    .select()
-    .single();
-  if (error)
-    return res
-      .status(500)
-      .json({ ok: false, error: "Could not update script" });
+  const { data, error } = await supabase.from("scripts").update(patch).eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not update script" });
 
   if (bumped) {
     await supabase.from("script_versions").insert({
-      script_id: data.id,
-      version: newVersion,
-      source: body.source,
-      size_bytes: Buffer.byteLength(body.source, "utf8"),
+      script_id: data.id, version: newVersion,
+      source: body.source, size_bytes: Buffer.byteLength(body.source, "utf8"),
       note: body.version_note || null,
     });
   }
@@ -1444,70 +1091,44 @@ app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/scripts/:id", requireAuth, async (req, res) => {
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
-  if (!existing)
-    return res.status(404).json({ ok: false, error: "Script not found" });
+  if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
   await supabase.from("scripts").delete().eq("id", req.params.id);
   res.json({ ok: true });
 });
 
 app.get("/api/scripts/:id/versions", requireAuth, async (req, res) => {
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
-  if (!existing)
-    return res.status(404).json({ ok: false, error: "Script not found" });
-  const { data } = await supabase
-    .from("script_versions")
+  if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
+  const { data } = await supabase.from("script_versions")
     .select("id, version, size_bytes, note, created_at")
-    .eq("script_id", req.params.id)
-    .order("version", { ascending: false });
+    .eq("script_id", req.params.id).order("version", { ascending: false });
   res.json({ ok: true, versions: data || [] });
 });
 
 app.get("/api/scripts/:id/versions/:v", requireAuth, async (req, res) => {
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
-  if (!existing)
-    return res.status(404).json({ ok: false, error: "Script not found" });
-  const { data } = await supabase
-    .from("script_versions")
+  if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
+  const { data } = await supabase.from("script_versions")
     .select("id, version, source, size_bytes, note, created_at")
-    .eq("script_id", req.params.id)
-    .eq("version", parseInt(req.params.v, 10))
-    .maybeSingle();
-  if (!data)
-    return res.status(404).json({ ok: false, error: "Version not found" });
+    .eq("script_id", req.params.id).eq("version", parseInt(req.params.v, 10)).maybeSingle();
+  if (!data) return res.status(404).json({ ok: false, error: "Version not found" });
   res.json({ ok: true, version: data });
 });
 
 app.post("/api/scripts/:id/restore/:v", requireAuth, async (req, res) => {
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
-  if (!existing)
-    return res.status(404).json({ ok: false, error: "Script not found" });
-  const { data: v } = await supabase
-    .from("script_versions")
-    .select("source")
-    .eq("script_id", req.params.id)
-    .eq("version", parseInt(req.params.v, 10))
-    .maybeSingle();
-  if (!v)
-    return res.status(404).json({ ok: false, error: "Version not found" });
+  if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
+  const { data: v } = await supabase.from("script_versions")
+    .select("source").eq("script_id", req.params.id).eq("version", parseInt(req.params.v, 10)).maybeSingle();
+  if (!v) return res.status(404).json({ ok: false, error: "Version not found" });
   const newVersion = (existing.version || 1) + 1;
-  const { data: updated, error } = await supabase
-    .from("scripts")
-    .update({
-      source: v.source,
-      size_bytes: Buffer.byteLength(v.source, "utf8"),
-      version: newVersion,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", req.params.id)
-    .select()
-    .single();
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not restore" });
+  const { data: updated, error } = await supabase.from("scripts")
+    .update({ source: v.source, size_bytes: Buffer.byteLength(v.source, "utf8"), version: newVersion, updated_at: new Date().toISOString() })
+    .eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not restore" });
   await supabase.from("script_versions").insert({
-    script_id: req.params.id,
-    version: newVersion,
-    source: v.source,
-    size_bytes: Buffer.byteLength(v.source, "utf8"),
+    script_id: req.params.id, version: newVersion,
+    source: v.source, size_bytes: Buffer.byteLength(v.source, "utf8"),
     note: "Restored from v" + req.params.v,
   });
   res.json({ ok: true, script: updated });
@@ -1517,27 +1138,17 @@ app.post("/api/scripts/:id/restore/:v", requireAuth, async (req, res) => {
 // KEYS - with HWID + expiry management
 // ============================================================
 app.get("/api/keys", requireAuth, async (req, res) => {
-  const { data, error } = await supabase
-    .from("keys")
-    .select(
-      "id, key, label, revoked, project_id, hwid, hwid_locked, expires_at, created_at, last_used_at",
-    )
-    .eq("owner_account_id", req.session.account_id)
-    .order("created_at", { ascending: false });
+  const { data, error } = await supabase.from("keys")
+    .select("id, key, label, revoked, project_id, hwid, hwid_locked, expires_at, created_at, last_used_at")
+    .eq("owner_account_id", req.session.account_id).order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   res.json({ ok: true, keys: data });
 });
 
 app.post("/api/keys", requireAuth, async (req, res) => {
   const limits = await getPlanLimits(req.session.plan);
-  const { count } = await supabase
-    .from("keys")
-    .select("id", { count: "exact", head: true })
-    .eq("owner_account_id", req.session.account_id);
-  if ((count || 0) >= limits.max_keys)
-    return res
-      .status(403)
-      .json({ ok: false, error: `Key limit reached (${limits.max_keys}).` });
+  const { count } = await supabase.from("keys").select("id", { count: "exact", head: true }).eq("owner_account_id", req.session.account_id);
+  if ((count || 0) >= limits.max_keys) return res.status(403).json({ ok: false, error: `Key limit reached (${limits.max_keys}).` });
 
   const body = req.body || {};
   const key = makeKey(body.prefix || "KF");
@@ -1550,18 +1161,12 @@ app.post("/api/keys", requireAuth, async (req, res) => {
   };
   if (body.expires_in_days) {
     const days = parseInt(body.expires_in_days, 10);
-    if (days > 0)
-      insert.expires_at = new Date(Date.now() + days * 86400000).toISOString();
+    if (days > 0) insert.expires_at = new Date(Date.now() + days * 86400000).toISOString();
   } else if (body.expires_at) {
     insert.expires_at = body.expires_at;
   }
-  const { data, error } = await supabase
-    .from("keys")
-    .insert(insert)
-    .select()
-    .single();
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not create key" });
+  const { data, error } = await supabase.from("keys").insert(insert).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not create key" });
   res.json({ ok: true, key: data });
 });
 
@@ -1570,44 +1175,26 @@ app.patch("/api/keys/:id", requireAuth, async (req, res) => {
   const body = req.body || {};
   if (typeof body.revoked === "boolean") patch.revoked = body.revoked;
   if (typeof body.label === "string") patch.label = body.label.trim();
-  if (typeof body.hwid_locked === "boolean")
-    patch.hwid_locked = body.hwid_locked;
+  if (typeof body.hwid_locked === "boolean") patch.hwid_locked = body.hwid_locked;
   if (body.expires_at === null) patch.expires_at = null;
-  else if (typeof body.expires_at === "string")
-    patch.expires_at = body.expires_at;
-  const { data, error } = await supabase
-    .from("keys")
-    .update(patch)
-    .eq("id", req.params.id)
-    .eq("owner_account_id", req.session.account_id)
-    .select()
-    .single();
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not update key" });
+  else if (typeof body.expires_at === "string") patch.expires_at = body.expires_at;
+  const { data, error } = await supabase.from("keys").update(patch)
+    .eq("id", req.params.id).eq("owner_account_id", req.session.account_id).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not update key" });
   res.json({ ok: true, key: data });
 });
 
 app.post("/api/keys/:id/reset-hwid", requireAuth, async (req, res) => {
-  const { data, error } = await supabase
-    .from("keys")
-    .update({ hwid: null })
-    .eq("id", req.params.id)
-    .eq("owner_account_id", req.session.account_id)
-    .select()
-    .single();
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not reset HWID" });
+  const { data, error } = await supabase.from("keys").update({ hwid: null })
+    .eq("id", req.params.id).eq("owner_account_id", req.session.account_id).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not reset HWID" });
   res.json({ ok: true, key: data });
 });
 
 app.delete("/api/keys/:id", requireAuth, async (req, res) => {
-  const { error } = await supabase
-    .from("keys")
-    .delete()
-    .eq("id", req.params.id)
-    .eq("owner_account_id", req.session.account_id);
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not delete" });
+  const { error } = await supabase.from("keys").delete()
+    .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
   res.json({ ok: true });
 });
 
@@ -1615,112 +1202,66 @@ app.delete("/api/keys/:id", requireAuth, async (req, res) => {
 // BLOCKLIST / ALLOWLIST per project
 // ============================================================
 app.get("/api/projects/:pid/blocklist", requireAuth, async (req, res) => {
-  if (!(await ownsProject(req.params.pid, req.session.account_id)))
+  if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
-  const { data } = await supabase
-    .from("blocklist")
+  const { data } = await supabase.from("blocklist")
     .select("id, entry_type, value, reason, created_at")
-    .eq("project_id", req.params.pid)
-    .order("created_at", { ascending: false });
+    .eq("project_id", req.params.pid).order("created_at", { ascending: false });
   res.json({ ok: true, entries: data || [] });
 });
 
 app.post("/api/projects/:pid/blocklist", requireAuth, async (req, res) => {
-  if (!(await ownsProject(req.params.pid, req.session.account_id)))
+  if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
   const body = req.body || {};
-  const entryType = ["hwid", "ip", "key"].includes(body.entry_type)
-    ? body.entry_type
-    : null;
+  const entryType = ["hwid", "ip", "key"].includes(body.entry_type) ? body.entry_type : null;
   const value = String(body.value || "").trim();
-  if (!entryType || !value)
-    return res
-      .status(400)
-      .json({ ok: false, error: "entry_type and value are required" });
-  if (value.length > 256)
-    return res.status(400).json({ ok: false, error: "Value too long" });
-  const { data, error } = await supabase
-    .from("blocklist")
-    .insert({
-      owner_account_id: req.session.account_id,
-      project_id: req.params.pid,
-      entry_type: entryType,
-      value,
-      reason: body.reason || null,
-    })
-    .select()
-    .single();
-  if (error)
-    return res.status(500).json({
-      ok: false,
-      error: "Could not add - value may already be blocked",
-    });
+  if (!entryType || !value) return res.status(400).json({ ok: false, error: "entry_type and value are required" });
+  if (value.length > 256) return res.status(400).json({ ok: false, error: "Value too long" });
+  const { data, error } = await supabase.from("blocklist").insert({
+    owner_account_id: req.session.account_id, project_id: req.params.pid,
+    entry_type: entryType, value, reason: body.reason || null,
+  }).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not add - value may already be blocked" });
   res.json({ ok: true, entry: data });
 });
 
 app.delete("/api/blocklist/:id", requireAuth, async (req, res) => {
-  const { error } = await supabase
-    .from("blocklist")
-    .delete()
-    .eq("id", req.params.id)
-    .eq("owner_account_id", req.session.account_id);
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not remove" });
+  const { error } = await supabase.from("blocklist").delete()
+    .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not remove" });
   res.json({ ok: true });
 });
 
 app.get("/api/projects/:pid/allowlist", requireAuth, async (req, res) => {
-  if (!(await ownsProject(req.params.pid, req.session.account_id)))
+  if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
-  const { data } = await supabase
-    .from("allowlist")
+  const { data } = await supabase.from("allowlist")
     .select("id, entry_type, value, note, created_at")
-    .eq("project_id", req.params.pid)
-    .order("created_at", { ascending: false });
+    .eq("project_id", req.params.pid).order("created_at", { ascending: false });
   res.json({ ok: true, entries: data || [] });
 });
 
 app.post("/api/projects/:pid/allowlist", requireAuth, async (req, res) => {
-  if (!(await ownsProject(req.params.pid, req.session.account_id)))
+  if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
   const body = req.body || {};
-  const entryType = ["hwid", "key"].includes(body.entry_type)
-    ? body.entry_type
-    : null;
+  const entryType = ["hwid", "key"].includes(body.entry_type) ? body.entry_type : null;
   const value = String(body.value || "").trim();
-  if (!entryType || !value)
-    return res
-      .status(400)
-      .json({ ok: false, error: "entry_type and value are required" });
-  if (value.length > 256)
-    return res.status(400).json({ ok: false, error: "Value too long" });
-  const { data, error } = await supabase
-    .from("allowlist")
-    .insert({
-      owner_account_id: req.session.account_id,
-      project_id: req.params.pid,
-      entry_type: entryType,
-      value,
-      note: body.note || null,
-    })
-    .select()
-    .single();
-  if (error)
-    return res.status(500).json({
-      ok: false,
-      error: "Could not add - value may already be allowed",
-    });
+  if (!entryType || !value) return res.status(400).json({ ok: false, error: "entry_type and value are required" });
+  if (value.length > 256) return res.status(400).json({ ok: false, error: "Value too long" });
+  const { data, error } = await supabase.from("allowlist").insert({
+    owner_account_id: req.session.account_id, project_id: req.params.pid,
+    entry_type: entryType, value, note: body.note || null,
+  }).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not add - value may already be allowed" });
   res.json({ ok: true, entry: data });
 });
 
 app.delete("/api/allowlist/:id", requireAuth, async (req, res) => {
-  const { error } = await supabase
-    .from("allowlist")
-    .delete()
-    .eq("id", req.params.id)
-    .eq("owner_account_id", req.session.account_id);
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not remove" });
+  const { error } = await supabase.from("allowlist").delete()
+    .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not remove" });
   res.json({ ok: true });
 });
 
@@ -1728,8 +1269,7 @@ app.delete("/api/allowlist/:id", requireAuth, async (req, res) => {
 // OWNER: accounts
 // ============================================================
 app.get("/api/accounts", requireAuth, requireOwner, async (req, res) => {
-  const { data, error } = await supabase
-    .from("accounts")
+  const { data, error } = await supabase.from("accounts")
     .select("id, name, api_key, plan, role, created_at, last_login")
     .order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
@@ -1738,31 +1278,18 @@ app.get("/api/accounts", requireAuth, requireOwner, async (req, res) => {
 
 app.post("/api/accounts", requireAuth, requireOwner, async (req, res) => {
   const name = String(req.body?.name || "").trim();
-  const plan = ["free", "creator", "scale"].includes(req.body?.plan)
-    ? req.body.plan
-    : "free";
-  if (!name)
-    return res.status(400).json({ ok: false, error: "Name is required" });
+  const plan = ["free", "creator", "scale"].includes(req.body?.plan) ? req.body.plan : "free";
+  if (!name) return res.status(400).json({ ok: false, error: "Name is required" });
   const apiKey = makeKey("SL");
-  const { data, error } = await supabase
-    .from("accounts")
-    .insert({ name, api_key: apiKey, plan, role: "user" })
-    .select()
-    .single();
-  if (error)
-    return res
-      .status(500)
-      .json({ ok: false, error: "Could not create account" });
+  const { data, error } = await supabase.from("accounts")
+    .insert({ name, api_key: apiKey, plan, role: "user" }).select().single();
+  if (error) return res.status(500).json({ ok: false, error: "Could not create account" });
   res.json({ ok: true, account: data });
 });
 
 app.delete("/api/accounts/:id", requireAuth, requireOwner, async (req, res) => {
-  const { error } = await supabase
-    .from("accounts")
-    .delete()
-    .eq("id", req.params.id);
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not delete" });
+  const { error } = await supabase.from("accounts").delete().eq("id", req.params.id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
   res.json({ ok: true });
 });
 
@@ -1782,41 +1309,28 @@ app.get("/api/discord/status", requireAuth, (req, res) => {
 });
 
 app.get("/api/discord/link", requireAuth, async (req, res) => {
-  const { data } = await supabase
-    .from("discord_users")
+  const { data } = await supabase.from("discord_users")
     .select("discord_id, discord_username, linked_at")
-    .eq("account_id", req.session.account_id)
-    .maybeSingle();
+    .eq("account_id", req.session.account_id).maybeSingle();
   res.json({ ok: true, linked: data || null });
 });
 
 app.delete("/api/discord/link", requireAuth, async (req, res) => {
-  await supabase
-    .from("discord_users")
-    .delete()
-    .eq("account_id", req.session.account_id);
+  await supabase.from("discord_users").delete().eq("account_id", req.session.account_id);
   res.json({ ok: true });
 });
 
 app.get("/api/discord/panels", requireAuth, async (req, res) => {
-  const { data } = await supabase
-    .from("discord_panels")
-    .select(
-      "id, script_id, guild_id, channel_id, message_id, created_at, scripts(name, slug)",
-    )
-    .eq("account_id", req.session.account_id)
-    .order("created_at", { ascending: false });
+  const { data } = await supabase.from("discord_panels")
+    .select("id, script_id, guild_id, channel_id, message_id, created_at, scripts(name, slug)")
+    .eq("account_id", req.session.account_id).order("created_at", { ascending: false });
   res.json({ ok: true, panels: data || [] });
 });
 
 app.delete("/api/discord/panels/:id", requireAuth, async (req, res) => {
-  const { error } = await supabase
-    .from("discord_panels")
-    .delete()
-    .eq("id", req.params.id)
-    .eq("account_id", req.session.account_id);
-  if (error)
-    return res.status(500).json({ ok: false, error: "Could not delete" });
+  const { error } = await supabase.from("discord_panels").delete()
+    .eq("id", req.params.id).eq("account_id", req.session.account_id);
+  if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
   res.json({ ok: true });
 });
 
@@ -1840,38 +1354,28 @@ app.get("/api/discord/invite", async (req, res) => {
 });
 
 // --- OWNER: update the Discord invite from owner.html ---
-app.post(
-  "/api/settings/discord",
-  requireAuth,
-  requireOwner,
-  async (req, res) => {
-    const invite = (req.body?.invite || "").trim();
+app.post("/api/settings/discord", requireAuth, requireOwner, async (req, res) => {
+  const invite = (req.body?.invite || "").trim();
 
-    // Basic validation: must be a discord.gg / discord invite link
-    const ok =
-      /^https:\/\/(discord\.gg|discord\.com\/invite)\/[A-Za-z0-9-]+$/.test(
-        invite,
-      );
-    if (!ok) {
-      return res.status(400).json({
-        ok: false,
-        error: "Enter a valid invite, e.g. https://discord.gg/xxxxxxx",
-      });
-    }
+  // Basic validation: must be a discord.gg / discord invite link
+  const ok = /^https:\/\/(discord\.gg|discord\.com\/invite)\/[A-Za-z0-9-]+$/.test(invite);
+  if (!ok) {
+    return res.status(400).json({
+      ok: false,
+      error: "Enter a valid invite, e.g. https://discord.gg/xxxxxxx",
+    });
+  }
 
-    const { error } = await supabase.from("settings").upsert(
-      {
-        key: "discord_invite",
-        value: invite,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "key" },
+  const { error } = await supabase
+    .from("settings")
+    .upsert(
+      { key: "discord_invite", value: invite, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
     );
-    if (error)
-      return res.status(500).json({ ok: false, error: "Could not save" });
-    res.json({ ok: true, invite });
-  },
-);
+  if (error) return res.status(500).json({ ok: false, error: "Could not save" });
+  res.json({ ok: true, invite });
+});
+
 
 // ============================================================
 // Health check + keep-alive
@@ -1881,13 +1385,10 @@ app.get("/healthz", (req, res) => {
 });
 
 // Self-ping every 10 min to prevent Render free tier sleep
-setInterval(
-  () => {
-    const url = PUBLIC_BASE_URL + "/healthz";
-    fetch(url).catch(() => {});
-  },
-  10 * 60 * 1000,
-);
+setInterval(() => {
+  const url = PUBLIC_BASE_URL + "/healthz";
+  fetch(url).catch(() => {});
+}, 10 * 60 * 1000);
 
 // ============================================================
 // Start HTTP server
@@ -1909,22 +1410,7 @@ if (!DISCORD_BOT_TOKEN) {
 }
 
 async function startDiscordBot() {
-  const {
-    Client,
-    GatewayIntentBits,
-    Events,
-    REST,
-    Routes,
-    SlashCommandBuilder,
-    MessageFlags,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle,
-  } = require("discord.js");
+  const { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 
   // Helper: try to send DM, return true if delivered
   async function trySendDM(discordId, payload) {
@@ -1953,12 +1439,7 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("login")
       .setDescription("Link this server to your Solaries account (API key)")
-      .addStringOption((o) =>
-        o
-          .setName("api_key")
-          .setDescription("Your Solaries API key")
-          .setRequired(true),
-      )
+      .addStringOption((o) => o.setName("api_key").setDescription("Your Solaries API key").setRequired(true))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
@@ -1974,41 +1455,18 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("panel")
       .setDescription("Post a Solaries panel for a script in this channel")
-      .addStringOption((o) =>
-        o.setName("script_id").setDescription("Script slug").setRequired(true),
-      )
-      .addStringOption((o) =>
-        o
-          .setName("title")
-          .setDescription("Optional custom title")
-          .setRequired(false),
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
+      .addStringOption((o) => o.setName("title").setDescription("Optional custom title").setRequired(false))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("managerrole")
-      .setDescription(
-        "Set/clear which Discord role can run management commands",
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("set")
-          .setDescription("Add a manager role")
-          .addRoleOption((o) =>
-            o.setName("role").setDescription("Discord role").setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("clear")
-          .setDescription("Remove a manager role")
-          .addRoleOption((o) =>
-            o.setName("role").setDescription("Discord role").setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s.setName("list").setDescription("List manager roles"),
-      )
+      .setDescription("Set/clear which Discord role can run management commands")
+      .addSubcommand((s) => s.setName("set").setDescription("Add a manager role")
+        .addRoleOption((o) => o.setName("role").setDescription("Discord role").setRequired(true)))
+      .addSubcommand((s) => s.setName("clear").setDescription("Remove a manager role")
+        .addRoleOption((o) => o.setName("role").setDescription("Discord role").setRequired(true)))
+      .addSubcommand((s) => s.setName("list").setDescription("List manager roles"))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
 
@@ -2016,64 +1474,21 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("stats")
       .setDescription("View project statistics (keys, users, executions)")
-      .addStringOption((o) =>
-        o
-          .setName("project")
-          .setDescription("Project slug (default: active)")
-          .setRequired(false),
-      )
+      .addStringOption((o) => o.setName("project").setDescription("Project slug (default: active)").setRequired(false))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("settings")
       .setDescription("View or configure bot settings")
-      .addSubcommand((s) =>
-        s.setName("view").setDescription("View current settings"),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("keyprefix")
-          .setDescription("Set default key prefix")
-          .addStringOption((o) =>
-            o
-              .setName("value")
-              .setDescription("Prefix (max 6 A-Z0-9)")
-              .setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("expiry")
-          .setDescription("Set default expiry days")
-          .addIntegerOption((o) =>
-            o
-              .setName("days")
-              .setDescription("Default days (0 = no expiry)")
-              .setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("cooldown")
-          .setDescription("Set HWID reset cooldown hours")
-          .addIntegerOption((o) =>
-            o
-              .setName("hours")
-              .setDescription("Cooldown hours")
-              .setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("logchannel")
-          .setDescription("Set log channel")
-          .addChannelOption((o) =>
-            o
-              .setName("channel")
-              .setDescription("Log channel")
-              .setRequired(true),
-          ),
-      )
+      .addSubcommand((s) => s.setName("view").setDescription("View current settings"))
+      .addSubcommand((s) => s.setName("keyprefix").setDescription("Set default key prefix")
+        .addStringOption((o) => o.setName("value").setDescription("Prefix (max 6 A-Z0-9)").setRequired(true)))
+      .addSubcommand((s) => s.setName("expiry").setDescription("Set default expiry days")
+        .addIntegerOption((o) => o.setName("days").setDescription("Default days (0 = no expiry)").setRequired(true)))
+      .addSubcommand((s) => s.setName("cooldown").setDescription("Set HWID reset cooldown hours")
+        .addIntegerOption((o) => o.setName("hours").setDescription("Cooldown hours").setRequired(true)))
+      .addSubcommand((s) => s.setName("logchannel").setDescription("Set log channel")
+        .addChannelOption((o) => o.setName("channel").setDescription("Log channel").setRequired(true)))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
 
@@ -2081,101 +1496,26 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("key")
       .setDescription("Manage keys")
-      .addSubcommand((s) =>
-        s
-          .setName("create")
-          .setDescription("Generate a key")
-          .addStringOption((o) =>
-            o
-              .setName("project")
-              .setDescription("Project slug")
-              .setRequired(false),
-          )
-          .addStringOption((o) =>
-            o.setName("label").setDescription("Label").setRequired(false),
-          )
-          .addIntegerOption((o) =>
-            o
-              .setName("expires_days")
-              .setDescription("Expires in N days")
-              .setRequired(false),
-          )
-          .addBooleanOption((o) =>
-            o
-              .setName("hwid_lock")
-              .setDescription("HWID locked (default true)")
-              .setRequired(false),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("stock")
-          .setDescription("Bulk generate keys")
-          .addIntegerOption((o) =>
-            o
-              .setName("count")
-              .setDescription("How many (max 50)")
-              .setRequired(true),
-          )
-          .addStringOption((o) =>
-            o
-              .setName("project")
-              .setDescription("Project slug")
-              .setRequired(false),
-          )
-          .addIntegerOption((o) =>
-            o
-              .setName("expires_days")
-              .setDescription("Expires in N days")
-              .setRequired(false),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("delete")
-          .setDescription("Delete a key")
-          .addStringOption((o) =>
-            o.setName("key").setDescription("Key value").setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("extend")
-          .setDescription("Extend key expiry")
-          .addStringOption((o) =>
-            o.setName("key").setDescription("Key value").setRequired(true),
-          )
-          .addIntegerOption((o) =>
-            o.setName("days").setDescription("Days to add").setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("revoke")
-          .setDescription("Revoke a key")
-          .addStringOption((o) =>
-            o.setName("key").setDescription("Key value").setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("info")
-          .setDescription("View key info")
-          .addStringOption((o) =>
-            o.setName("key").setDescription("Key value").setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("list")
-          .setDescription("List keys in a project")
-          .addStringOption((o) =>
-            o
-              .setName("project")
-              .setDescription("Project slug")
-              .setRequired(false),
-          ),
-      )
+      .addSubcommand((s) => s.setName("create").setDescription("Generate a key")
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false))
+        .addStringOption((o) => o.setName("label").setDescription("Label").setRequired(false))
+        .addIntegerOption((o) => o.setName("expires_days").setDescription("Expires in N days").setRequired(false))
+        .addBooleanOption((o) => o.setName("hwid_lock").setDescription("HWID locked (default true)").setRequired(false)))
+      .addSubcommand((s) => s.setName("stock").setDescription("Bulk generate keys")
+        .addIntegerOption((o) => o.setName("count").setDescription("How many (max 50)").setRequired(true))
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false))
+        .addIntegerOption((o) => o.setName("expires_days").setDescription("Expires in N days").setRequired(false)))
+      .addSubcommand((s) => s.setName("delete").setDescription("Delete a key")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true)))
+      .addSubcommand((s) => s.setName("extend").setDescription("Extend key expiry")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true))
+        .addIntegerOption((o) => o.setName("days").setDescription("Days to add").setRequired(true)))
+      .addSubcommand((s) => s.setName("revoke").setDescription("Revoke a key")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true)))
+      .addSubcommand((s) => s.setName("info").setDescription("View key info")
+        .addStringOption((o) => o.setName("key").setDescription("Key value").setRequired(true)))
+      .addSubcommand((s) => s.setName("list").setDescription("List keys in a project")
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
 
@@ -2183,100 +1523,33 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("user")
       .setDescription("Manage users")
-      .addSubcommand((s) =>
-        s
-          .setName("info")
-          .setDescription("View a user's info")
-          .addUserOption((o) =>
-            o
-              .setName("target")
-              .setDescription("Discord user")
-              .setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("blacklist")
-          .setDescription("Blacklist a user (blocks key generation)")
-          .addUserOption((o) =>
-            o
-              .setName("target")
-              .setDescription("Discord user")
-              .setRequired(true),
-          )
-          .addStringOption((o) =>
-            o.setName("reason").setDescription("Reason").setRequired(false),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("unblacklist")
-          .setDescription("Remove blacklist")
-          .addUserOption((o) =>
-            o
-              .setName("target")
-              .setDescription("Discord user")
-              .setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("ban")
-          .setDescription("Full ban (revokes all keys)")
-          .addUserOption((o) =>
-            o
-              .setName("target")
-              .setDescription("Discord user")
-              .setRequired(true),
-          )
-          .addStringOption((o) =>
-            o.setName("reason").setDescription("Reason").setRequired(false),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("unban")
-          .setDescription("Remove ban")
-          .addUserOption((o) =>
-            o
-              .setName("target")
-              .setDescription("Discord user")
-              .setRequired(true),
-          ),
-      )
+      .addSubcommand((s) => s.setName("info").setDescription("View a user's info")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true)))
+      .addSubcommand((s) => s.setName("blacklist").setDescription("Blacklist a user (blocks key generation)")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+        .addStringOption((o) => o.setName("reason").setDescription("Reason").setRequired(false)))
+      .addSubcommand((s) => s.setName("unblacklist").setDescription("Remove blacklist")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true)))
+      .addSubcommand((s) => s.setName("ban").setDescription("Full ban (revokes all keys)")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+        .addStringOption((o) => o.setName("reason").setDescription("Reason").setRequired(false)))
+      .addSubcommand((s) => s.setName("unban").setDescription("Remove ban")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true)))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("hwid")
       .setDescription("HWID management")
-      .addSubcommand((s) =>
-        s
-          .setName("reset")
-          .setDescription("Force reset a user's HWID")
-          .addUserOption((o) =>
-            o
-              .setName("target")
-              .setDescription("Discord user")
-              .setRequired(true),
-          )
-          .addStringOption((o) =>
-            o
-              .setName("project")
-              .setDescription("Project slug")
-              .setRequired(false),
-          ),
-      )
+      .addSubcommand((s) => s.setName("reset").setDescription("Force reset a user's HWID")
+        .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("whitelist")
       .setDescription("Whitelist a user (grants access + buyer role)")
-      .addUserOption((o) =>
-        o.setName("target").setDescription("Discord user").setRequired(true),
-      )
-      .addStringOption((o) =>
-        o.setName("project").setDescription("Project slug").setRequired(false),
-      )
+      .addUserOption((o) => o.setName("target").setDescription("Discord user").setRequired(true))
+      .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
 
@@ -2284,80 +1557,31 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("project")
       .setDescription("Manage projects")
-      .addSubcommand((s) =>
-        s
-          .setName("create")
-          .setDescription("Create a project")
-          .addStringOption((o) =>
-            o.setName("name").setDescription("Project name").setRequired(true),
-          )
-          .addStringOption((o) =>
-            o
-              .setName("note")
-              .setDescription("Optional note")
-              .setRequired(false),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("delete")
-          .setDescription("Delete a project")
-          .addStringOption((o) =>
-            o.setName("slug").setDescription("Project slug").setRequired(true),
-          ),
-      )
-      .addSubcommand((s) =>
-        s.setName("list").setDescription("View all projects"),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("select")
-          .setDescription("Set active project for commands")
-          .addStringOption((o) =>
-            o.setName("slug").setDescription("Project slug").setRequired(true),
-          ),
-      )
+      .addSubcommand((s) => s.setName("create").setDescription("Create a project")
+        .addStringOption((o) => o.setName("name").setDescription("Project name").setRequired(true))
+        .addStringOption((o) => o.setName("note").setDescription("Optional note").setRequired(false)))
+      .addSubcommand((s) => s.setName("delete").setDescription("Delete a project")
+        .addStringOption((o) => o.setName("slug").setDescription("Project slug").setRequired(true)))
+      .addSubcommand((s) => s.setName("list").setDescription("View all projects"))
+      .addSubcommand((s) => s.setName("select").setDescription("Set active project for commands")
+        .addStringOption((o) => o.setName("slug").setDescription("Project slug").setRequired(true)))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("buyerrole")
       .setDescription("Auto-assign a Discord role after a user redeems a key")
-      .addSubcommand((s) =>
-        s
-          .setName("set")
-          .setDescription("Set buyer role for a project")
-          .addRoleOption((o) =>
-            o.setName("role").setDescription("Discord role").setRequired(true),
-          )
-          .addStringOption((o) =>
-            o
-              .setName("project")
-              .setDescription("Project slug")
-              .setRequired(false),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("clear")
-          .setDescription("Clear buyer role for a project")
-          .addStringOption((o) =>
-            o
-              .setName("project")
-              .setDescription("Project slug")
-              .setRequired(false),
-          ),
-      )
-      .addSubcommand((s) =>
-        s.setName("list").setDescription("List all buyer roles"),
-      )
+      .addSubcommand((s) => s.setName("set").setDescription("Set buyer role for a project")
+        .addRoleOption((o) => o.setName("role").setDescription("Discord role").setRequired(true))
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
+      .addSubcommand((s) => s.setName("clear").setDescription("Clear buyer role for a project")
+        .addStringOption((o) => o.setName("project").setDescription("Project slug").setRequired(false)))
+      .addSubcommand((s) => s.setName("list").setDescription("List all buyer roles"))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
     new SlashCommandBuilder()
       .setName("setscript")
       .setDescription("Set the active script for the active project")
-      .addStringOption((o) =>
-        o.setName("script_id").setDescription("Script slug").setRequired(true),
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
       .setDefaultMemberPermissions(MANAGE_GUILD)
       .toJSON(),
 
@@ -2365,37 +1589,27 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("redeem")
       .setDescription("Redeem a key and bind it to your Discord")
-      .addStringOption((o) =>
-        o.setName("key").setDescription("Your key value").setRequired(true),
-      )
+      .addStringOption((o) => o.setName("key").setDescription("Your key value").setRequired(true))
       .toJSON(),
     new SlashCommandBuilder()
       .setName("loader")
       .setDescription("Get the loader script (with your key if you have one)")
-      .addStringOption((o) =>
-        o.setName("script_id").setDescription("Script slug").setRequired(true),
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
       .toJSON(),
     new SlashCommandBuilder()
       .setName("script")
       .setDescription("Get the raw loader URL for a script")
-      .addStringOption((o) =>
-        o.setName("script_id").setDescription("Script slug").setRequired(true),
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
       .toJSON(),
     new SlashCommandBuilder()
       .setName("resethwid")
       .setDescription("Reset your own HWID (15h cooldown)")
-      .addStringOption((o) =>
-        o.setName("script_id").setDescription("Script slug").setRequired(true),
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
       .toJSON(),
     new SlashCommandBuilder()
       .setName("claimrole")
       .setDescription("Claim buyer role if you have a valid key")
-      .addStringOption((o) =>
-        o.setName("script_id").setDescription("Script slug").setRequired(true),
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(true))
       .toJSON(),
     new SlashCommandBuilder()
       .setName("mykey")
@@ -2408,9 +1622,7 @@ async function startDiscordBot() {
     new SlashCommandBuilder()
       .setName("subscription")
       .setDescription("Check your key's expiry status")
-      .addStringOption((o) =>
-        o.setName("script_id").setDescription("Script slug").setRequired(false),
-      )
+      .addStringOption((o) => o.setName("script_id").setDescription("Script slug").setRequired(false))
       .toJSON(),
     new SlashCommandBuilder()
       .setName("profile")
@@ -2440,9 +1652,7 @@ async function startDiscordBot() {
       const appId = c.user.id;
       const testGuild = process.env.DISCORD_TEST_GUILD_ID;
       if (testGuild) {
-        await rest.put(Routes.applicationGuildCommands(appId, testGuild), {
-          body: commands,
-        });
+        await rest.put(Routes.applicationGuildCommands(appId, testGuild), { body: commands });
         console.log("Slash commands registered to test guild " + testGuild);
       } else {
         await rest.put(Routes.applicationCommands(appId), { body: commands });
@@ -2471,8 +1681,7 @@ async function startDiscordBot() {
         else if (cmd === "logout") await handleLogout(interaction);
         else if (cmd === "whoami") await handleWhoami(interaction);
         else if (cmd === "panel") await handlePanel(interaction);
-        else if (cmd === "managerrole")
-          await handleManagerRole(interaction, sub);
+        else if (cmd === "managerrole") await handleManagerRole(interaction, sub);
         // Stats / settings
         else if (cmd === "stats") await handleStats(interaction);
         else if (cmd === "settings") await handleSettings(interaction, sub);
@@ -2484,8 +1693,7 @@ async function startDiscordBot() {
         else if (cmd === "whitelist") await handleWhitelist(interaction);
         // Project management
         else if (cmd === "project") await handleProjectGroup(interaction, sub);
-        else if (cmd === "buyerrole")
-          await handleBuyerRoleGroup(interaction, sub);
+        else if (cmd === "buyerrole") await handleBuyerRoleGroup(interaction, sub);
         else if (cmd === "setscript") await handleSetScript(interaction);
         // User commands (no admin gate)
         else if (cmd === "redeem") await handleRedeem(interaction);
@@ -2505,18 +1713,12 @@ async function startDiscordBot() {
         if (parts[0] === "sol") {
           const action = parts[1];
           const scriptId = parts.slice(2).join("_");
-          if (action === "redeem")
-            await handleRedeemButton(interaction, scriptId);
-          else if (action === "getrole")
-            await handleGetRoleButton(interaction, scriptId);
-          else if (action === "getscript")
-            await handleGetScript(interaction, scriptId);
-          else if (action === "resethwid")
-            await handleResetHwid(interaction, scriptId);
-          else if (action === "session")
-            await handleSessionStatus(interaction, scriptId);
-          else if (action === "getkey")
-            await handleGetKey(interaction, scriptId);
+          if (action === "redeem") await handleRedeemButton(interaction, scriptId);
+          else if (action === "getrole") await handleGetRoleButton(interaction, scriptId);
+          else if (action === "getscript") await handleGetScript(interaction, scriptId);
+          else if (action === "resethwid") await handleResetHwid(interaction, scriptId);
+          else if (action === "session") await handleSessionStatus(interaction, scriptId);
+          else if (action === "getkey") await handleGetKey(interaction, scriptId);
         }
       } else if (interaction.isModalSubmit()) {
         const parts = interaction.customId.split("_");
@@ -2526,12 +1728,7 @@ async function startDiscordBot() {
         }
       }
     } catch (e) {
-      console.error(
-        "Interaction error [" +
-          (interaction.commandName || interaction.customId || "unknown") +
-          "]:",
-        e,
-      );
+      console.error("Interaction error [" + (interaction.commandName || interaction.customId || "unknown") + "]:", e);
       console.error("Stack:", e.stack);
       try {
         const errText = String(e.message || e || "unknown error").slice(0, 400);
@@ -2539,10 +1736,7 @@ async function startDiscordBot() {
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({ content: msg });
         } else {
-          await interaction.reply({
-            content: msg,
-            flags: MessageFlags.Ephemeral,
-          });
+          await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
         }
       } catch (replyErr) {
         console.error("Failed to send error reply:", replyErr.message);
@@ -2556,32 +1750,21 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
     const discordUsername = interaction.user.username;
 
-    const { data: account } = await supabase
-      .from("accounts")
-      .select("id, name")
-      .eq("api_key", apiKey)
-      .maybeSingle();
+    const { data: account } = await supabase.from("accounts")
+      .select("id, name").eq("api_key", apiKey).maybeSingle();
 
     if (!account) {
-      await interaction.editReply({
-        content:
-          "Invalid API key. Check your Solaries dashboard and try again.",
-      });
+      await interaction.editReply({ content: "Invalid API key. Check your Solaries dashboard and try again." });
       return;
     }
 
     // Check if this Discord is already linked to another account
-    const { data: existingLink } = await supabase
-      .from("discord_users")
-      .select("id, account_id")
-      .eq("discord_id", discordId)
-      .maybeSingle();
+    const { data: existingLink } = await supabase.from("discord_users")
+      .select("id, account_id").eq("discord_id", discordId).maybeSingle();
 
     if (existingLink) {
       if (existingLink.account_id === account.id) {
-        await interaction.editReply({
-          content: "You are already linked to " + account.name + ".",
-        });
+        await interaction.editReply({ content: "You are already linked to " + account.name + "." });
         return;
       }
       // Re-link: delete old and insert new
@@ -2598,16 +1781,12 @@ async function startDiscordBot() {
     });
 
     if (error) {
-      await interaction.editReply({
-        content: "Could not link account. Try again later.",
-      });
+      await interaction.editReply({ content: "Could not link account. Try again later." });
       return;
     }
 
     await interaction.editReply({
-      content:
-        "Linked! Your Discord is now connected to Solaries account: " +
-        account.name,
+      content: "Linked! Your Discord is now connected to Solaries account: " + account.name,
     });
   }
 
@@ -2615,29 +1794,19 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
 
-    const { data: link } = await supabase
-      .from("discord_users")
-      .select("account_id, linked_at")
-      .eq("discord_id", discordId)
-      .maybeSingle();
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id, linked_at").eq("discord_id", discordId).maybeSingle();
 
     if (!link) {
-      await interaction.editReply({
-        content: "Not linked. Use /login <api_key> first.",
-      });
+      await interaction.editReply({ content: "Not linked. Use /login <api_key> first." });
       return;
     }
 
-    const { data: account } = await supabase
-      .from("accounts")
-      .select("name, plan")
-      .eq("id", link.account_id)
-      .maybeSingle();
+    const { data: account } = await supabase.from("accounts")
+      .select("name, plan").eq("id", link.account_id).maybeSingle();
 
     if (!account) {
-      await interaction.editReply({
-        content: "Linked account no longer exists. Please /login again.",
-      });
+      await interaction.editReply({ content: "Linked account no longer exists. Please /login again." });
       return;
     }
 
@@ -2650,9 +1819,7 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
     await supabase.from("discord_users").delete().eq("discord_id", discordId);
-    await interaction.editReply({
-      content: "Unlinked. Use /login to link again.",
-    });
+    await interaction.editReply({ content: "Unlinked. Use /login to link again." });
   }
 
   // ============================================================
@@ -2665,31 +1832,20 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
 
     // Must be logged in
-    const { data: link } = await supabase
-      .from("discord_users")
-      .select("account_id")
-      .eq("discord_id", discordId)
-      .maybeSingle();
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id").eq("discord_id", discordId).maybeSingle();
     if (!link) {
-      await interaction.editReply({
-        content: "You must /login first before posting a panel.",
-      });
+      await interaction.editReply({ content: "You must /login first before posting a panel." });
       return;
     }
 
     // Load the script and verify ownership
-    const { data: script } = await supabase
-      .from("scripts")
-      .select(
-        "id, name, description, slug, key_mode, projects!inner(name, owner_account_id)",
-      )
-      .eq("slug", scriptSlug)
-      .maybeSingle();
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, description, slug, key_mode, projects!inner(name, owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
 
     if (!script) {
-      await interaction.editReply({
-        content: "Script not found. Check the script slug in your dashboard.",
-      });
+      await interaction.editReply({ content: "Script not found. Check the script slug in your dashboard." });
       return;
     }
     if (script.projects.owner_account_id !== link.account_id) {
@@ -2702,10 +1858,9 @@ async function startDiscordBot() {
       .setColor(0x8b5cf6)
       .setTitle(customTitle || script.name)
       .setDescription(
-        (script.description ||
-          "Redeem your key, claim your buyer role, or get your script loader from this panel.") +
-          "\n\nHWID resets are limited to once every 15 hours - First reset becomes available 15 hours after redeeming your key." +
-          "\n\nWarning: Sharing your key or loader script may result in the loss of your key or a permanent ban.",
+        (script.description || "Redeem your key, claim your buyer role, or get your script loader from this panel.") +
+        "\n\nHWID resets are limited to once every 15 hours - First reset becomes available 15 hours after redeeming your key." +
+        "\n\nWarning: Sharing your key or loader script may result in the loss of your key or a permanent ban."
       )
       .setFooter({ text: "Powered by Solaries" });
 
@@ -2722,7 +1877,7 @@ async function startDiscordBot() {
       new ButtonBuilder()
         .setCustomId("sol_getscript_" + script.id)
         .setLabel("Get Script")
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(ButtonStyle.Secondary)
     );
     // Buttons - row 2 (Reset HWID, Session Status)
     const row2 = new ActionRowBuilder().addComponents(
@@ -2733,26 +1888,19 @@ async function startDiscordBot() {
       new ButtonBuilder()
         .setCustomId("sol_session_" + script.id)
         .setLabel("Session Status")
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(ButtonStyle.Secondary)
     );
 
     // Post the panel message publicly
     const channel = interaction.channel;
     let posted;
     try {
-      posted = await channel.send({
-        embeds: [embed],
-        components: [row1, row2],
-      });
+      posted = await channel.send({ embeds: [embed], components: [row1, row2] });
     } catch (sendErr) {
       console.error("channel.send failed:", sendErr.code, sendErr.message);
       let hint = sendErr.message || "unknown";
-      if (sendErr.code === 50013)
-        hint =
-          "Bot missing permissions in this channel. Grant Send Messages + Embed Links to the Solaries role.";
-      else if (sendErr.code === 50001)
-        hint =
-          "Bot cannot access this channel. Add the Solaries role to the channel members.";
+      if (sendErr.code === 50013) hint = "Bot missing permissions in this channel. Grant Send Messages + Embed Links to the Solaries role.";
+      else if (sendErr.code === 50001) hint = "Bot cannot access this channel. Add the Solaries role to the channel members.";
       await interaction.editReply({ content: "Could not post panel: " + hint });
       return;
     }
@@ -2767,11 +1915,7 @@ async function startDiscordBot() {
     });
     if (insertErr) {
       console.error("discord_panels insert failed:", insertErr);
-      await interaction.editReply({
-        content:
-          "Panel posted to Discord but could not save record: " +
-          (insertErr.message || "db error"),
-      });
+      await interaction.editReply({ content: "Panel posted to Discord but could not save record: " + (insertErr.message || "db error") });
       return;
     }
 
@@ -2786,43 +1930,30 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
 
     // Must be logged in
-    const { data: link } = await supabase
-      .from("discord_users")
-      .select("account_id")
-      .eq("discord_id", discordId)
-      .maybeSingle();
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id").eq("discord_id", discordId).maybeSingle();
     if (!link) {
-      await interaction.editReply({
-        content: "You must /login first to get a key.",
-      });
+      await interaction.editReply({ content: "You must /login first to get a key." });
       return;
     }
 
     // Load script
-    const { data: script } = await supabase
-      .from("scripts")
-      .select(
-        "id, name, project_id, key_mode, projects!inner(owner_account_id)",
-      )
-      .eq("id", scriptId)
-      .maybeSingle();
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, project_id, key_mode, projects!inner(owner_account_id)")
+      .eq("id", scriptId).maybeSingle();
     if (!script) {
       await interaction.editReply({ content: "Script not found." });
       return;
     }
     if (script.key_mode === "keyless") {
-      await interaction.editReply({
-        content:
-          "This script is keyless - no key needed. Use Get Script instead.",
-      });
+      await interaction.editReply({ content: "This script is keyless - no key needed. Use Get Script instead." });
       return;
     }
 
     const scriptOwnerId = script.projects.owner_account_id;
 
     // Check if this Discord user already has a key for this script (one per user per script)
-    const { data: existing } = await supabase
-      .from("keys")
+    const { data: existing } = await supabase.from("keys")
       .select("id, key, revoked")
       .eq("discord_id", discordId)
       .eq("project_id", script.project_id)
@@ -2832,10 +1963,7 @@ async function startDiscordBot() {
     let keyValue;
     if (existing) {
       if (existing.revoked) {
-        await interaction.editReply({
-          content:
-            "Your key for this script was revoked. Contact the script owner.",
-        });
+        await interaction.editReply({ content: "Your key for this script was revoked. Contact the script owner." });
         return;
       }
       keyValue = existing.key;
@@ -2851,20 +1979,13 @@ async function startDiscordBot() {
         hwid_locked: true,
       });
       if (error) {
-        await interaction.editReply({
-          content: "Could not generate key. Try again later.",
-        });
+        await interaction.editReply({ content: "Could not generate key. Try again later." });
         return;
       }
     }
 
     await interaction.editReply({
-      content:
-        "Your key for **" +
-        script.name +
-        "**:\n\n```" +
-        keyValue +
-        "```\n\nKeep this private. Do not share.",
+      content: "Your key for **" + script.name + "**:\n\n```" + keyValue + "```\n\nKeep this private. Do not share.",
     });
   }
 
@@ -2875,113 +1996,63 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
 
-    const { data: script } = await supabase
-      .from("scripts")
-      .select(
-        "id, name, slug, key_mode, enabled, project_id, projects!inner(owner_account_id, status)",
-      )
-      .eq("id", scriptId)
-      .maybeSingle();
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, slug, key_mode, enabled, project_id, projects!inner(owner_account_id, status)")
+      .eq("id", scriptId).maybeSingle();
     if (!script) {
       await interaction.editReply({ content: "Script not found." });
       return;
     }
     if (!script.enabled) {
-      const embed = new EmbedBuilder()
-        .setColor(0xef4444)
-        .setTitle("Script Disabled")
-        .setDescription(
-          "This script is currently disabled. Contact the script owner.",
-        );
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Script Disabled")
+        .setDescription("This script is currently disabled. Contact the script owner.");
       return interaction.editReply({ embeds: [embed] });
     }
     if (script.projects.status === "paused") {
-      const embed = new EmbedBuilder()
-        .setColor(0xef4444)
-        .setTitle("Project Paused")
-        .setDescription(
-          "The project is currently paused. Contact the script owner.",
-        );
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Project Paused")
+        .setDescription("The project is currently paused. Contact the script owner.");
       return interaction.editReply({ embeds: [embed] });
     }
 
     let loader;
     let userKey = null;
     if (script.key_mode === "keyed") {
-      const { data: existingKey } = await supabase
-        .from("keys")
-        .select("key, revoked, expires_at")
-        .eq("discord_id", discordId)
+      const { data: existingKey } = await supabase.from("keys")
+        .select("key, revoked, expires_at").eq("discord_id", discordId)
         .eq("project_id", script.project_id)
-        .eq("owner_account_id", script.projects.owner_account_id)
-        .maybeSingle();
+        .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
 
       if (!existingKey) {
-        const embed = new EmbedBuilder()
-          .setColor(0xef4444)
-          .setTitle("No Active License")
-          .setDescription(
-            "You need to redeem a key first. Click **Redeem Key** on the panel to get started.",
-          );
+        const embed = new EmbedBuilder().setColor(0xef4444).setTitle("No Active License")
+          .setDescription("You need to redeem a key first. Click **Redeem Key** on the panel to get started.");
         return interaction.editReply({ embeds: [embed] });
       }
       if (existingKey.revoked) {
-        const embed = new EmbedBuilder()
-          .setColor(0xef4444)
-          .setTitle("Key Revoked")
-          .setDescription(
-            "Your key has been revoked. Contact the script owner.",
-          );
+        const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Revoked")
+          .setDescription("Your key has been revoked. Contact the script owner.");
         return interaction.editReply({ embeds: [embed] });
       }
-      if (
-        existingKey.expires_at &&
-        new Date(existingKey.expires_at).getTime() < Date.now()
-      ) {
-        const embed = new EmbedBuilder()
-          .setColor(0xef4444)
-          .setTitle("Key Expired")
-          .setDescription(
-            "Your key has expired. Renew or contact the script owner.",
-          );
+      if (existingKey.expires_at && new Date(existingKey.expires_at).getTime() < Date.now()) {
+        const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Expired")
+          .setDescription("Your key has expired. Renew or contact the script owner.");
         return interaction.editReply({ embeds: [embed] });
       }
       userKey = existingKey.key;
 
       const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-      loader =
-        '_G.script_key = "' +
-        userKey +
-        '"\nloadstring(game:HttpGet("' +
-        loaderUrl +
-        '?key=".._G.script_key))()';
+      loader = '_G.script_key = "' + userKey + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
     } else {
-      loader =
-        'loadstring(game:HttpGet("' +
-        PUBLIC_BASE_URL +
-        "/v1/load/" +
-        script.slug +
-        '"))()';
+      loader = 'loadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '"))()';
     }
 
-    const dmContent =
-      "Loader script for **" +
-      script.name +
-      "**:\n\n```lua\n" +
-      loader +
-      "\n```\n\nKeep this private. Do not share.";
+    const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
 
     const dmSent = await trySendDM(discordId, { content: dmContent });
     if (dmSent) {
-      await interaction.editReply({
-        content: "Sent loader script to your DMs. Check your Discord messages.",
-      });
+      await interaction.editReply({ content: "Sent loader script to your DMs. Check your Discord messages." });
     } else {
       await interaction.editReply({
-        content:
-          "Could not DM you (DMs may be closed). Here it is:\n\n" +
-          dmContent +
-          "\n\nEnable DMs from server members to receive scripts privately.",
+        content: "Could not DM you (DMs may be closed). Here it is:\n\n" + dmContent + "\n\nEnable DMs from server members to receive scripts privately.",
       });
     }
   }
@@ -2994,18 +2065,15 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
     const COOLDOWN_MS = 15 * 60 * 60 * 1000; // 15 hours
 
-    const { data: script } = await supabase
-      .from("scripts")
+    const { data: script } = await supabase.from("scripts")
       .select("id, project_id, projects!inner(owner_account_id)")
-      .eq("id", scriptId)
-      .maybeSingle();
+      .eq("id", scriptId).maybeSingle();
     if (!script) {
       await interaction.editReply({ content: "Script not found." });
       return;
     }
 
-    const { data: keyRow } = await supabase
-      .from("keys")
+    const { data: keyRow } = await supabase.from("keys")
       .select("id, hwid, last_hwid_reset, revoked")
       .eq("discord_id", discordId)
       .eq("project_id", script.project_id)
@@ -3013,22 +2081,15 @@ async function startDiscordBot() {
       .maybeSingle();
 
     if (!keyRow) {
-      await interaction.editReply({
-        content:
-          "You do not have a key for this script yet. Click Get Key first.",
-      });
+      await interaction.editReply({ content: "You do not have a key for this script yet. Click Get Key first." });
       return;
     }
     if (keyRow.revoked) {
-      await interaction.editReply({
-        content: "Your key is revoked. Contact the script owner.",
-      });
+      await interaction.editReply({ content: "Your key is revoked. Contact the script owner." });
       return;
     }
     if (!keyRow.hwid) {
-      await interaction.editReply({
-        content: "No HWID is bound to your key yet - nothing to reset.",
-      });
+      await interaction.editReply({ content: "No HWID is bound to your key yet - nothing to reset." });
       return;
     }
 
@@ -3039,21 +2100,17 @@ async function startDiscordBot() {
         const hours = Math.floor(remaining / (60 * 60 * 1000));
         const mins = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
         await interaction.editReply({
-          content:
-            "Cooldown active. Try again in " + hours + "h " + mins + "m.",
+          content: "Cooldown active. Try again in " + hours + "h " + mins + "m.",
         });
         return;
       }
     }
 
-    const { error } = await supabase
-      .from("keys")
+    const { error } = await supabase.from("keys")
       .update({ hwid: null, last_hwid_reset: new Date().toISOString() })
       .eq("id", keyRow.id);
     if (error) {
-      await interaction.editReply({
-        content: "Could not reset HWID. Try again later.",
-      });
+      await interaction.editReply({ content: "Could not reset HWID. Try again later." });
       return;
     }
 
@@ -3062,19 +2119,15 @@ async function startDiscordBot() {
     });
   }
 
+
   // ============================================================
   // HELPERS
   // ============================================================
   async function requireLogin(interaction) {
-    const { data: link } = await supabase
-      .from("discord_users")
-      .select("account_id")
-      .eq("discord_id", interaction.user.id)
-      .maybeSingle();
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id").eq("discord_id", interaction.user.id).maybeSingle();
     if (!link) {
-      await interaction.editReply({
-        content: "You must /login first with your Solaries API key.",
-      });
+      await interaction.editReply({ content: "You must /login first with your Solaries API key." });
       return null;
     }
     return link.account_id;
@@ -3084,18 +2137,10 @@ async function startDiscordBot() {
     // Owner/creator (linked account) always allowed
     // Additional: user has a role in discord_manager_roles
     if (!interaction.guildId) return true;
-    if (
-      interaction.memberPermissions &&
-      interaction.memberPermissions.has("ManageGuild")
-    )
-      return true;
-    const { data: roles } = await supabase
-      .from("discord_manager_roles")
-      .select("role_id")
-      .eq("account_id", accountId)
-      .eq("guild_id", interaction.guildId);
-    if (!roles || roles.length === 0)
-      return interaction.memberPermissions?.has("ManageGuild") ?? false;
+    if (interaction.memberPermissions && interaction.memberPermissions.has("ManageGuild")) return true;
+    const { data: roles } = await supabase.from("discord_manager_roles")
+      .select("role_id").eq("account_id", accountId).eq("guild_id", interaction.guildId);
+    if (!roles || roles.length === 0) return interaction.memberPermissions?.has("ManageGuild") ?? false;
     const userRoles = interaction.member?.roles?.cache;
     if (!userRoles) return false;
     return roles.some((r) => userRoles.has(r.role_id));
@@ -3103,52 +2148,28 @@ async function startDiscordBot() {
 
   async function getActiveProject(discordId, accountId, slugOverride) {
     if (slugOverride) {
-      const { data } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("slug", slugOverride)
-        .eq("owner_account_id", accountId)
-        .maybeSingle();
+      const { data } = await supabase.from("projects")
+        .select("*").eq("slug", slugOverride).eq("owner_account_id", accountId).maybeSingle();
       return data || null;
     }
-    const { data: ctx } = await supabase
-      .from("discord_user_context")
-      .select("active_project_id")
-      .eq("discord_id", discordId)
-      .maybeSingle();
+    const { data: ctx } = await supabase.from("discord_user_context")
+      .select("active_project_id").eq("discord_id", discordId).maybeSingle();
     if (!ctx || !ctx.active_project_id) return null;
-    const { data } = await supabase
-      .from("projects")
-      .select("*")
-      .eq("id", ctx.active_project_id)
-      .eq("owner_account_id", accountId)
-      .maybeSingle();
+    const { data } = await supabase.from("projects")
+      .select("*").eq("id", ctx.active_project_id).eq("owner_account_id", accountId).maybeSingle();
     return data || null;
   }
 
   async function isBlacklisted(accountId, discordId) {
-    const { data } = await supabase
-      .from("blacklist")
-      .select("id, banned, reason")
-      .eq("account_id", accountId)
-      .eq("discord_id", discordId)
-      .maybeSingle();
+    const { data } = await supabase.from("blacklist")
+      .select("id, banned, reason").eq("account_id", accountId).eq("discord_id", discordId).maybeSingle();
     return data || null;
   }
 
   async function getSettings(accountId) {
-    const { data } = await supabase
-      .from("discord_settings")
-      .select("*")
-      .eq("account_id", accountId)
-      .maybeSingle();
-    return (
-      data || {
-        key_prefix: "KF",
-        default_expiry_days: 30,
-        hwid_cooldown_hours: 15,
-      }
-    );
+    const { data } = await supabase.from("discord_settings")
+      .select("*").eq("account_id", accountId).maybeSingle();
+    return data || { key_prefix: "KF", default_expiry_days: 30, hwid_cooldown_hours: 15 };
   }
 
   // ============================================================
@@ -3158,13 +2179,8 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
     await supabase.from("discord_users").delete().eq("discord_id", discordId);
-    await supabase
-      .from("discord_user_context")
-      .delete()
-      .eq("discord_id", discordId);
-    await interaction.editReply({
-      content: "Logged out. Use /login to link again.",
-    });
+    await supabase.from("discord_user_context").delete().eq("discord_id", discordId);
+    await interaction.editReply({ content: "Logged out. Use /login to link again." });
   }
 
   // ============================================================
@@ -3174,48 +2190,28 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!interaction.guildId)
-      return interaction.editReply({
-        content: "This command must be run in a server.",
-      });
+    if (!interaction.guildId) return interaction.editReply({ content: "This command must be run in a server." });
 
     if (sub === "set") {
       const role = interaction.options.getRole("role", true);
       const { error } = await supabase.from("discord_manager_roles").insert({
-        account_id: accountId,
-        guild_id: interaction.guildId,
-        role_id: role.id,
+        account_id: accountId, guild_id: interaction.guildId, role_id: role.id,
       });
       if (error && !error.message.includes("duplicate")) {
         return interaction.editReply({ content: "Error: " + error.message });
       }
-      return interaction.editReply({
-        content: "Manager role set: " + role.name,
-      });
+      return interaction.editReply({ content: "Manager role set: " + role.name });
     }
     if (sub === "clear") {
       const role = interaction.options.getRole("role", true);
-      await supabase
-        .from("discord_manager_roles")
-        .delete()
-        .eq("account_id", accountId)
-        .eq("guild_id", interaction.guildId)
-        .eq("role_id", role.id);
-      return interaction.editReply({
-        content: "Manager role removed: " + role.name,
-      });
+      await supabase.from("discord_manager_roles").delete()
+        .eq("account_id", accountId).eq("guild_id", interaction.guildId).eq("role_id", role.id);
+      return interaction.editReply({ content: "Manager role removed: " + role.name });
     }
     if (sub === "list") {
-      const { data } = await supabase
-        .from("discord_manager_roles")
-        .select("role_id")
-        .eq("account_id", accountId)
-        .eq("guild_id", interaction.guildId);
-      if (!data || data.length === 0)
-        return interaction.editReply({
-          content:
-            "No manager roles set. Members with Discord ManageGuild permission can still use admin commands.",
-        });
+      const { data } = await supabase.from("discord_manager_roles")
+        .select("role_id").eq("account_id", accountId).eq("guild_id", interaction.guildId);
+      if (!data || data.length === 0) return interaction.editReply({ content: "No manager roles set. Members with Discord ManageGuild permission can still use admin commands." });
       const list = data.map((r) => "<@&" + r.role_id + ">").join(", ");
       return interaction.editReply({ content: "Manager roles: " + list });
     }
@@ -3228,55 +2224,26 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
 
     const slug = interaction.options.getString("project");
-    const project = await getActiveProject(
-      interaction.user.id,
-      accountId,
-      slug,
-    );
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
 
     if (project) {
       const [scripts, keys, revoked, loads24h] = await Promise.all([
-        supabase
-          .from("scripts")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", project.id),
-        supabase
-          .from("keys")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", project.id),
-        supabase
-          .from("keys")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", project.id)
-          .eq("revoked", true),
-        supabase
-          .from("access_log")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", project.id)
-          .eq("event", "load")
-          .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+        supabase.from("scripts").select("id", { count: "exact", head: true }).eq("project_id", project.id),
+        supabase.from("keys").select("id", { count: "exact", head: true }).eq("project_id", project.id),
+        supabase.from("keys").select("id", { count: "exact", head: true }).eq("project_id", project.id).eq("revoked", true),
+        supabase.from("access_log").select("id", { count: "exact", head: true }).eq("project_id", project.id).eq("event", "load").gte("created_at", new Date(Date.now() - 86400000).toISOString()),
       ]);
       const embed = new EmbedBuilder()
-        .setColor(0x8b5cf6)
-        .setTitle("Stats - " + project.name)
+        .setColor(0x8b5cf6).setTitle("Stats - " + project.name)
         .addFields(
           { name: "Scripts", value: String(scripts.count || 0), inline: true },
           { name: "Keys total", value: String(keys.count || 0), inline: true },
-          {
-            name: "Active",
-            value: String((keys.count || 0) - (revoked.count || 0)),
-            inline: true,
-          },
+          { name: "Active", value: String((keys.count || 0) - (revoked.count || 0)), inline: true },
           { name: "Revoked", value: String(revoked.count || 0), inline: true },
-          {
-            name: "Loads 24h",
-            value: String(loads24h.count || 0),
-            inline: true,
-          },
+          { name: "Loads 24h", value: String(loads24h.count || 0), inline: true },
           { name: "Status", value: project.status, inline: true },
         );
       return interaction.editReply({ embeds: [embed] });
@@ -3284,31 +2251,13 @@ async function startDiscordBot() {
 
     // Account-wide stats
     const [projs, scripts, keys, loads24h] = await Promise.all([
-      supabase
-        .from("projects")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId),
-      supabase
-        .from("scripts")
-        .select("id, projects!inner(owner_account_id)", {
-          count: "exact",
-          head: true,
-        })
-        .eq("projects.owner_account_id", accountId),
-      supabase
-        .from("keys")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId),
-      supabase
-        .from("access_log")
-        .select("id", { count: "exact", head: true })
-        .eq("owner_account_id", accountId)
-        .eq("event", "load")
-        .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+      supabase.from("projects").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId),
+      supabase.from("scripts").select("id, projects!inner(owner_account_id)", { count: "exact", head: true }).eq("projects.owner_account_id", accountId),
+      supabase.from("keys").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId),
+      supabase.from("access_log").select("id", { count: "exact", head: true }).eq("owner_account_id", accountId).eq("event", "load").gte("created_at", new Date(Date.now() - 86400000).toISOString()),
     ]);
     const embed = new EmbedBuilder()
-      .setColor(0x8b5cf6)
-      .setTitle("Account Stats")
+      .setColor(0x8b5cf6).setTitle("Account Stats")
       .addFields(
         { name: "Projects", value: String(projs.count || 0), inline: true },
         { name: "Scripts", value: String(scripts.count || 0), inline: true },
@@ -3325,63 +2274,27 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
 
     if (sub === "view") {
       const s = await getSettings(accountId);
-      const embed = new EmbedBuilder()
-        .setColor(0x8b5cf6)
-        .setTitle("Bot Settings")
+      const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Bot Settings")
         .addFields(
           { name: "Key Prefix", value: s.key_prefix || "KF", inline: true },
-          {
-            name: "Default Expiry",
-            value: (s.default_expiry_days || 30) + " days",
-            inline: true,
-          },
-          {
-            name: "HWID Cooldown",
-            value: (s.hwid_cooldown_hours || 15) + " hours",
-            inline: true,
-          },
-          {
-            name: "Log Channel",
-            value: s.log_channel_id ? "<#" + s.log_channel_id + ">" : "Not set",
-            inline: false,
-          },
+          { name: "Default Expiry", value: (s.default_expiry_days || 30) + " days", inline: true },
+          { name: "HWID Cooldown", value: (s.hwid_cooldown_hours || 15) + " hours", inline: true },
+          { name: "Log Channel", value: s.log_channel_id ? "<#" + s.log_channel_id + ">" : "Not set", inline: false },
         );
       return interaction.editReply({ embeds: [embed] });
     }
-    const patch = {
-      account_id: accountId,
-      updated_at: new Date().toISOString(),
-    };
-    if (sub === "keyprefix")
-      patch.key_prefix =
-        interaction.options
-          .getString("value", true)
-          .toUpperCase()
-          .replace(/[^A-Z0-9]/g, "")
-          .slice(0, 6) || "KF";
-    if (sub === "expiry")
-      patch.default_expiry_days = Math.max(
-        0,
-        interaction.options.getInteger("days", true),
-      );
-    if (sub === "cooldown")
-      patch.hwid_cooldown_hours = Math.max(
-        0,
-        interaction.options.getInteger("hours", true),
-      );
-    if (sub === "logchannel")
-      patch.log_channel_id = interaction.options.getChannel("channel", true).id;
+    const patch = { account_id: accountId, updated_at: new Date().toISOString() };
+    if (sub === "keyprefix") patch.key_prefix = interaction.options.getString("value", true).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) || "KF";
+    if (sub === "expiry") patch.default_expiry_days = Math.max(0, interaction.options.getInteger("days", true));
+    if (sub === "cooldown") patch.hwid_cooldown_hours = Math.max(0, interaction.options.getInteger("hours", true));
+    if (sub === "logchannel") patch.log_channel_id = interaction.options.getChannel("channel", true).id;
 
-    const { error } = await supabase
-      .from("discord_settings")
-      .upsert(patch, { onConflict: "account_id" });
-    if (error)
-      return interaction.editReply({ content: "Error: " + error.message });
+    const { error } = await supabase.from("discord_settings").upsert(patch, { onConflict: "account_id" });
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
     interaction.editReply({ content: "Setting updated." });
   }
 
@@ -3392,8 +2305,7 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
 
     if (sub === "create") return keyCreate(interaction, accountId);
     if (sub === "stock") return keyStock(interaction, accountId);
@@ -3406,116 +2318,49 @@ async function startDiscordBot() {
 
   async function keyCreate(interaction, accountId) {
     const slug = interaction.options.getString("project");
-    const project = await getActiveProject(
-      interaction.user.id,
-      accountId,
-      slug,
-    );
-    if (!project)
-      return interaction.editReply({
-        content: "No project. Use /project select or pass project: slug.",
-      });
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project. Use /project select or pass project: slug." });
     const settings = await getSettings(accountId);
     const label = interaction.options.getString("label") || null;
     const days = interaction.options.getInteger("expires_days");
     const hwidLock = interaction.options.getBoolean("hwid_lock");
     const key = makeKey(settings.key_prefix || "KF");
     const insert = {
-      owner_account_id: accountId,
-      project_id: project.id,
-      key,
-      label,
-      hwid_locked:
-        hwidLock !== null && hwidLock !== undefined ? hwidLock : true,
+      owner_account_id: accountId, project_id: project.id, key, label,
+      hwid_locked: hwidLock !== null && hwidLock !== undefined ? hwidLock : true,
     };
-    const expiryDays =
-      days !== null && days !== undefined
-        ? days
-        : settings.default_expiry_days || 0;
-    if (expiryDays > 0)
-      insert.expires_at = new Date(
-        Date.now() + expiryDays * 86400000,
-      ).toISOString();
+    const expiryDays = days !== null && days !== undefined ? days : (settings.default_expiry_days || 0);
+    if (expiryDays > 0) insert.expires_at = new Date(Date.now() + expiryDays * 86400000).toISOString();
     const { error } = await supabase.from("keys").insert(insert);
-    if (error)
-      return interaction.editReply({ content: "Error: " + error.message });
-    interaction.editReply({
-      content:
-        "Key created for **" +
-        project.name +
-        "**:\n\n```" +
-        key +
-        "```" +
-        (expiryDays > 0
-          ? "\nExpires in " + expiryDays + " days."
-          : "\nNo expiry."),
-    });
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+    interaction.editReply({ content: "Key created for **" + project.name + "**:\n\n```" + key + "```" + (expiryDays > 0 ? "\nExpires in " + expiryDays + " days." : "\nNo expiry.") });
   }
 
   async function keyStock(interaction, accountId) {
-    const count = Math.min(
-      Math.max(1, interaction.options.getInteger("count", true)),
-      50,
-    );
+    const count = Math.min(Math.max(1, interaction.options.getInteger("count", true)), 50);
     const slug = interaction.options.getString("project");
-    const project = await getActiveProject(
-      interaction.user.id,
-      accountId,
-      slug,
-    );
-    if (!project)
-      return interaction.editReply({ content: "No project selected." });
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project selected." });
     const settings = await getSettings(accountId);
     const days = interaction.options.getInteger("expires_days");
-    const expiryDays =
-      days !== null && days !== undefined
-        ? days
-        : settings.default_expiry_days || 0;
+    const expiryDays = days !== null && days !== undefined ? days : (settings.default_expiry_days || 0);
     const rows = [];
     for (let i = 0; i < count; i++) {
       const k = makeKey(settings.key_prefix || "KF");
-      const row = {
-        owner_account_id: accountId,
-        project_id: project.id,
-        key: k,
-        hwid_locked: true,
-        label: "Bulk stock",
-      };
-      if (expiryDays > 0)
-        row.expires_at = new Date(
-          Date.now() + expiryDays * 86400000,
-        ).toISOString();
+      const row = { owner_account_id: accountId, project_id: project.id, key: k, hwid_locked: true, label: "Bulk stock" };
+      if (expiryDays > 0) row.expires_at = new Date(Date.now() + expiryDays * 86400000).toISOString();
       rows.push(row);
     }
-    const { data, error } = await supabase
-      .from("keys")
-      .insert(rows)
-      .select("key");
-    if (error)
-      return interaction.editReply({ content: "Error: " + error.message });
+    const { data, error } = await supabase.from("keys").insert(rows).select("key");
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
     const list = (data || []).map((r) => r.key).join("\n");
-    interaction.editReply({
-      content:
-        "Generated " +
-        count +
-        " keys for **" +
-        project.name +
-        "**:\n\n```" +
-        list +
-        "```",
-    });
+    interaction.editReply({ content: "Generated " + count + " keys for **" + project.name + "**:\n\n```" + list + "```" });
   }
 
   async function keyDelete(interaction, accountId) {
     const key = interaction.options.getString("key", true).trim();
-    const { data } = await supabase
-      .from("keys")
-      .select("id")
-      .eq("key", key)
-      .eq("owner_account_id", accountId)
-      .maybeSingle();
-    if (!data)
-      return interaction.editReply({ content: "Key not found or not yours." });
+    const { data } = await supabase.from("keys").select("id").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
     await supabase.from("keys").delete().eq("id", data.id);
     interaction.editReply({ content: "Key deleted." });
   }
@@ -3523,110 +2368,51 @@ async function startDiscordBot() {
   async function keyExtend(interaction, accountId) {
     const key = interaction.options.getString("key", true).trim();
     const days = interaction.options.getInteger("days", true);
-    const { data } = await supabase
-      .from("keys")
-      .select("id, expires_at")
-      .eq("key", key)
-      .eq("owner_account_id", accountId)
-      .maybeSingle();
-    if (!data)
-      return interaction.editReply({ content: "Key not found or not yours." });
-    const base = data.expires_at
-      ? new Date(data.expires_at).getTime()
-      : Date.now();
+    const { data } = await supabase.from("keys").select("id, expires_at").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
+    const base = data.expires_at ? new Date(data.expires_at).getTime() : Date.now();
     const newExpiry = new Date(base + days * 86400000).toISOString();
-    await supabase
-      .from("keys")
-      .update({ expires_at: newExpiry })
-      .eq("id", data.id);
-    interaction.editReply({
-      content: "Extended by " + days + " days. New expiry: " + newExpiry,
-    });
+    await supabase.from("keys").update({ expires_at: newExpiry }).eq("id", data.id);
+    interaction.editReply({ content: "Extended by " + days + " days. New expiry: " + newExpiry });
   }
 
   async function keyRevoke(interaction, accountId) {
     const key = interaction.options.getString("key", true).trim();
-    const { data } = await supabase
-      .from("keys")
-      .select("id")
-      .eq("key", key)
-      .eq("owner_account_id", accountId)
-      .maybeSingle();
-    if (!data)
-      return interaction.editReply({ content: "Key not found or not yours." });
+    const { data } = await supabase.from("keys").select("id").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
     await supabase.from("keys").update({ revoked: true }).eq("id", data.id);
     interaction.editReply({ content: "Key revoked." });
   }
 
   async function keyInfo(interaction, accountId) {
     const key = interaction.options.getString("key", true).trim();
-    const { data } = await supabase
-      .from("keys")
-      .select("*, projects(name, slug)")
-      .eq("key", key)
-      .eq("owner_account_id", accountId)
-      .maybeSingle();
-    if (!data)
-      return interaction.editReply({ content: "Key not found or not yours." });
-    const embed = new EmbedBuilder()
-      .setColor(0x8b5cf6)
-      .setTitle("Key Info")
+    const { data } = await supabase.from("keys").select("*, projects(name, slug)").eq("key", key).eq("owner_account_id", accountId).maybeSingle();
+    if (!data) return interaction.editReply({ content: "Key not found or not yours." });
+    const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Key Info")
       .addFields(
         { name: "Key", value: "`" + data.key + "`", inline: false },
         { name: "Project", value: data.projects?.name || "-", inline: true },
         { name: "Label", value: data.label || "-", inline: true },
-        {
-          name: "Status",
-          value: data.revoked ? "Revoked" : "Active",
-          inline: true,
-        },
+        { name: "Status", value: data.revoked ? "Revoked" : "Active", inline: true },
         { name: "HWID", value: data.hwid || "Not bound", inline: true },
-        {
-          name: "HWID Lock",
-          value: data.hwid_locked ? "Yes" : "No",
-          inline: true,
-        },
+        { name: "HWID Lock", value: data.hwid_locked ? "Yes" : "No", inline: true },
         { name: "Discord ID", value: data.discord_id || "-", inline: true },
         { name: "Expires", value: data.expires_at || "Never", inline: false },
         { name: "Created", value: data.created_at, inline: true },
-        {
-          name: "Last used",
-          value: data.last_used_at || "Never",
-          inline: true,
-        },
+        { name: "Last used", value: data.last_used_at || "Never", inline: true },
       );
     interaction.editReply({ embeds: [embed] });
   }
 
   async function keyList(interaction, accountId) {
     const slug = interaction.options.getString("project");
-    const project = await getActiveProject(
-      interaction.user.id,
-      accountId,
-      slug,
-    );
-    if (!project)
-      return interaction.editReply({ content: "No project selected." });
-    const { data } = await supabase
-      .from("keys")
-      .select("key, revoked, label, expires_at")
-      .eq("project_id", project.id)
-      .order("created_at", { ascending: false })
-      .limit(25);
-    if (!data || data.length === 0)
-      return interaction.editReply({ content: "No keys in " + project.name });
-    const lines = data
-      .map(
-        (k) =>
-          (k.revoked ? "~~" : "") +
-          k.key +
-          (k.revoked ? "~~" : "") +
-          (k.label ? " (" + k.label + ")" : ""),
-      )
-      .join("\n");
-    interaction.editReply({
-      content: "**Keys in " + project.name + "** (latest 25):\n" + lines,
-    });
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project selected." });
+    const { data } = await supabase.from("keys").select("key, revoked, label, expires_at")
+      .eq("project_id", project.id).order("created_at", { ascending: false }).limit(25);
+    if (!data || data.length === 0) return interaction.editReply({ content: "No keys in " + project.name });
+    const lines = data.map((k) => (k.revoked ? "~~" : "") + k.key + (k.revoked ? "~~" : "") + (k.label ? " (" + k.label + ")" : "")).join("\n");
+    interaction.editReply({ content: "**Keys in " + project.name + "** (latest 25):\n" + lines });
   }
 
   // ============================================================
@@ -3636,112 +2422,39 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
     const target = interaction.options.getUser("target", true);
 
     if (sub === "info") {
-      const { data: link } = await supabase
-        .from("discord_users")
-        .select("account_id, linked_at")
-        .eq("discord_id", target.id)
-        .maybeSingle();
-      const { data: keys } = await supabase
-        .from("keys")
-        .select("key, revoked, project_id, projects(name)")
-        .eq("discord_id", target.id)
-        .eq("owner_account_id", accountId);
+      const { data: link } = await supabase.from("discord_users").select("account_id, linked_at").eq("discord_id", target.id).maybeSingle();
+      const { data: keys } = await supabase.from("keys").select("key, revoked, project_id, projects(name)").eq("discord_id", target.id).eq("owner_account_id", accountId);
       const bl = await isBlacklisted(accountId, target.id);
-      const embed = new EmbedBuilder()
-        .setColor(0x8b5cf6)
-        .setTitle("User: " + target.username)
+      const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("User: " + target.username)
         .addFields(
           { name: "Discord", value: "<@" + target.id + ">", inline: true },
-          {
-            name: "Linked",
-            value: link ? "Yes (" + link.linked_at + ")" : "No",
-            inline: true,
-          },
-          {
-            name: "Blacklisted",
-            value: bl
-              ? "Yes" +
-                (bl.banned ? " (BANNED)" : "") +
-                (bl.reason ? " - " + bl.reason : "")
-              : "No",
-            inline: false,
-          },
-          {
-            name: "Keys (yours)",
-            value:
-              keys && keys.length
-                ? keys
-                    .map(
-                      (k) =>
-                        (k.revoked ? "[revoked] " : "") +
-                        k.key +
-                        " - " +
-                        (k.projects?.name || "?"),
-                    )
-                    .join("\n")
-                    .slice(0, 1000)
-                : "None",
-            inline: false,
-          },
+          { name: "Linked", value: link ? "Yes (" + link.linked_at + ")" : "No", inline: true },
+          { name: "Blacklisted", value: bl ? "Yes" + (bl.banned ? " (BANNED)" : "") + (bl.reason ? " - " + bl.reason : "") : "No", inline: false },
+          { name: "Keys (yours)", value: keys && keys.length ? keys.map((k) => (k.revoked ? "[revoked] " : "") + k.key + " - " + (k.projects?.name || "?")).join("\n").slice(0, 1000) : "None", inline: false },
         );
       return interaction.editReply({ embeds: [embed] });
     }
     if (sub === "blacklist") {
       const reason = interaction.options.getString("reason") || null;
-      await supabase.from("blacklist").upsert(
-        {
-          account_id: accountId,
-          discord_id: target.id,
-          reason,
-          banned: false,
-        },
-        { onConflict: "account_id,discord_id" },
-      );
-      return interaction.editReply({
-        content: "Blacklisted " + target.username,
-      });
+      await supabase.from("blacklist").upsert({ account_id: accountId, discord_id: target.id, reason, banned: false }, { onConflict: "account_id,discord_id" });
+      return interaction.editReply({ content: "Blacklisted " + target.username });
     }
     if (sub === "unblacklist") {
-      await supabase
-        .from("blacklist")
-        .delete()
-        .eq("account_id", accountId)
-        .eq("discord_id", target.id);
-      return interaction.editReply({
-        content: "Removed blacklist for " + target.username,
-      });
+      await supabase.from("blacklist").delete().eq("account_id", accountId).eq("discord_id", target.id);
+      return interaction.editReply({ content: "Removed blacklist for " + target.username });
     }
     if (sub === "ban") {
       const reason = interaction.options.getString("reason") || null;
-      await supabase.from("blacklist").upsert(
-        {
-          account_id: accountId,
-          discord_id: target.id,
-          reason,
-          banned: true,
-        },
-        { onConflict: "account_id,discord_id" },
-      );
-      await supabase
-        .from("keys")
-        .update({ revoked: true })
-        .eq("discord_id", target.id)
-        .eq("owner_account_id", accountId);
-      return interaction.editReply({
-        content: "Banned " + target.username + " and revoked all their keys.",
-      });
+      await supabase.from("blacklist").upsert({ account_id: accountId, discord_id: target.id, reason, banned: true }, { onConflict: "account_id,discord_id" });
+      await supabase.from("keys").update({ revoked: true }).eq("discord_id", target.id).eq("owner_account_id", accountId);
+      return interaction.editReply({ content: "Banned " + target.username + " and revoked all their keys." });
     }
     if (sub === "unban") {
-      await supabase
-        .from("blacklist")
-        .delete()
-        .eq("account_id", accountId)
-        .eq("discord_id", target.id);
+      await supabase.from("blacklist").delete().eq("account_id", accountId).eq("discord_id", target.id);
       return interaction.editReply({ content: "Unbanned " + target.username });
     }
   }
@@ -3753,32 +2466,17 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
     if (sub !== "reset") return;
     const target = interaction.options.getUser("target", true);
     const slug = interaction.options.getString("project");
-    const project = await getActiveProject(
-      interaction.user.id,
-      accountId,
-      slug,
-    );
-    const q = supabase
-      .from("keys")
-      .update({ hwid: null, last_hwid_reset: new Date().toISOString() })
-      .eq("discord_id", target.id)
-      .eq("owner_account_id", accountId);
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    const q = supabase.from("keys").update({ hwid: null, last_hwid_reset: new Date().toISOString() })
+      .eq("discord_id", target.id).eq("owner_account_id", accountId);
     if (project) q.eq("project_id", project.id);
     const { data, error } = await q.select("id");
-    if (error)
-      return interaction.editReply({ content: "Error: " + error.message });
-    interaction.editReply({
-      content:
-        "Reset HWID on " +
-        (data?.length || 0) +
-        " key(s) for " +
-        target.username,
-    });
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+    interaction.editReply({ content: "Reset HWID on " + (data?.length || 0) + " key(s) for " + target.username });
   }
 
   // ============================================================
@@ -3788,25 +2486,15 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
     const target = interaction.options.getUser("target", true);
     const slug = interaction.options.getString("project");
-    const project = await getActiveProject(
-      interaction.user.id,
-      accountId,
-      slug,
-    );
-    if (!project)
-      return interaction.editReply({ content: "No project selected." });
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) return interaction.editReply({ content: "No project selected." });
 
     // Check if user already has a key for this project
-    const { data: existing } = await supabase
-      .from("keys")
-      .select("key, revoked")
-      .eq("discord_id", target.id)
-      .eq("project_id", project.id)
-      .maybeSingle();
+    const { data: existing } = await supabase.from("keys")
+      .select("key, revoked").eq("discord_id", target.id).eq("project_id", project.id).maybeSingle();
     let keyValue;
     if (existing && !existing.revoked) {
       keyValue = existing.key;
@@ -3814,51 +2502,31 @@ async function startDiscordBot() {
       const settings = await getSettings(accountId);
       keyValue = makeKey(settings.key_prefix || "KF");
       const insert = {
-        owner_account_id: accountId,
-        project_id: project.id,
-        key: keyValue,
-        discord_id: target.id,
-        label: "Whitelist: " + target.username,
-        hwid_locked: true,
+        owner_account_id: accountId, project_id: project.id, key: keyValue,
+        discord_id: target.id, label: "Whitelist: " + target.username, hwid_locked: true,
       };
       const { error } = await supabase.from("keys").insert(insert);
-      if (error)
-        return interaction.editReply({
-          content: "Error creating key: " + error.message,
-        });
+      if (error) return interaction.editReply({ content: "Error creating key: " + error.message });
     }
 
     // Grant buyer role if configured
     let roleGranted = false;
     if (interaction.guildId) {
-      const { data: br } = await supabase
-        .from("discord_buyer_roles")
-        .select("role_id")
-        .eq("project_id", project.id)
-        .eq("guild_id", interaction.guildId)
-        .maybeSingle();
+      const { data: br } = await supabase.from("discord_buyer_roles")
+        .select("role_id").eq("project_id", project.id).eq("guild_id", interaction.guildId).maybeSingle();
       if (br) {
         try {
           const member = await interaction.guild.members.fetch(target.id);
           await member.roles.add(br.role_id);
           roleGranted = true;
-        } catch (e) {
-          /* silent */
-        }
+        } catch (e) { /* silent */ }
       }
     }
 
     interaction.editReply({
-      content:
-        "Whitelisted " +
-        target.username +
-        " for **" +
-        project.name +
-        "**." +
+      content: "Whitelisted " + target.username + " for **" + project.name + "**." +
         (roleGranted ? " Buyer role granted." : "") +
-        "\n\nKey: ```" +
-        keyValue +
-        "```",
+        "\n\nKey: ```" + keyValue + "```",
     });
   }
 
@@ -3869,86 +2537,39 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
 
     if (sub === "create") {
       const name = interaction.options.getString("name", true).trim();
       const note = interaction.options.getString("note") || "";
-      const { data, error } = await supabase
-        .from("projects")
-        .insert({
-          owner_account_id: accountId,
-          name,
-          note,
-          slug: makeSlug(name),
-        })
-        .select()
-        .single();
-      if (error)
-        return interaction.editReply({ content: "Error: " + error.message });
-      return interaction.editReply({
-        content:
-          "Created project **" + data.name + "** (slug: `" + data.slug + "`)",
-      });
+      const { data, error } = await supabase.from("projects")
+        .insert({ owner_account_id: accountId, name, note, slug: makeSlug(name) })
+        .select().single();
+      if (error) return interaction.editReply({ content: "Error: " + error.message });
+      return interaction.editReply({ content: "Created project **" + data.name + "** (slug: `" + data.slug + "`)" });
     }
     if (sub === "delete") {
       const slug = interaction.options.getString("slug", true).trim();
-      const { data } = await supabase
-        .from("projects")
-        .select("id, name")
-        .eq("slug", slug)
-        .eq("owner_account_id", accountId)
-        .maybeSingle();
-      if (!data)
-        return interaction.editReply({ content: "Project not found." });
+      const { data } = await supabase.from("projects").select("id, name").eq("slug", slug).eq("owner_account_id", accountId).maybeSingle();
+      if (!data) return interaction.editReply({ content: "Project not found." });
       await supabase.from("projects").delete().eq("id", data.id);
       return interaction.editReply({ content: "Deleted project " + data.name });
     }
     if (sub === "list") {
-      const { data } = await supabase
-        .from("projects")
-        .select("name, slug, status, whitelist_only")
-        .eq("owner_account_id", accountId)
-        .order("created_at", { ascending: false });
-      if (!data || data.length === 0)
-        return interaction.editReply({ content: "No projects yet." });
-      const lines = data
-        .map(
-          (p) =>
-            "- **" +
-            p.name +
-            "** `" +
-            p.slug +
-            "` (" +
-            p.status +
-            (p.whitelist_only ? ", whitelist" : "") +
-            ")",
-        )
-        .join("\n");
+      const { data } = await supabase.from("projects").select("name, slug, status, whitelist_only")
+        .eq("owner_account_id", accountId).order("created_at", { ascending: false });
+      if (!data || data.length === 0) return interaction.editReply({ content: "No projects yet." });
+      const lines = data.map((p) => "- **" + p.name + "** `" + p.slug + "` (" + p.status + (p.whitelist_only ? ", whitelist" : "") + ")").join("\n");
       return interaction.editReply({ content: "**Projects:**\n" + lines });
     }
     if (sub === "select") {
       const slug = interaction.options.getString("slug", true).trim();
-      const { data } = await supabase
-        .from("projects")
-        .select("id, name")
-        .eq("slug", slug)
-        .eq("owner_account_id", accountId)
-        .maybeSingle();
-      if (!data)
-        return interaction.editReply({ content: "Project not found." });
-      await supabase.from("discord_user_context").upsert(
-        {
-          discord_id: interaction.user.id,
-          active_project_id: data.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "discord_id" },
-      );
-      return interaction.editReply({
-        content: "Active project set to **" + data.name + "**",
-      });
+      const { data } = await supabase.from("projects").select("id, name").eq("slug", slug).eq("owner_account_id", accountId).maybeSingle();
+      if (!data) return interaction.editReply({ content: "Project not found." });
+      await supabase.from("discord_user_context").upsert({
+        discord_id: interaction.user.id, active_project_id: data.id, updated_at: new Date().toISOString(),
+      }, { onConflict: "discord_id" });
+      return interaction.editReply({ content: "Active project set to **" + data.name + "**" });
     }
   }
 
@@ -3959,70 +2580,36 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
-    if (!interaction.guildId)
-      return interaction.editReply({ content: "Must be run in a server." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+    if (!interaction.guildId) return interaction.editReply({ content: "Must be run in a server." });
 
     if (sub === "set") {
       const role = interaction.options.getRole("role", true);
       const slug = interaction.options.getString("project");
-      const project = await getActiveProject(
-        interaction.user.id,
-        accountId,
-        slug,
-      );
-      if (!project)
-        return interaction.editReply({ content: "No project selected." });
-      await supabase
-        .from("discord_buyer_roles")
-        .delete()
-        .eq("project_id", project.id)
-        .eq("guild_id", interaction.guildId);
+      const project = await getActiveProject(interaction.user.id, accountId, slug);
+      if (!project) return interaction.editReply({ content: "No project selected." });
+      await supabase.from("discord_buyer_roles").delete()
+        .eq("project_id", project.id).eq("guild_id", interaction.guildId);
       const { error } = await supabase.from("discord_buyer_roles").insert({
-        account_id: accountId,
-        project_id: project.id,
-        guild_id: interaction.guildId,
-        role_id: role.id,
+        account_id: accountId, project_id: project.id, guild_id: interaction.guildId, role_id: role.id,
       });
-      if (error)
-        return interaction.editReply({ content: "Error: " + error.message });
-      return interaction.editReply({
-        content: "Buyer role for **" + project.name + "** set to " + role.name,
-      });
+      if (error) return interaction.editReply({ content: "Error: " + error.message });
+      return interaction.editReply({ content: "Buyer role for **" + project.name + "** set to " + role.name });
     }
     if (sub === "clear") {
       const slug = interaction.options.getString("project");
-      const project = await getActiveProject(
-        interaction.user.id,
-        accountId,
-        slug,
-      );
-      if (!project)
-        return interaction.editReply({ content: "No project selected." });
-      await supabase
-        .from("discord_buyer_roles")
-        .delete()
-        .eq("project_id", project.id)
-        .eq("guild_id", interaction.guildId);
-      return interaction.editReply({
-        content: "Buyer role cleared for " + project.name,
-      });
+      const project = await getActiveProject(interaction.user.id, accountId, slug);
+      if (!project) return interaction.editReply({ content: "No project selected." });
+      await supabase.from("discord_buyer_roles").delete()
+        .eq("project_id", project.id).eq("guild_id", interaction.guildId);
+      return interaction.editReply({ content: "Buyer role cleared for " + project.name });
     }
     if (sub === "list") {
-      const { data } = await supabase
-        .from("discord_buyer_roles")
+      const { data } = await supabase.from("discord_buyer_roles")
         .select("role_id, projects(name, slug)")
-        .eq("account_id", accountId)
-        .eq("guild_id", interaction.guildId);
-      if (!data || data.length === 0)
-        return interaction.editReply({ content: "No buyer roles set." });
-      const lines = data
-        .map(
-          (r) =>
-            "- **" + (r.projects?.name || "?") + "** -> <@&" + r.role_id + ">",
-        )
-        .join("\n");
+        .eq("account_id", accountId).eq("guild_id", interaction.guildId);
+      if (!data || data.length === 0) return interaction.editReply({ content: "No buyer roles set." });
+      const lines = data.map((r) => "- **" + (r.projects?.name || "?") + "** -> <@&" + r.role_id + ">").join("\n");
       return interaction.editReply({ content: "**Buyer roles:**\n" + lines });
     }
   }
@@ -4034,32 +2621,23 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    if (!(await isManagerAllowed(interaction, accountId)))
-      return interaction.editReply({ content: "You lack permission." });
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
     const scriptSlug = interaction.options.getString("script_id", true).trim();
-    const { data: script } = await supabase
-      .from("scripts")
+    const { data: script } = await supabase.from("scripts")
       .select("id, name, project_id, projects!inner(owner_account_id)")
-      .eq("slug", scriptSlug)
-      .maybeSingle();
+      .eq("slug", scriptSlug).maybeSingle();
     if (!script || script.projects.owner_account_id !== accountId) {
-      return interaction.editReply({
-        content: "Script not found or not yours.",
-      });
+      return interaction.editReply({ content: "Script not found or not yours." });
     }
-    await supabase.from("discord_user_context").upsert(
-      {
-        discord_id: interaction.user.id,
-        active_project_id: script.project_id,
-        active_script_id: script.id,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "discord_id" },
-    );
-    interaction.editReply({
-      content: "Active script set to **" + script.name + "**",
-    });
+    await supabase.from("discord_user_context").upsert({
+      discord_id: interaction.user.id,
+      active_project_id: script.project_id,
+      active_script_id: script.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "discord_id" });
+    interaction.editReply({ content: "Active script set to **" + script.name + "**" });
   }
+
 
   // ============================================================
   // USER COMMANDS
@@ -4071,55 +2649,36 @@ async function startDiscordBot() {
     const key = interaction.options.getString("key", true).trim();
     const discordId = interaction.user.id;
 
-    const { data: keyRow } = await supabase
-      .from("keys")
-      .select(
-        "id, revoked, discord_id, project_id, owner_account_id, expires_at, projects(name)",
-      )
-      .eq("key", key)
-      .maybeSingle();
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, discord_id, project_id, owner_account_id, expires_at, projects(name)")
+      .eq("key", key).maybeSingle();
 
     if (!keyRow) return interaction.editReply({ content: "Invalid key." });
-    if (keyRow.revoked)
-      return interaction.editReply({ content: "This key has been revoked." });
-    if (
-      keyRow.expires_at &&
-      new Date(keyRow.expires_at).getTime() < Date.now()
-    ) {
+    if (keyRow.revoked) return interaction.editReply({ content: "This key has been revoked." });
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
       return interaction.editReply({ content: "This key has expired." });
     }
 
     // Check blacklist
     const bl = await isBlacklisted(keyRow.owner_account_id, discordId);
     if (bl && bl.banned) {
-      return interaction.editReply({
-        content: "You are banned from this service.",
-      });
+      return interaction.editReply({ content: "You are banned from this service." });
     }
 
     // Bind
     if (keyRow.discord_id && keyRow.discord_id !== discordId) {
-      return interaction.editReply({
-        content: "This key is already bound to another Discord user.",
-      });
+      return interaction.editReply({ content: "This key is already bound to another Discord user." });
     }
 
     if (!keyRow.discord_id) {
-      await supabase
-        .from("keys")
-        .update({ discord_id: discordId })
-        .eq("id", keyRow.id);
+      await supabase.from("keys").update({ discord_id: discordId }).eq("id", keyRow.id);
     }
 
     // Try to grant buyer role
     let roleMsg = "";
     if (interaction.guildId) {
-      const { data: br } = await supabase
-        .from("discord_buyer_roles")
-        .select("role_id")
-        .eq("project_id", keyRow.project_id)
-        .eq("guild_id", interaction.guildId)
-        .maybeSingle();
+      const { data: br } = await supabase.from("discord_buyer_roles")
+        .select("role_id").eq("project_id", keyRow.project_id).eq("guild_id", interaction.guildId).maybeSingle();
       if (br) {
         try {
           const member = await interaction.guild.members.fetch(discordId);
@@ -4130,11 +2689,7 @@ async function startDiscordBot() {
     }
 
     interaction.editReply({
-      content:
-        "Key redeemed for **" +
-        (keyRow.projects?.name || "project") +
-        "**." +
-        roleMsg,
+      content: "Key redeemed for **" + (keyRow.projects?.name || "project") + "**." + roleMsg,
     });
   }
 
@@ -4144,13 +2699,9 @@ async function startDiscordBot() {
     const scriptSlug = interaction.options.getString("script_id", true).trim();
     const discordId = interaction.user.id;
 
-    const { data: script } = await supabase
-      .from("scripts")
-      .select(
-        "id, name, slug, key_mode, project_id, projects!inner(owner_account_id)",
-      )
-      .eq("slug", scriptSlug)
-      .maybeSingle();
+    const { data: script } = await supabase.from("scripts")
+      .select("id, name, slug, key_mode, project_id, projects!inner(owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
 
     if (!script) return interaction.editReply({ content: "Script not found." });
 
@@ -4159,31 +2710,19 @@ async function startDiscordBot() {
     if (script.key_mode === "keyless") {
       loader = 'loadstring(game:HttpGet("' + loaderUrl + '"))()';
     } else {
-      const { data: keyRow } = await supabase
-        .from("keys")
-        .select("key, revoked")
-        .eq("discord_id", discordId)
+      const { data: keyRow } = await supabase.from("keys")
+        .select("key, revoked").eq("discord_id", discordId)
         .eq("project_id", script.project_id)
-        .eq("owner_account_id", script.projects.owner_account_id)
-        .maybeSingle();
+        .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
       if (keyRow && !keyRow.revoked) {
-        loader =
-          '_G.script_key = "' +
-          keyRow.key +
-          '"\nloadstring(game:HttpGet("' +
-          loaderUrl +
-          '?key=".._G.script_key))()';
+        loader = '_G.script_key = "' + keyRow.key + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
       } else {
-        loader =
-          '_G.script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("' +
-          loaderUrl +
-          '?key=".._G.script_key))()';
+        loader = '_G.script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key))()';
       }
     }
 
     interaction.editReply({
-      content:
-        "Loader for **" + script.name + "**:\n\n```lua\n" + loader + "\n```",
+      content: "Loader for **" + script.name + "**:\n\n```lua\n" + loader + "\n```",
     });
   }
 
@@ -4191,21 +2730,11 @@ async function startDiscordBot() {
   async function handleScriptCmd(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const scriptSlug = interaction.options.getString("script_id", true).trim();
-    const { data: script } = await supabase
-      .from("scripts")
-      .select("name, slug")
-      .eq("slug", scriptSlug)
-      .maybeSingle();
+    const { data: script } = await supabase.from("scripts")
+      .select("name, slug").eq("slug", scriptSlug).maybeSingle();
     if (!script) return interaction.editReply({ content: "Script not found." });
     interaction.editReply({
-      content:
-        "**" +
-        script.name +
-        "** URL:\n`" +
-        PUBLIC_BASE_URL +
-        "/v1/load/" +
-        script.slug +
-        "`",
+      content: "**" + script.name + "** URL:\n`" + PUBLIC_BASE_URL + "/v1/load/" + script.slug + "`",
     });
   }
 
@@ -4216,31 +2745,19 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
     const COOLDOWN_MS = 15 * 60 * 60 * 1000;
 
-    const { data: script } = await supabase
-      .from("scripts")
+    const { data: script } = await supabase.from("scripts")
       .select("id, name, project_id, projects!inner(owner_account_id)")
-      .eq("slug", scriptSlug)
-      .maybeSingle();
+      .eq("slug", scriptSlug).maybeSingle();
     if (!script) return interaction.editReply({ content: "Script not found." });
 
-    const { data: keyRow } = await supabase
-      .from("keys")
-      .select("id, hwid, last_hwid_reset, revoked")
-      .eq("discord_id", discordId)
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, hwid, last_hwid_reset, revoked").eq("discord_id", discordId)
       .eq("project_id", script.project_id)
-      .eq("owner_account_id", script.projects.owner_account_id)
-      .maybeSingle();
+      .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
 
-    if (!keyRow)
-      return interaction.editReply({
-        content: "You do not have a key for this script.",
-      });
-    if (keyRow.revoked)
-      return interaction.editReply({ content: "Your key is revoked." });
-    if (!keyRow.hwid)
-      return interaction.editReply({
-        content: "No HWID bound yet. Nothing to reset.",
-      });
+    if (!keyRow) return interaction.editReply({ content: "You do not have a key for this script." });
+    if (keyRow.revoked) return interaction.editReply({ content: "Your key is revoked." });
+    if (!keyRow.hwid) return interaction.editReply({ content: "No HWID bound yet. Nothing to reset." });
 
     if (keyRow.last_hwid_reset) {
       const elapsed = Date.now() - new Date(keyRow.last_hwid_reset).getTime();
@@ -4248,77 +2765,46 @@ async function startDiscordBot() {
         const remaining = COOLDOWN_MS - elapsed;
         const hours = Math.floor(remaining / 3600000);
         const mins = Math.floor((remaining % 3600000) / 60000);
-        return interaction.editReply({
-          content:
-            "Cooldown active. Try again in " + hours + "h " + mins + "m.",
-        });
+        return interaction.editReply({ content: "Cooldown active. Try again in " + hours + "h " + mins + "m." });
       }
     }
 
-    await supabase
-      .from("keys")
-      .update({ hwid: null, last_hwid_reset: new Date().toISOString() })
-      .eq("id", keyRow.id);
+    await supabase.from("keys").update({ hwid: null, last_hwid_reset: new Date().toISOString() }).eq("id", keyRow.id);
     interaction.editReply({ content: "HWID reset. Next reset in 15 hours." });
   }
 
   // /claimrole - claim buyer role if key valid
   async function handleClaimRole(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    if (!interaction.guildId)
-      return interaction.editReply({
-        content: "This command must be run in a server.",
-      });
+    if (!interaction.guildId) return interaction.editReply({ content: "This command must be run in a server." });
     const scriptSlug = interaction.options.getString("script_id", true).trim();
     const discordId = interaction.user.id;
 
-    const { data: script } = await supabase
-      .from("scripts")
+    const { data: script } = await supabase.from("scripts")
       .select("project_id, name, projects!inner(owner_account_id)")
-      .eq("slug", scriptSlug)
-      .maybeSingle();
+      .eq("slug", scriptSlug).maybeSingle();
     if (!script) return interaction.editReply({ content: "Script not found." });
 
-    const { data: keyRow } = await supabase
-      .from("keys")
-      .select("id, revoked, expires_at")
-      .eq("discord_id", discordId)
-      .eq("project_id", script.project_id)
-      .maybeSingle();
-    if (!keyRow)
-      return interaction.editReply({
-        content: "You do not have a redeemed key for this project.",
-      });
-    if (keyRow.revoked)
-      return interaction.editReply({ content: "Your key is revoked." });
-    if (
-      keyRow.expires_at &&
-      new Date(keyRow.expires_at).getTime() < Date.now()
-    ) {
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, expires_at").eq("discord_id", discordId)
+      .eq("project_id", script.project_id).maybeSingle();
+    if (!keyRow) return interaction.editReply({ content: "You do not have a redeemed key for this project." });
+    if (keyRow.revoked) return interaction.editReply({ content: "Your key is revoked." });
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
       return interaction.editReply({ content: "Your key has expired." });
     }
 
-    const { data: br } = await supabase
-      .from("discord_buyer_roles")
-      .select("role_id")
-      .eq("project_id", script.project_id)
-      .eq("guild_id", interaction.guildId)
-      .maybeSingle();
-    if (!br)
-      return interaction.editReply({
-        content: "No buyer role configured for this project on this server.",
-      });
+    const { data: br } = await supabase.from("discord_buyer_roles")
+      .select("role_id").eq("project_id", script.project_id)
+      .eq("guild_id", interaction.guildId).maybeSingle();
+    if (!br) return interaction.editReply({ content: "No buyer role configured for this project on this server." });
 
     try {
       const member = await interaction.guild.members.fetch(discordId);
       await member.roles.add(br.role_id);
-      interaction.editReply({
-        content: "Buyer role granted for **" + script.name + "**.",
-      });
+      interaction.editReply({ content: "Buyer role granted for **" + script.name + "**." });
     } catch (e) {
-      interaction.editReply({
-        content: "Could not assign role: " + (e.message || "unknown"),
-      });
+      interaction.editReply({ content: "Could not assign role: " + (e.message || "unknown") });
     }
   }
 
@@ -4326,24 +2812,13 @@ async function startDiscordBot() {
   async function handleMyKey(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
-    const { data } = await supabase
-      .from("keys")
-      .select("key, revoked, expires_at, projects(name)")
-      .eq("discord_id", discordId)
-      .order("created_at", { ascending: false });
-    if (!data || data.length === 0)
-      return interaction.editReply({ content: "You have no redeemed keys." });
-    const lines = data
-      .slice(0, 10)
-      .map((k) => {
-        const status = k.revoked
-          ? " (revoked)"
-          : k.expires_at && new Date(k.expires_at).getTime() < Date.now()
-            ? " (expired)"
-            : "";
-        return "- " + (k.projects?.name || "?") + ": `" + k.key + "`" + status;
-      })
-      .join("\n");
+    const { data } = await supabase.from("keys")
+      .select("key, revoked, expires_at, projects(name)").eq("discord_id", discordId).order("created_at", { ascending: false });
+    if (!data || data.length === 0) return interaction.editReply({ content: "You have no redeemed keys." });
+    const lines = data.slice(0, 10).map((k) => {
+      const status = k.revoked ? " (revoked)" : (k.expires_at && new Date(k.expires_at).getTime() < Date.now() ? " (expired)" : "");
+      return "- " + (k.projects?.name || "?") + ": `" + k.key + "`" + status;
+    }).join("\n");
     interaction.editReply({ content: "**Your keys:**\n" + lines });
   }
 
@@ -4351,32 +2826,18 @@ async function startDiscordBot() {
   async function handleMyProject(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
-    const { data } = await supabase
-      .from("keys")
-      .select("projects(name, slug, status)")
-      .eq("discord_id", discordId)
-      .eq("revoked", false);
-    if (!data || data.length === 0)
-      return interaction.editReply({ content: "You have no active keys." });
+    const { data } = await supabase.from("keys")
+      .select("projects(name, slug, status)").eq("discord_id", discordId).eq("revoked", false);
+    if (!data || data.length === 0) return interaction.editReply({ content: "You have no active keys." });
     const seen = new Set();
     const lines = [];
     data.forEach((k) => {
       if (k.projects && !seen.has(k.projects.slug)) {
         seen.add(k.projects.slug);
-        lines.push(
-          "- **" +
-            k.projects.name +
-            "** `" +
-            k.projects.slug +
-            "` (" +
-            k.projects.status +
-            ")",
-        );
+        lines.push("- **" + k.projects.name + "** `" + k.projects.slug + "` (" + k.projects.status + ")");
       }
     });
-    interaction.editReply({
-      content: "**Your projects:**\n" + lines.join("\n"),
-    });
+    interaction.editReply({ content: "**Your projects:**\n" + lines.join("\n") });
   }
 
   // /subscription
@@ -4385,43 +2846,22 @@ async function startDiscordBot() {
     const discordId = interaction.user.id;
     const scriptSlug = interaction.options.getString("script_id");
 
-    let query = supabase
-      .from("keys")
-      .select("key, revoked, expires_at, hwid, projects(name, slug)")
-      .eq("discord_id", discordId);
+    let query = supabase.from("keys")
+      .select("key, revoked, expires_at, hwid, projects(name, slug)").eq("discord_id", discordId);
     if (scriptSlug) {
-      const { data: script } = await supabase
-        .from("scripts")
-        .select("project_id")
-        .eq("slug", scriptSlug)
-        .maybeSingle();
+      const { data: script } = await supabase.from("scripts").select("project_id").eq("slug", scriptSlug).maybeSingle();
       if (script) query = query.eq("project_id", script.project_id);
     }
     const { data } = await query;
-    if (!data || data.length === 0)
-      return interaction.editReply({ content: "No subscriptions found." });
+    if (!data || data.length === 0) return interaction.editReply({ content: "No subscriptions found." });
 
-    const embed = new EmbedBuilder()
-      .setColor(0x8b5cf6)
-      .setTitle("Your subscriptions");
+    const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Your subscriptions");
     data.slice(0, 10).forEach((k) => {
-      const status = k.revoked
-        ? "REVOKED"
-        : k.expires_at && new Date(k.expires_at).getTime() < Date.now()
-          ? "EXPIRED"
-          : "ACTIVE";
-      const expiry = k.expires_at
-        ? new Date(k.expires_at).toISOString().slice(0, 10)
-        : "Never";
+      const status = k.revoked ? "REVOKED" : (k.expires_at && new Date(k.expires_at).getTime() < Date.now() ? "EXPIRED" : "ACTIVE");
+      const expiry = k.expires_at ? new Date(k.expires_at).toISOString().slice(0, 10) : "Never";
       embed.addFields({
         name: k.projects?.name || "?",
-        value:
-          "Status: " +
-          status +
-          "\nExpires: " +
-          expiry +
-          "\nHWID: " +
-          (k.hwid ? "Bound" : "Not bound"),
+        value: "Status: " + status + "\nExpires: " + expiry + "\nHWID: " + (k.hwid ? "Bound" : "Not bound"),
         inline: false,
       });
     });
@@ -4432,31 +2872,16 @@ async function startDiscordBot() {
   async function handleProfile(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
-    const { data: link } = await supabase
-      .from("discord_users")
-      .select("account_id, linked_at, accounts(name, plan)")
-      .eq("discord_id", discordId)
-      .maybeSingle();
-    const { count: keyCount } = await supabase
-      .from("keys")
-      .select("id", { count: "exact", head: true })
-      .eq("discord_id", discordId);
+    const { data: link } = await supabase.from("discord_users")
+      .select("account_id, linked_at, accounts(name, plan)").eq("discord_id", discordId).maybeSingle();
+    const { count: keyCount } = await supabase.from("keys")
+      .select("id", { count: "exact", head: true }).eq("discord_id", discordId);
 
-    const embed = new EmbedBuilder()
-      .setColor(0x8b5cf6)
-      .setTitle("Your profile - " + interaction.user.username)
+    const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle("Your profile - " + interaction.user.username)
       .addFields(
         { name: "Discord", value: "<@" + discordId + ">", inline: true },
-        {
-          name: "Solaries account",
-          value: link ? link.accounts?.name || "linked" : "Not linked",
-          inline: true,
-        },
-        {
-          name: "Plan",
-          value: link ? link.accounts?.plan || "-" : "-",
-          inline: true,
-        },
+        { name: "Solaries account", value: link ? (link.accounts?.name || "linked") : "Not linked", inline: true },
+        { name: "Plan", value: link ? (link.accounts?.plan || "-") : "-", inline: true },
         { name: "Keys held", value: String(keyCount || 0), inline: true },
         { name: "Linked at", value: link ? link.linked_at : "-", inline: true },
       );
@@ -4468,8 +2893,7 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const isAdmin = interaction.memberPermissions?.has("ManageGuild") ?? false;
 
-    let text =
-      "**User commands** (available to everyone):\n" +
+    let text = "**User commands** (available to everyone):\n" +
       "`/redeem key:<value>` - Bind a key to your Discord\n" +
       "`/loader script_id:<slug>` - Get loader script with your key\n" +
       "`/script script_id:<slug>` - Get raw loader URL\n" +
@@ -4483,8 +2907,7 @@ async function startDiscordBot() {
       "`/help` - This message";
 
     if (isAdmin) {
-      text +=
-        "\n\n**Admin commands** (Manage Server permission required):\n" +
+      text += "\n\n**Admin commands** (Manage Server permission required):\n" +
         "`/login` `/logout` `/whoami` `/panel` `/managerrole` `/stats` `/settings`\n" +
         "`/key create|stock|delete|extend|revoke|info|list`\n" +
         "`/user info|blacklist|unblacklist|ban|unban`\n" +
@@ -4502,36 +2925,22 @@ async function startDiscordBot() {
     const start = Date.now();
     let dbOk = true;
     try {
-      await supabase
-        .from("accounts")
-        .select("id", { count: "exact", head: true })
-        .limit(1);
-    } catch (e) {
-      dbOk = false;
-    }
+      await supabase.from("accounts").select("id", { count: "exact", head: true }).limit(1);
+    } catch (e) { dbOk = false; }
     const latency = Date.now() - start;
 
-    const embed = new EmbedBuilder()
-      .setColor(dbOk ? 0x22c55e : 0xef4444)
-      .setTitle("Solaries Service Status")
+    const embed = new EmbedBuilder().setColor(dbOk ? 0x22c55e : 0xef4444).setTitle("Solaries Service Status")
       .addFields(
         { name: "Bot", value: "Online", inline: true },
         { name: "Database", value: dbOk ? "Online" : "Down", inline: true },
         { name: "Latency", value: latency + "ms", inline: true },
-        {
-          name: "Bot username",
-          value: botStatus.username || "-",
-          inline: true,
-        },
-        {
-          name: "Servers",
-          value: String(botStatus.guild_count || 0),
-          inline: true,
-        },
+        { name: "Bot username", value: botStatus.username || "-", inline: true },
+        { name: "Servers", value: String(botStatus.guild_count || 0), inline: true },
         { name: "Started", value: botStatus.started_at || "-", inline: true },
       );
     interaction.editReply({ embeds: [embed] });
   }
+
 
   // ============================================================
   // BUTTON: Redeem Key - opens modal for user to paste key
@@ -4558,72 +2967,45 @@ async function startDiscordBot() {
     const key = interaction.fields.getTextInputValue("key_value").trim();
     const discordId = interaction.user.id;
 
-    const { data: script } = await supabase
-      .from("scripts")
+    const { data: script } = await supabase.from("scripts")
       .select("id, name, project_id, projects!inner(owner_account_id)")
-      .eq("id", scriptId)
-      .maybeSingle();
+      .eq("id", scriptId).maybeSingle();
     if (!script) return interaction.editReply({ content: "Script not found." });
 
-    const { data: keyRow } = await supabase
-      .from("keys")
-      .select(
-        "id, revoked, discord_id, project_id, owner_account_id, expires_at",
-      )
-      .eq("key", key)
-      .maybeSingle();
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, discord_id, project_id, owner_account_id, expires_at")
+      .eq("key", key).maybeSingle();
 
-    if (!keyRow)
-      return interaction.editReply({
-        content: "Invalid key. Check spelling and try again.",
-      });
-    if (keyRow.revoked)
-      return interaction.editReply({ content: "This key has been revoked." });
-    if (
-      keyRow.expires_at &&
-      new Date(keyRow.expires_at).getTime() < Date.now()
-    ) {
+    if (!keyRow) return interaction.editReply({ content: "Invalid key. Check spelling and try again." });
+    if (keyRow.revoked) return interaction.editReply({ content: "This key has been revoked." });
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
       return interaction.editReply({ content: "This key has expired." });
     }
 
     // Verify key belongs to this script's project
     if (keyRow.project_id && keyRow.project_id !== script.project_id) {
-      return interaction.editReply({
-        content: "This key is not valid for this script.",
-      });
+      return interaction.editReply({ content: "This key is not valid for this script." });
     }
 
     // Blacklist check
     const bl = await isBlacklisted(keyRow.owner_account_id, discordId);
-    if (bl && bl.banned)
-      return interaction.editReply({
-        content: "You are banned from this service.",
-      });
+    if (bl && bl.banned) return interaction.editReply({ content: "You are banned from this service." });
 
     // Already bound?
     if (keyRow.discord_id && keyRow.discord_id !== discordId) {
-      return interaction.editReply({
-        content: "This key is already bound to another Discord user.",
-      });
+      return interaction.editReply({ content: "This key is already bound to another Discord user." });
     }
 
     // Bind if not already
     if (!keyRow.discord_id) {
-      await supabase
-        .from("keys")
-        .update({ discord_id: discordId })
-        .eq("id", keyRow.id);
+      await supabase.from("keys").update({ discord_id: discordId }).eq("id", keyRow.id);
     }
 
     // Try to auto-grant buyer role
     let roleMsg = "";
     if (interaction.guildId) {
-      const { data: br } = await supabase
-        .from("discord_buyer_roles")
-        .select("role_id")
-        .eq("project_id", script.project_id)
-        .eq("guild_id", interaction.guildId)
-        .maybeSingle();
+      const { data: br } = await supabase.from("discord_buyer_roles")
+        .select("role_id").eq("project_id", script.project_id).eq("guild_id", interaction.guildId).maybeSingle();
       if (br) {
         try {
           const member = await interaction.guild.members.fetch(discordId);
@@ -4634,12 +3016,7 @@ async function startDiscordBot() {
     }
 
     interaction.editReply({
-      content:
-        "Key redeemed for **" +
-        script.name +
-        "**." +
-        roleMsg +
-        "\n\nClick **Get Script** on the panel to receive your loader.",
+      content: "Key redeemed for **" + script.name + "**." + roleMsg + "\n\nClick **Get Script** on the panel to receive your loader.",
     });
   }
 
@@ -4648,73 +3025,44 @@ async function startDiscordBot() {
   // ============================================================
   async function handleGetRoleButton(interaction, scriptId) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    if (!interaction.guildId)
-      return interaction.editReply({
-        content: "This must be used in a server.",
-      });
+    if (!interaction.guildId) return interaction.editReply({ content: "This must be used in a server." });
     const discordId = interaction.user.id;
 
-    const { data: script } = await supabase
-      .from("scripts")
+    const { data: script } = await supabase.from("scripts")
       .select("project_id, name, projects!inner(owner_account_id)")
-      .eq("id", scriptId)
-      .maybeSingle();
+      .eq("id", scriptId).maybeSingle();
     if (!script) return interaction.editReply({ content: "Script not found." });
 
-    const { data: keyRow } = await supabase
-      .from("keys")
-      .select("id, revoked, expires_at")
-      .eq("discord_id", discordId)
-      .eq("project_id", script.project_id)
-      .maybeSingle();
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, revoked, expires_at").eq("discord_id", discordId)
+      .eq("project_id", script.project_id).maybeSingle();
     if (!keyRow) {
-      const embed = new EmbedBuilder()
-        .setColor(0xef4444)
-        .setTitle("No Active License")
-        .setDescription(
-          "Need an active license to get the role. Redeem a key first.",
-        );
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("No Active License")
+        .setDescription("Need an active license to get the role. Redeem a key first.");
       return interaction.editReply({ embeds: [embed] });
     }
     if (keyRow.revoked) {
-      const embed = new EmbedBuilder()
-        .setColor(0xef4444)
-        .setTitle("Key Revoked")
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Revoked")
         .setDescription("Your key has been revoked.");
       return interaction.editReply({ embeds: [embed] });
     }
-    if (
-      keyRow.expires_at &&
-      new Date(keyRow.expires_at).getTime() < Date.now()
-    ) {
-      const embed = new EmbedBuilder()
-        .setColor(0xef4444)
-        .setTitle("Key Expired")
+    if (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()) {
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("Key Expired")
         .setDescription("Your key has expired.");
       return interaction.editReply({ embeds: [embed] });
     }
 
-    const { data: br } = await supabase
-      .from("discord_buyer_roles")
-      .select("role_id")
-      .eq("project_id", script.project_id)
-      .eq("guild_id", interaction.guildId)
-      .maybeSingle();
-    if (!br)
-      return interaction.editReply({
-        content: "No buyer role configured for this project on this server.",
-      });
+    const { data: br } = await supabase.from("discord_buyer_roles")
+      .select("role_id").eq("project_id", script.project_id)
+      .eq("guild_id", interaction.guildId).maybeSingle();
+    if (!br) return interaction.editReply({ content: "No buyer role configured for this project on this server." });
 
     try {
       const member = await interaction.guild.members.fetch(discordId);
       await member.roles.add(br.role_id);
-      interaction.editReply({
-        content: "Buyer role granted for **" + script.name + "**.",
-      });
+      interaction.editReply({ content: "Buyer role granted for **" + script.name + "**." });
     } catch (e) {
-      interaction.editReply({
-        content: "Could not assign role: " + (e.message || "unknown"),
-      });
+      interaction.editReply({ content: "Could not assign role: " + (e.message || "unknown") });
     }
   }
 
@@ -4725,39 +3073,23 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const discordId = interaction.user.id;
 
-    const { data: script } = await supabase
-      .from("scripts")
+    const { data: script } = await supabase.from("scripts")
       .select("id, name, project_id, projects!inner(owner_account_id)")
-      .eq("id", scriptId)
-      .maybeSingle();
+      .eq("id", scriptId).maybeSingle();
     if (!script) return interaction.editReply({ content: "Script not found." });
 
-    const { data: keyRow } = await supabase
-      .from("keys")
-      .select(
-        "key, revoked, expires_at, hwid, hwid_locked, last_hwid_reset, last_used_at, created_at",
-      )
-      .eq("discord_id", discordId)
-      .eq("project_id", script.project_id)
-      .maybeSingle();
+    const { data: keyRow } = await supabase.from("keys")
+      .select("key, revoked, expires_at, hwid, hwid_locked, last_hwid_reset, last_used_at, created_at")
+      .eq("discord_id", discordId).eq("project_id", script.project_id).maybeSingle();
 
     if (!keyRow) {
-      const embed = new EmbedBuilder()
-        .setColor(0xef4444)
-        .setTitle("No Session")
-        .setDescription(
-          "You do not have a key for **" +
-            script.name +
-            "**. Click Redeem Key to bind one.",
-        );
+      const embed = new EmbedBuilder().setColor(0xef4444).setTitle("No Session")
+        .setDescription("You do not have a key for **" + script.name + "**. Click Redeem Key to bind one.");
       return interaction.editReply({ embeds: [embed] });
     }
 
-    const status = keyRow.revoked
-      ? "REVOKED"
-      : keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now()
-        ? "EXPIRED"
-        : "ACTIVE";
+    const status = keyRow.revoked ? "REVOKED" :
+      (keyRow.expires_at && new Date(keyRow.expires_at).getTime() < Date.now() ? "EXPIRED" : "ACTIVE");
     const statusColor = status === "ACTIVE" ? 0x22c55e : 0xef4444;
 
     let cooldownInfo = "Available";
@@ -4773,38 +3105,19 @@ async function startDiscordBot() {
     }
 
     const maskedKey = keyRow.key.slice(0, 6) + "..." + keyRow.key.slice(-4);
-    const embed = new EmbedBuilder()
-      .setColor(statusColor)
-      .setTitle("Session Status - " + script.name)
+    const embed = new EmbedBuilder().setColor(statusColor).setTitle("Session Status - " + script.name)
       .addFields(
         { name: "Status", value: status, inline: true },
         { name: "Key", value: "`" + maskedKey + "`", inline: true },
-        {
-          name: "HWID Locked",
-          value: keyRow.hwid_locked ? "Yes" : "No",
-          inline: true,
-        },
-        {
-          name: "HWID",
-          value: keyRow.hwid ? "Bound" : "Not bound",
-          inline: true,
-        },
+        { name: "HWID Locked", value: keyRow.hwid_locked ? "Yes" : "No", inline: true },
+        { name: "HWID", value: keyRow.hwid ? "Bound" : "Not bound", inline: true },
         { name: "Reset Cooldown", value: cooldownInfo, inline: true },
-        {
-          name: "Expires",
-          value: keyRow.expires_at
-            ? new Date(keyRow.expires_at).toISOString().slice(0, 10)
-            : "Never",
-          inline: true,
-        },
-        {
-          name: "Last used",
-          value: keyRow.last_used_at || "Never",
-          inline: false,
-        },
+        { name: "Expires", value: keyRow.expires_at ? new Date(keyRow.expires_at).toISOString().slice(0, 10) : "Never", inline: true },
+        { name: "Last used", value: keyRow.last_used_at || "Never", inline: false },
       );
     interaction.editReply({ embeds: [embed] });
   }
+
 
   // ============================================================
   // EXPIRY WARNING SCHEDULER
@@ -4817,11 +3130,8 @@ async function startDiscordBot() {
       const warnStart = new Date(now + 3 * 60 * 60 * 1000).toISOString();
       const warnEnd = new Date(now + 5 * 60 * 60 * 1000).toISOString();
 
-      const { data: expiringKeys } = await supabase
-        .from("keys")
-        .select(
-          "id, key, discord_id, expires_at, expiry_warned_at, projects(name, slug)",
-        )
+      const { data: expiringKeys } = await supabase.from("keys")
+        .select("id, key, discord_id, expires_at, expiry_warned_at, projects(name, slug)")
         .not("discord_id", "is", null)
         .not("expires_at", "is", null)
         .eq("revoked", false)
@@ -4832,47 +3142,20 @@ async function startDiscordBot() {
       if (!expiringKeys || expiringKeys.length === 0) return;
 
       for (const k of expiringKeys) {
-        const hoursLeft = Math.round(
-          (new Date(k.expires_at).getTime() - now) / (60 * 60 * 1000),
-        );
-        const embed = new EmbedBuilder()
-          .setColor(0xf59e0b)
+        const hoursLeft = Math.round((new Date(k.expires_at).getTime() - now) / (60 * 60 * 1000));
+        const embed = new EmbedBuilder().setColor(0xf59e0b)
           .setTitle("Key Expiring Soon")
-          .setDescription(
-            "Your key for **" +
-              (k.projects?.name || "a script") +
-              "** will expire in about " +
-              hoursLeft +
-              " hours.",
-          )
+          .setDescription("Your key for **" + (k.projects?.name || "a script") + "** will expire in about " + hoursLeft + " hours.")
           .addFields(
-            {
-              name: "Key",
-              value: "`" + k.key.slice(0, 6) + "..." + k.key.slice(-4) + "`",
-              inline: true,
-            },
-            {
-              name: "Expires",
-              value: new Date(k.expires_at).toISOString(),
-              inline: false,
-            },
+            { name: "Key", value: "`" + k.key.slice(0, 6) + "..." + k.key.slice(-4) + "`", inline: true },
+            { name: "Expires", value: new Date(k.expires_at).toISOString(), inline: false },
           )
-          .setFooter({
-            text: "Renew or contact the script owner to extend your access.",
-          });
+          .setFooter({ text: "Renew or contact the script owner to extend your access." });
 
         const sent = await trySendDM(k.discord_id, { embeds: [embed] });
         if (sent) {
-          await supabase
-            .from("keys")
-            .update({ expiry_warned_at: new Date().toISOString() })
-            .eq("id", k.id);
-          console.log(
-            "Sent expiry warning DM for key " +
-              k.key.slice(0, 6) +
-              "... to " +
-              k.discord_id,
-          );
+          await supabase.from("keys").update({ expiry_warned_at: new Date().toISOString() }).eq("id", k.id);
+          console.log("Sent expiry warning DM for key " + k.key.slice(0, 6) + "... to " + k.discord_id);
         }
       }
     } catch (e) {
