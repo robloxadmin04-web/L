@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Access</title>
+    <link rel="stylesheet" href="style.css" />
     <script
       src="https://challenges.cloudflare.com/turnstile/v0/api.js"
       async
       defer
     ></script>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Access</title>
-    <link rel="stylesheet" href="style.css" />
     <style>
       /* Request access link */
       .request-row {
@@ -124,6 +124,26 @@
       .modal-close:hover {
         color: var(--white);
       }
+
+      /* Turnstile dark theme overrides */
+      .turnstile-wrap {
+        margin: 12px 0 4px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: var(--card);
+      }
+      .turnstile-wrap iframe {
+        display: block;
+        width: 100% !important;
+        border: none !important;
+        border-radius: 8px;
+        min-height: 65px;
+      }
+      /* Remove Cloudflare's default outer border/bg leaking through */
+      .cf-turnstile > div {
+        width: 100% !important;
+      }
     </style>
   </head>
   <body>
@@ -148,10 +168,6 @@
           </p>
           <form id="accessForm" novalidate>
             <div class="field">
-              <div
-                class="cf-turnstile"
-                data-sitekey="0x4AAAAAAEMCkOeEMAzxJbUd"
-              ></div>
               <label for="apiKey">API Key</label>
               <div class="key-wrap">
                 <input
@@ -163,7 +179,6 @@
                   spellcheck="false"
                   required
                 />
-                <!-- I-add bago ang submit button -->
                 <button
                   class="icon-btn"
                   type="button"
@@ -181,6 +196,14 @@
             </div>
             <div class="helper-row">
               <p class="helper-text">Use only the key assigned by the owner.</p>
+            </div>
+            <div class="turnstile-wrap">
+              <div
+                class="cf-turnstile"
+                data-sitekey="0x4AAAAAAEMCkOeEMAzxJbUd"
+                data-theme="dark"
+                data-size="flexible"
+              ></div>
             </div>
             <button class="submit-btn" type="submit">Continue</button>
             <div class="request-row">
