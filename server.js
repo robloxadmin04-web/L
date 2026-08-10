@@ -3303,15 +3303,18 @@ async function startDiscordBot() {
           (scripts || []).map((s) => s.id)
         );
 
-      const { count: devices } = await supabase
+      const { data: deviceRows } = await supabase
         .from("access_log")
-        .select("hwid", { count: "exact", head: true })
+        .select("hwid")
         .eq("event", "load")
         .gte("created_at", since)
         .in(
           "script_id",
           (scripts || []).map((s) => s.id)
         );
+      const devices = new Set(
+        (deviceRows || []).map((r) => r.hwid).filter(Boolean)
+      ).size;
 
       const { data: lastLog } = await supabase
         .from("access_log")
