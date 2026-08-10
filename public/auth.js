@@ -1,5 +1,5 @@
-// auth.js — Solaries session guard + fetch helper (Phase 6 - theme toggle)
-// Include this at the top of every authenticated page.
+// auth.js — Solaries session guard + fetch helper (Security Hardened)
+// Changes: Added XSS protection, safe JSON parse, token validation, CSRF-safe headers
 //
 //   <script src="auth.js"></script>
 //
@@ -14,9 +14,27 @@
   const THEME_KEY = "sl_theme";
 
   // ----------------------------------------------------------
+  // Escape HTML — prevents XSS when inserting any user-supplied
+  // text into the DOM via innerHTML. Use textContent when possible.
+  // ----------------------------------------------------------
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // ----------------------------------------------------------
+  // Validate session token format (64 hex chars from crypto.randomBytes(32))
+  // ----------------------------------------------------------
+  function isValidToken(t) {
+    return typeof t === "string" && /^[a-f0-9]{64}$/.test(t);
+  }
+
+  // ----------------------------------------------------------
   // Theme: apply saved choice as early as possible (no flash).
-  // Runs immediately, before DOMContentLoaded, so the correct
-  // theme is set the moment the page starts rendering.
   // ----------------------------------------------------------
   function applyTheme(theme) {
     if (theme === "light") {
@@ -31,7 +49,8 @@
   const token = sessionStorage.getItem(TOKEN_KEY);
   const accountRaw = sessionStorage.getItem(ACCOUNT_KEY);
 
-  if (!token || !accountRaw) {
+  if (!token || !accountRaw || !isValidToken(token)) {
+    sessionStorage.clear();
     window.location.replace("index.html");
     return;
   }
@@ -39,6 +58,10 @@
   let account;
   try {
     account = JSON.parse(accountRaw);
+    // Basic sanity check on account object
+    if (!account || typeof account.id === "undefined") {
+      throw new Error("Bad account data");
+    }
   } catch (e) {
     sessionStorage.clear();
     window.location.replace("index.html");
@@ -46,9 +69,19 @@
   }
 
   async function api(path, options) {
+    // Only allow relative paths to prevent open redirect / SSRF via this helper
+    if (typeof path !== "string" || path.startsWith("http://") || path.startsWith("https://")) {
+      throw new Error("api() only accepts relative paths");
+    }
+
     const config = options || {};
     config.headers = Object.assign(
-      { "Content-Type": "application/json", "x-session-token": token },
+      {
+        "Content-Type": "application/json",
+        "x-session-token": token,
+        // X-Requested-With helps the server distinguish AJAX from form posts
+        "X-Requested-With": "XMLHttpRequest",
+      },
       config.headers || {}
     );
 
@@ -69,7 +102,8 @@
     try {
       return JSON.parse(text);
     } catch (e) {
-      throw new Error("Server returned: " + text.slice(0, 120));
+      // Truncate server response to avoid reflecting large/malicious payloads
+      throw new Error("Unexpected server response.");
     }
   }
 
@@ -87,14 +121,12 @@
       toastEl.className = "toast";
       document.body.appendChild(toastEl);
     }
-    toastEl.textContent = message;
+    // Use textContent (not innerHTML) to prevent XSS in toast messages
+    toastEl.textContent = String(message || "");
     toastEl.className = "toast is-visible " + (kind === "error" ? "is-error" : "is-ok");
     setTimeout(function () { toastEl.className = "toast"; }, 2400);
   }
 
-  // Update the theme button icon to match the current theme.
-  // Shows a moon when in light mode (tap to go dark),
-  // shows a sun when in dark mode (tap to go light).
   function updateThemeIcon(btn, theme) {
     if (!btn) return;
     const sun =
@@ -107,7 +139,7 @@
 
   // Wire up common UI once DOM is ready
   document.addEventListener("DOMContentLoaded", function () {
-    // Fill user info if the elements exist
+    // Fill user info — always use textContent, never innerHTML, for user-supplied values
     const nameEl = document.querySelector("[data-user-name]");
     const planEl = document.querySelector("[data-user-plan]");
     const avatarEl = document.querySelector("[data-user-avatar]");
@@ -127,7 +159,7 @@
       });
     }
 
-    // Theme toggle — light / dark, saved in localStorage.
+    // Theme toggle
     const themeBtn = document.getElementById("themeToggle");
     if (themeBtn) {
       let current = localStorage.getItem(THEME_KEY) || "dark";
@@ -149,5 +181,5 @@
     });
   });
 
-  window.SL = { account, api, signOut, toast };
+  window.SL = { account, api, signOut, toast, escapeHtml };
 })();
