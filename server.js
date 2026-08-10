@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://solaries.up.railway.app";
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY");
@@ -32,7 +32,7 @@ app.set("trust proxy", true);
 // ============================================================
 // CORS — only allow requests from your own origin
 // ============================================================
-const ALLOWED_ORIGIN = process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
+const ALLOWED_ORIGIN = process.env.PUBLIC_BASE_URL || "https://solaries.up.railway.app";
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin === ALLOWED_ORIGIN) {
