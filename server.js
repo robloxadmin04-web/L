@@ -28,15 +28,48 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 
 app.use(express.json({ limit: "2mb" }));
 app.set("trust proxy", true);
+
+// ============================================================
+// CORS — only allow requests from your own origin
+// ============================================================
+const ALLOWED_ORIGIN = process.env.PUBLIC_BASE_URL || "https://solaries.onrender.com";
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin === ALLOWED_ORIGIN) {
+    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,x-session-token");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================================
-// Security headers (FIX F)
+// Security headers (upgraded)
 // ============================================================
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' https://challenges.cloudflare.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https:",
+      "frame-src https://challenges.cloudflare.com",
+      "connect-src 'self'",
+      "font-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+    ].join("; ")
+  );
   next();
 });
 
@@ -412,14 +445,61 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts) {
 // ============================================================
 // AUTH
 // ============================================================
+// ============================================================
+// Input sanitization helper
+// ============================================================
+function sanitizeString(val, maxLen) {
+  if (typeof val !== "string") return "";
+  return val.trim().slice(0, maxLen || 512);
+}
+function isValidUUID(val) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
+// ============================================================
+// Cloudflare Turnstile bot verification helper
+// Set TURNSTILE_SECRET in your env vars (get from Cloudflare Dashboard)
+// If not set, verification is skipped (safe for local dev)
+// ============================================================
+async function verifyTurnstile(token, ip) {
+  const secret = process.env.TURNSTILE_SECRET;
+  if (!secret) return true; // skip if not configured
+  if (!token) return false;
+  try {
+    const resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, response: token, remoteip: ip }),
+    });
+    const data = await resp.json();
+    return data.success === true;
+  } catch (e) {
+    console.error("Turnstile verify error:", e);
+    return false;
+  }
+}
+
 app.post("/api/signin", async (req, res) => {
-  const apiKey = (req.body?.key || "").trim();
+  const apiKey = sanitizeString(req.body?.key, 128);
   if (!apiKey) return res.status(400).json({ ok: false, error: "Missing key" });
 
-  // FIX A: throttle sign-in attempts per IP to stop API-key bruteforce
-  const ipKey = "signin:" + getClientIp(req);
+  // Validate API key format (adjust regex to match your key format, e.g. SL-XXXX-XXXX-XXXX)
+  if (!/^[A-Z0-9]{2,6}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(apiKey)) {
+    return res.status(400).json({ ok: false, error: "Invalid key format" });
+  }
+
+  // Rate limit by IP
+  const ip = getClientIp(req);
+  const ipKey = "signin:" + ip;
   if (!rateLimit(ipKey, 10, 60 * 1000)) {
     return res.status(429).json({ ok: false, error: "Too many attempts. Wait a minute." });
+  }
+
+  // Cloudflare Turnstile bot check
+  const turnstileToken = sanitizeString(req.body?.turnstile_token, 2048);
+  const botOk = await verifyTurnstile(turnstileToken, ip);
+  if (!botOk) {
+    return res.status(403).json({ ok: false, error: "Bot check failed. Please try again." });
   }
 
   const { data: account, error } = await supabase
@@ -949,6 +1029,7 @@ app.post("/api/projects", requireAuth, async (req, res) => {
 });
 
 app.patch("/api/projects/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const patch = {};
   if (typeof req.body?.name === "string") patch.name = req.body.name.trim();
   if (typeof req.body?.note === "string") patch.note = req.body.note;
@@ -961,6 +1042,7 @@ app.patch("/api/projects/:id", requireAuth, async (req, res) => {
 });
 
 app.delete("/api/projects/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const { error } = await supabase.from("projects").delete()
     .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
   if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
@@ -1192,6 +1274,7 @@ app.post("/api/keys/:id/reset-hwid", requireAuth, async (req, res) => {
 });
 
 app.delete("/api/keys/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const { error } = await supabase.from("keys").delete()
     .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
   if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
@@ -1288,6 +1371,7 @@ app.post("/api/accounts", requireAuth, requireOwner, async (req, res) => {
 });
 
 app.delete("/api/accounts/:id", requireAuth, requireOwner, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const { error } = await supabase.from("accounts").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
   res.json({ ok: true });
@@ -1636,6 +1720,19 @@ async function startDiscordBot() {
       .setName("status")
       .setDescription("Check Solaries service status")
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName("setstatus")
+      .setDescription("Set the channel for hourly project status updates (Owner only)")
+      .addChannelOption(opt =>
+        opt.setName("channel")
+          .setDescription("The channel where status updates will be posted")
+          .setRequired(true)
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("clearstatus")
+      .setDescription("Stop hourly status updates (Owner only)")
+      .toJSON(),
   ];
 
   client.once(Events.ClientReady, async (c) => {
@@ -1707,6 +1804,8 @@ async function startDiscordBot() {
         else if (cmd === "profile") await handleProfile(interaction);
         else if (cmd === "help") await handleHelp(interaction);
         else if (cmd === "status") await handleStatus(interaction);
+        else if (cmd === "setstatus") await handleSetStatus(interaction);
+        else if (cmd === "clearstatus") await handleClearStatus(interaction);
       } else if (interaction.isButton()) {
         // Custom IDs: "sol_<action>_<scriptId>"
         const parts = interaction.customId.split("_");
@@ -3165,6 +3264,186 @@ async function startDiscordBot() {
 
   setInterval(checkExpiringKeys, 30 * 60 * 1000);
   setTimeout(checkExpiringKeys, 60 * 1000);
+
+  // ============================================================
+  // HOURLY STATUS BROADCASTER
+  // Stores: { channelId, messageId } per project in Supabase settings
+  // Env var: STATUS_CHANNEL_ID (optional fallback), no env needed if using /setstatus
+  // ============================================================
+
+  // Build a rich embed for a single project+script row
+  async function buildProjectStatusEmbed(EmbedBuilder) {
+    const now = new Date();
+
+    // Fetch all projects + their scripts with 24h stats
+    const { data: projects } = await supabase
+      .from("projects")
+      .select("id, name, status")
+      .order("name");
+
+    if (!projects || projects.length === 0) return null;
+
+    const embeds = [];
+
+    for (const project of projects) {
+      const { data: scripts } = await supabase
+        .from("scripts")
+        .select("id, name, enabled")
+        .eq("project_id", project.id);
+
+      const since = new Date(Date.now() - 86400000).toISOString();
+
+      const { count: loads } = await supabase
+        .from("access_log")
+        .select("id", { count: "exact", head: true })
+        .eq("event", "load")
+        .gte("created_at", since)
+        .in(
+          "script_id",
+          (scripts || []).map((s) => s.id)
+        );
+
+      const { count: devices } = await supabase
+        .from("access_log")
+        .select("hwid", { count: "exact", head: true })
+        .eq("event", "load")
+        .gte("created_at", since)
+        .in(
+          "script_id",
+          (scripts || []).map((s) => s.id)
+        );
+
+      const { data: lastLog } = await supabase
+        .from("access_log")
+        .select("created_at")
+        .eq("event", "load")
+        .in(
+          "script_id",
+          (scripts || []).map((s) => s.id)
+        )
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const statusColor =
+        project.status === "active" ? 0x22c55e : 0xef4444;
+      const statusEmoji =
+        project.status === "active" ? "🟢" : "🔴";
+
+      const lastUsedText = lastLog
+        ? `<t:${Math.floor(new Date(lastLog.created_at).getTime() / 1000)}:R>`
+        : "Never";
+
+      const scriptLines = (scripts || [])
+        .map((s) => `${s.enabled ? "✅" : "❌"} ${s.name}`)
+        .join("\n") || "No scripts";
+
+      const embed = new EmbedBuilder()
+        .setColor(statusColor)
+        .setTitle(`${statusEmoji} ${project.name}`)
+        .addFields(
+          { name: "Status", value: project.status === "active" ? "Active" : "Paused", inline: true },
+          { name: "Loads (24h)", value: String(loads || 0), inline: true },
+          { name: "Devices (24h)", value: String(devices || 0), inline: true },
+          { name: "Last Used", value: lastUsedText, inline: true },
+          { name: "Scripts", value: scriptLines, inline: false }
+        )
+        .setFooter({ text: "Solaries · Updated" })
+        .setTimestamp(now);
+
+      embeds.push(embed);
+    }
+
+    return embeds;
+  }
+
+  // Send or edit the status message in the configured channel
+  async function broadcastStatus() {
+    try {
+      const { data: setting } = await supabase
+        .from("settings")
+        .select("value")
+        .eq("key", "status_broadcast")
+        .maybeSingle();
+
+      if (!setting) return; // Not configured yet
+
+      let config;
+      try { config = JSON.parse(setting.value); } catch (e) { return; }
+
+      const { channelId, messageId } = config;
+      if (!channelId) return;
+
+      let channel;
+      try { channel = await client.channels.fetch(channelId); } catch (e) {
+        console.error("Status channel fetch failed:", e.message);
+        return;
+      }
+
+      const embeds = await buildProjectStatusEmbed(EmbedBuilder);
+      if (!embeds || embeds.length === 0) return;
+
+      // Try to edit existing message first
+      if (messageId) {
+        try {
+          const msg = await channel.messages.fetch(messageId);
+          await msg.edit({ embeds });
+          return;
+        } catch (e) {
+          // Message deleted or not found — send a new one
+        }
+      }
+
+      // Send new message and save its ID
+      const sent = await channel.send({ embeds });
+      await supabase.from("settings").upsert(
+        { key: "status_broadcast", value: JSON.stringify({ channelId, messageId: sent.id }), updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
+    } catch (e) {
+      console.error("broadcastStatus error:", e.message);
+    }
+  }
+
+  // /setstatus command handler
+  async function handleSetStatus(interaction) {
+    if (!interaction.memberPermissions?.has("Administrator") && interaction.user.id !== interaction.guild?.ownerId) {
+      return interaction.reply({ content: "❌ Only server admins can set the status channel.", ephemeral: true });
+    }
+
+    const channel = interaction.options.getChannel("channel");
+    if (!channel || !channel.isTextBased()) {
+      return interaction.reply({ content: "❌ Please select a valid text channel.", ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    // Save config (clear old messageId so a fresh message is sent)
+    await supabase.from("settings").upsert(
+      { key: "status_broadcast", value: JSON.stringify({ channelId: channel.id, messageId: null }), updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+
+    // Send the first status message immediately
+    await broadcastStatus();
+
+    await interaction.editReply({ content: `✅ Status updates will be posted in <#${channel.id}> every hour.` });
+  }
+
+  // /clearstatus command handler
+  async function handleClearStatus(interaction) {
+    if (!interaction.memberPermissions?.has("Administrator") && interaction.user.id !== interaction.guild?.ownerId) {
+      return interaction.reply({ content: "❌ Only server admins can do this.", ephemeral: true });
+    }
+
+    await supabase.from("settings").delete().eq("key", "status_broadcast");
+    await interaction.reply({ content: "✅ Status broadcasts stopped.", ephemeral: true });
+  }
+
+  // Schedule: run every hour
+  setInterval(broadcastStatus, 60 * 60 * 1000);
+  // Also run 30 seconds after bot starts (so first update appears quickly)
+  setTimeout(broadcastStatus, 30 * 1000);
 
   await client.login(DISCORD_BOT_TOKEN);
 }
