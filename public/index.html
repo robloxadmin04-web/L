@@ -1,254 +1,285 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Access</title>
-<link rel="stylesheet" href="style.css" />
-<style>
-  /* Request access link */
-  .request-row {
-    margin: 4px 0 0;
-    text-align: center;
-  }
-  .request-link {
-    display: inline-block;
-    background: none;
-    border: 0;
-    padding: 4px 2px;
-    color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.5;
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .request-link b {
-    color: var(--white);
-    font-weight: 600;
-  }
-  .request-link:hover b {
-    text-decoration: underline;
-  }
-
-  /* Modal */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    z-index: 50;
-  }
-  .modal-overlay.is-open {
-    display: flex;
-  }
-  .modal {
-    width: 100%;
-    max-width: 400px;
-    padding: 30px;
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow);
-    text-align: center;
-  }
-  .modal-label {
-    margin: 0 0 12px;
-    color: var(--text-soft);
-    font-size: 12px;
-    line-height: 1;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-  .modal-title {
-    margin: 0;
-    color: var(--white);
-    font-size: 20px;
-    line-height: 1.2;
-    font-weight: 700;
-  }
-  .modal-copy {
-    margin: 10px 0 24px;
-    color: var(--text-muted);
-    font-size: 15px;
-    line-height: 1.55;
-  }
-  .discord-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    width: 100%;
-    height: 50px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: #5865f2;
-    color: #ffffff;
-    font-size: 14px;
-    font-weight: 700;
-    text-decoration: none;
-    cursor: pointer;
-    transition: background 0.2s ease, opacity 0.2s ease;
-  }
-  .discord-btn:hover {
-    background: #4752c4;
-  }
-  .discord-btn.is-disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-  .discord-btn svg {
-    width: 20px;
-    height: 20px;
-    fill: currentColor;
-  }
-  .modal-close {
-    display: inline-block;
-    margin-top: 16px;
-    background: none;
-    border: 0;
-    color: var(--text-soft);
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .modal-close:hover {
-    color: var(--white);
-  }
-</style>
-</head>
-<body>
-<main class="layout">
-<section class="intro" aria-label="Introduction">
-<div class="intro-inner">
-<p class="eyebrow">Secure Access</p>
-<h1 class="intro-title">
-Private platform access for approved users.
-</h1>
-<p class="intro-copy">
-Enter your assigned API key to continue to the dashboard.
-</p>
-</div>
-</section>
-<section class="panel" aria-label="API key access panel">
-<div class="card">
-<p class="card-label">API Key Access</p>
-<h2 class="card-title">Enter your access key</h2>
-<p class="card-subtitle">
-Access is limited to users with an active key.
-</p>
-<form id="accessForm" novalidate>
-<div class="field">
-<label for="apiKey">API Key</label>
-<div class="key-wrap">
-<input
-id="apiKey"
-name="apiKey"
-type="password"
-placeholder="Enter API key"
-autocomplete="off"
-spellcheck="false"
-required
-/>
-<button
-class="icon-btn"
-type="button"
-id="toggleKey"
-aria-label="Show API key"
->
-<svg viewBox="0 0 24 24" aria-hidden="true">
-<path
-d="M1.5 12s3.8-6.5 10.5-6.5S22.5 12 22.5 12 18.7 18.5 12 18.5 1.5 12 1.5 12Z"
-></path>
-<circle cx="12" cy="12" r="3"></circle>
-</svg>
-</button>
-</div>
-</div>
-<div class="helper-row">
-<p class="helper-text">Use only the key assigned by the owner.</p>
-</div>
-<button class="submit-btn" type="submit">Continue</button>
-<div class="request-row">
-<button type="button" class="request-link" id="requestAccessBtn">
-Don't have a key? <b>Request access</b>
-</button>
-</div>
-<p id="statusMessage" class="status-message" aria-live="polite"></p>
-</form>
-</div>
-</section>
-</main>
-
-<!-- Request access modal -->
-<div class="modal-overlay" id="requestModal" role="dialog" aria-modal="true" aria-labelledby="requestModalTitle">
-<div class="modal">
-<p class="modal-label">Request Access</p>
-<h2 class="modal-title" id="requestModalTitle">Get your API key</h2>
-<p class="modal-copy">
-API keys are issued manually by the owner. Join the Discord server and send a request to receive your key.
-</p>
-<a class="discord-btn" id="discordJoinBtn" href="#" target="_blank" rel="noopener noreferrer">
-<svg viewBox="0 0 24 24" aria-hidden="true">
-<path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.211.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028ZM8.02 15.331c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.096 2.157 2.42 0 1.332-.955 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.096 2.157 2.42 0 1.332-.946 2.418-2.157 2.418Z"></path>
-</svg>
-<span id="discordBtnLabel">Join Discord to request</span>
-</a>
-<div>
-<button type="button" class="modal-close" id="closeRequestModal">Close</button>
-</div>
-</div>
-</div>
-
-<script src="script.js"></script>
-<script>
-  (function () {
-    var openBtn = document.getElementById("requestAccessBtn");
-    var closeBtn = document.getElementById("closeRequestModal");
-    var overlay = document.getElementById("requestModal");
-    var joinBtn = document.getElementById("discordJoinBtn");
-    var label = document.getElementById("discordBtnLabel");
-    if (!openBtn || !overlay) return;
-
-    // Fetch the current Discord invite from the server (auto-updates)
-    var inviteLoaded = false;
-    async function loadInvite() {
-      if (inviteLoaded) return;
-      try {
-        var res = await fetch("/api/discord/invite");
-        var data = await res.json();
-        if (data && data.ok && data.invite) {
-          joinBtn.href = data.invite;
-          joinBtn.classList.remove("is-disabled");
-          label.textContent = "Join Discord to request";
-          inviteLoaded = true;
-        } else {
-          joinBtn.classList.add("is-disabled");
-          label.textContent = "Invite unavailable — try later";
-        }
-      } catch (e) {
-        joinBtn.classList.add("is-disabled");
-        label.textContent = "Invite unavailable — try later";
+  <head>
+    <script
+      src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+      async
+      defer
+    ></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Access</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      /* Request access link */
+      .request-row {
+        margin: 4px 0 0;
+        text-align: center;
       }
-    }
+      .request-link {
+        display: inline-block;
+        background: none;
+        border: 0;
+        padding: 4px 2px;
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.5;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .request-link b {
+        color: var(--white);
+        font-weight: 600;
+      }
+      .request-link:hover b {
+        text-decoration: underline;
+      }
 
-    function open() {
-      overlay.classList.add("is-open");
-      loadInvite();
-    }
-    function close() { overlay.classList.remove("is-open"); }
+      /* Modal */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 50;
+      }
+      .modal-overlay.is-open {
+        display: flex;
+      }
+      .modal {
+        width: 100%;
+        max-width: 400px;
+        padding: 30px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        text-align: center;
+      }
+      .modal-label {
+        margin: 0 0 12px;
+        color: var(--text-soft);
+        font-size: 12px;
+        line-height: 1;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .modal-title {
+        margin: 0;
+        color: var(--white);
+        font-size: 20px;
+        line-height: 1.2;
+        font-weight: 700;
+      }
+      .modal-copy {
+        margin: 10px 0 24px;
+        color: var(--text-muted);
+        font-size: 15px;
+        line-height: 1.55;
+      }
+      .discord-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        height: 50px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: #5865f2;
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        transition:
+          background 0.2s ease,
+          opacity 0.2s ease;
+      }
+      .discord-btn:hover {
+        background: #4752c4;
+      }
+      .discord-btn.is-disabled {
+        opacity: 0.5;
+        pointer-events: none;
+      }
+      .discord-btn svg {
+        width: 20px;
+        height: 20px;
+        fill: currentColor;
+      }
+      .modal-close {
+        display: inline-block;
+        margin-top: 16px;
+        background: none;
+        border: 0;
+        color: var(--text-soft);
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .modal-close:hover {
+        color: var(--white);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="layout">
+      <section class="intro" aria-label="Introduction">
+        <div class="intro-inner">
+          <p class="eyebrow">Secure Access</p>
+          <h1 class="intro-title">
+            Private platform access for approved users.
+          </h1>
+          <p class="intro-copy">
+            Enter your assigned API key to continue to the dashboard.
+          </p>
+        </div>
+      </section>
+      <section class="panel" aria-label="API key access panel">
+        <div class="card">
+          <p class="card-label">API Key Access</p>
+          <h2 class="card-title">Enter your access key</h2>
+          <p class="card-subtitle">
+            Access is limited to users with an active key.
+          </p>
+          <form id="accessForm" novalidate>
+            <div class="field">
+              <label for="apiKey">API Key</label>
+              <div class="key-wrap">
+                <input
+                  id="apiKey"
+                  name="apiKey"
+                  type="password"
+                  placeholder="Enter API key"
+                  autocomplete="off"
+                  spellcheck="false"
+                  required
+                />
+                <!-- I-add bago ang submit button -->
+                <div
+                  class="cf-turnstile"
+                  data-sitekey="YOUR_SITE_KEY_HERE"
+                ></div>
+                <button
+                  class="icon-btn"
+                  type="button"
+                  id="toggleKey"
+                  aria-label="Show API key"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M1.5 12s3.8-6.5 10.5-6.5S22.5 12 22.5 12 18.7 18.5 12 18.5 1.5 12 1.5 12Z"
+                    ></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="helper-row">
+              <p class="helper-text">Use only the key assigned by the owner.</p>
+            </div>
+            <button class="submit-btn" type="submit">Continue</button>
+            <div class="request-row">
+              <button type="button" class="request-link" id="requestAccessBtn">
+                Don't have a key? <b>Request access</b>
+              </button>
+            </div>
+            <p id="statusMessage" class="status-message" aria-live="polite"></p>
+          </form>
+        </div>
+      </section>
+    </main>
 
-    openBtn.addEventListener("click", open);
-    closeBtn.addEventListener("click", close);
-    overlay.addEventListener("click", function (e) {
-      if (e.target === overlay) close();
-    });
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") close();
-    });
-  })();
-</script>
-</body>
+    <!-- Request access modal -->
+    <div
+      class="modal-overlay"
+      id="requestModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="requestModalTitle"
+    >
+      <div class="modal">
+        <p class="modal-label">Request Access</p>
+        <h2 class="modal-title" id="requestModalTitle">Get your API key</h2>
+        <p class="modal-copy">
+          API keys are issued manually by the owner. Join the Discord server and
+          send a request to receive your key.
+        </p>
+        <a
+          class="discord-btn"
+          id="discordJoinBtn"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.211.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028ZM8.02 15.331c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.096 2.157 2.42 0 1.332-.955 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.096 2.157 2.42 0 1.332-.946 2.418-2.157 2.418Z"
+            ></path>
+          </svg>
+          <span id="discordBtnLabel">Join Discord to request</span>
+        </a>
+        <div>
+          <button type="button" class="modal-close" id="closeRequestModal">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+      (function () {
+        var openBtn = document.getElementById("requestAccessBtn");
+        var closeBtn = document.getElementById("closeRequestModal");
+        var overlay = document.getElementById("requestModal");
+        var joinBtn = document.getElementById("discordJoinBtn");
+        var label = document.getElementById("discordBtnLabel");
+        if (!openBtn || !overlay) return;
+
+        // Fetch the current Discord invite from the server (auto-updates)
+        var inviteLoaded = false;
+        async function loadInvite() {
+          if (inviteLoaded) return;
+          try {
+            var res = await fetch("/api/discord/invite");
+            var data = await res.json();
+            if (data && data.ok && data.invite) {
+              joinBtn.href = data.invite;
+              joinBtn.classList.remove("is-disabled");
+              label.textContent = "Join Discord to request";
+              inviteLoaded = true;
+            } else {
+              joinBtn.classList.add("is-disabled");
+              label.textContent = "Invite unavailable — try later";
+            }
+          } catch (e) {
+            joinBtn.classList.add("is-disabled");
+            label.textContent = "Invite unavailable — try later";
+          }
+        }
+
+        function open() {
+          overlay.classList.add("is-open");
+          loadInvite();
+        }
+        function close() {
+          overlay.classList.remove("is-open");
+        }
+
+        openBtn.addEventListener("click", open);
+        closeBtn.addEventListener("click", close);
+        overlay.addEventListener("click", function (e) {
+          if (e.target === overlay) close();
+        });
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") close();
+        });
+      })();
+    </script>
+  </body>
 </html>
