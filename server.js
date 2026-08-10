@@ -3272,13 +3272,16 @@ async function startDiscordBot() {
   // ============================================================
 
   // Build a rich embed for a single project+script row
-  async function buildProjectStatusEmbed(EmbedBuilder) {
+  async function buildProjectStatusEmbed(EmbedBuilder, accountId) {
     const now = new Date();
 
-    // Fetch all projects + their scripts with 24h stats
+    // Fetch only THIS account's projects + their scripts with 24h stats
+    // (FIX: previously had no owner_account_id filter, so it pulled every
+    // tenant's projects into whichever channel last ran /setstatus.)
     const { data: projects } = await supabase
       .from("projects")
       .select("id, name, status")
+      .eq("owner_account_id", accountId)
       .order("name");
 
     if (!projects || projects.length === 0) return null;
@@ -3292,26 +3295,23 @@ async function startDiscordBot() {
         .eq("project_id", project.id);
 
       const since = new Date(Date.now() - 86400000).toISOString();
+      const scriptIds = (scripts || []).map((s) => s.id);
 
       const { count: loads } = await supabase
         .from("access_log")
         .select("id", { count: "exact", head: true })
+        .eq("owner_account_id", accountId)
         .eq("event", "load")
         .gte("created_at", since)
-        .in(
-          "script_id",
-          (scripts || []).map((s) => s.id)
-        );
+        .in("script_id", scriptIds);
 
       const { data: deviceRows } = await supabase
         .from("access_log")
         .select("hwid")
+        .eq("owner_account_id", accountId)
         .eq("event", "load")
         .gte("created_at", since)
-        .in(
-          "script_id",
-          (scripts || []).map((s) => s.id)
-        );
+        .in("script_id", scriptIds);
       const devices = new Set(
         (deviceRows || []).map((r) => r.hwid).filter(Boolean)
       ).size;
@@ -3319,11 +3319,9 @@ async function startDiscordBot() {
       const { data: lastLog } = await supabase
         .from("access_log")
         .select("created_at")
+        .eq("owner_account_id", accountId)
         .eq("event", "load")
-        .in(
-          "script_id",
-          (scripts || []).map((s) => s.id)
-        )
+        .in("script_id", scriptIds)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -3360,49 +3358,57 @@ async function startDiscordBot() {
     return embeds;
   }
 
-  // Send or edit the status message in the configured channel
+  // Send or edit the status message in the configured channel — once PER ACCOUNT
+  // (FIX: previously a single global "status_broadcast" settings row meant only
+  // one account's config could exist at a time, and that one run pulled every
+  // tenant's projects. Now each account gets its own row + its own embed set.)
   async function broadcastStatus() {
     try {
-      const { data: setting } = await supabase
+      const { data: settings } = await supabase
         .from("settings")
-        .select("value")
-        .eq("key", "status_broadcast")
-        .maybeSingle();
+        .select("key, value")
+        .like("key", "status_broadcast:%");
 
-      if (!setting) return; // Not configured yet
+      if (!settings || settings.length === 0) return; // Not configured yet
 
-      let config;
-      try { config = JSON.parse(setting.value); } catch (e) { return; }
-
-      const { channelId, messageId } = config;
-      if (!channelId) return;
-
-      let channel;
-      try { channel = await client.channels.fetch(channelId); } catch (e) {
-        console.error("Status channel fetch failed:", e.message);
-        return;
-      }
-
-      const embeds = await buildProjectStatusEmbed(EmbedBuilder);
-      if (!embeds || embeds.length === 0) return;
-
-      // Try to edit existing message first
-      if (messageId) {
+      for (const setting of settings) {
         try {
-          const msg = await channel.messages.fetch(messageId);
-          await msg.edit({ embeds });
-          return;
-        } catch (e) {
-          // Message deleted or not found — send a new one
+          let config;
+          try { config = JSON.parse(setting.value); } catch (e) { continue; }
+
+          const { channelId, messageId, accountId } = config;
+          if (!channelId || !accountId) continue;
+
+          let channel;
+          try { channel = await client.channels.fetch(channelId); } catch (e) {
+            console.error("Status channel fetch failed:", e.message);
+            continue;
+          }
+
+          const embeds = await buildProjectStatusEmbed(EmbedBuilder, accountId);
+          if (!embeds || embeds.length === 0) continue;
+
+          // Try to edit existing message first
+          if (messageId) {
+            try {
+              const msg = await channel.messages.fetch(messageId);
+              await msg.edit({ embeds });
+              continue;
+            } catch (e) {
+              // Message deleted or not found — send a new one
+            }
+          }
+
+          // Send new message and save its ID
+          const sent = await channel.send({ embeds });
+          await supabase.from("settings").upsert(
+            { key: setting.key, value: JSON.stringify({ channelId, messageId: sent.id, accountId }), updated_at: new Date().toISOString() },
+            { onConflict: "key" }
+          );
+        } catch (inner) {
+          console.error("broadcastStatus (account) error:", inner.message);
         }
       }
-
-      // Send new message and save its ID
-      const sent = await channel.send({ embeds });
-      await supabase.from("settings").upsert(
-        { key: "status_broadcast", value: JSON.stringify({ channelId, messageId: sent.id }), updated_at: new Date().toISOString() },
-        { onConflict: "key" }
-      );
     } catch (e) {
       console.error("broadcastStatus error:", e.message);
     }
@@ -3414,23 +3420,32 @@ async function startDiscordBot() {
       return interaction.reply({ content: "❌ Only server admins can set the status channel.", ephemeral: true });
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
+    // FIX: resolve the calling account so this only ever posts THEIR OWN
+    // projects, and doesn't collide with any other account's channel config.
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+
     const channel = interaction.options.getChannel("channel");
     if (!channel || !channel.isTextBased()) {
-      return interaction.reply({ content: "❌ Please select a valid text channel.", ephemeral: true });
+      return interaction.editReply({ content: "❌ Please select a valid text channel." });
     }
-
-    await interaction.deferReply({ ephemeral: true });
 
     // Save config (clear old messageId so a fresh message is sent)
     await supabase.from("settings").upsert(
-      { key: "status_broadcast", value: JSON.stringify({ channelId: channel.id, messageId: null }), updated_at: new Date().toISOString() },
+      {
+        key: "status_broadcast:" + accountId,
+        value: JSON.stringify({ channelId: channel.id, messageId: null, accountId }),
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: "key" }
     );
 
     // Send the first status message immediately
     await broadcastStatus();
 
-    await interaction.editReply({ content: `✅ Status updates will be posted in <#${channel.id}> every hour.` });
+    await interaction.editReply({ content: `✅ Status updates for your projects will be posted in <#${channel.id}> every hour.` });
   }
 
   // /clearstatus command handler
@@ -3439,8 +3454,13 @@ async function startDiscordBot() {
       return interaction.reply({ content: "❌ Only server admins can do this.", ephemeral: true });
     }
 
-    await supabase.from("settings").delete().eq("key", "status_broadcast");
-    await interaction.reply({ content: "✅ Status broadcasts stopped.", ephemeral: true });
+    await interaction.deferReply({ ephemeral: true });
+
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+
+    await supabase.from("settings").delete().eq("key", "status_broadcast:" + accountId);
+    await interaction.editReply({ content: "✅ Status broadcasts stopped for your account." });
   }
 
   // Schedule: run every hour
