@@ -37,7 +37,7 @@ app.use(express.json({ limit: "2mb" }));
 app.set("trust proxy", true);
 
 // ============================================================
-// CORS â€” only allow requests from your own origin
+// CORS - only allow requests from your own origin
 // ============================================================
 const ALLOWED_ORIGIN = process.env.PUBLIC_BASE_URL || "https://solaries.up.railway.app";
 app.use((req, res, next) => {
@@ -662,7 +662,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
       if (fresh && fresh.hwid && fresh.hwid !== hwid) {
         return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
       }
-      // (Kung fresh.hwid === hwid, ibig sabihin parehong device â€” hayaan lang dumaan.)
+      // (Kung fresh.hwid === hwid, ibig sabihin parehong device - hayaan lang dumaan.)
     }
   } else if (keyRow.hwid !== hwid) {
     return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
@@ -704,7 +704,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     });
   }
 
-  // FIX 3: sharing detection â€” auto-revoke a key used from too many devices in 24h
+  // FIX 3: sharing detection - auto-revoke a key used from too many devices in 24h
   if (script.key_mode === "keyed" && key) {
     const { data: kr } = await supabase
       .from("keys").select("id, owner_account_id").eq("key", key).maybeSingle();
@@ -1485,7 +1485,7 @@ setInterval(() => {
 }, 10 * 60 * 1000);
 
 // ============================================================
-// STORAGE MAINTENANCE â€” keeps the Supabase database from filling
+// STORAGE MAINTENANCE - keeps the Supabase database from filling
 // up the free-tier 500MB limit over time. Two things grow without
 // bound if left alone: access_log rows (one per script load) and
 // script_versions rows (a full copy of the source per edit).
@@ -1493,7 +1493,7 @@ setInterval(() => {
 // ============================================================
 
 // Deletes access_log rows older than LOG_RETENTION_DAYS. Safe to run
-// anytime â€” every read query against access_log only looks back 24h
+// anytime - every read query against access_log only looks back 24h
 // or 30 days (see /api/analytics), both well inside the retention window.
 async function cleanupOldLogs() {
   try {
@@ -3392,14 +3392,14 @@ async function startDiscordBot() {
       const statusColor =
         project.status === "active" ? 0x22c55e : 0xef4444;
       const statusEmoji =
-        project.status === "active" ? "ðŸŸ¢" : "ðŸ”´";
+        project.status === "active" ? "ACTIVE" : "OFFLINE";
 
       const lastUsedText = lastLog
         ? `<t:${Math.floor(new Date(lastLog.created_at).getTime() / 1000)}:R>`
         : "Never";
 
       const scriptLines = (scripts || [])
-        .map((s) => `${s.enabled ? "âœ…" : "âŒ"} ${s.name}`)
+        .map((s) => `${s.enabled ? "OK" : "X"} ${s.name}`)
         .join("\n") || "No scripts";
 
       const embed = new EmbedBuilder()
@@ -3412,7 +3412,7 @@ async function startDiscordBot() {
           { name: "Last Used", value: lastUsedText, inline: true },
           { name: "Scripts", value: scriptLines, inline: false }
         )
-        .setFooter({ text: "Solaries Â· Updated" })
+        .setFooter({ text: "Solaries - Updated" })
         .setTimestamp(now);
 
       embeds.push(embed);
@@ -3421,7 +3421,7 @@ async function startDiscordBot() {
     return embeds;
   }
 
-  // Send or edit the status message in the configured channel â€” once PER ACCOUNT
+  // Send or edit the status message in the configured channel - once PER ACCOUNT
   // (FIX: previously a single global "status_broadcast" settings row meant only
   // one account's config could exist at a time, and that one run pulled every
   // tenant's projects. Now each account gets its own row + its own embed set.)
@@ -3458,7 +3458,7 @@ async function startDiscordBot() {
               await msg.edit({ embeds });
               continue;
             } catch (e) {
-              // Message deleted or not found â€” send a new one
+              // Message deleted or not found - send a new one
             }
           }
 
@@ -3480,7 +3480,7 @@ async function startDiscordBot() {
   // /setstatus command handler
   async function handleSetStatus(interaction) {
     if (!interaction.memberPermissions?.has("Administrator") && interaction.user.id !== interaction.guild?.ownerId) {
-      return interaction.reply({ content: "âŒ Only server admins can set the status channel.", ephemeral: true });
+      return interaction.reply({ content: "X Only server admins can set the status channel.", ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });
@@ -3492,7 +3492,7 @@ async function startDiscordBot() {
 
     const channel = interaction.options.getChannel("channel");
     if (!channel || !channel.isTextBased()) {
-      return interaction.editReply({ content: "âŒ Please select a valid text channel." });
+      return interaction.editReply({ content: "X Please select a valid text channel." });
     }
 
     // Save config (clear old messageId so a fresh message is sent)
@@ -3508,13 +3508,13 @@ async function startDiscordBot() {
     // Send the first status message immediately
     await broadcastStatus();
 
-    await interaction.editReply({ content: `âœ… Status updates for your projects will be posted in <#${channel.id}> every hour.` });
+    await interaction.editReply({ content: `OK Status updates for your projects will be posted in <#${channel.id}> every hour.` });
   }
 
   // /clearstatus command handler
   async function handleClearStatus(interaction) {
     if (!interaction.memberPermissions?.has("Administrator") && interaction.user.id !== interaction.guild?.ownerId) {
-      return interaction.reply({ content: "âŒ Only server admins can do this.", ephemeral: true });
+      return interaction.reply({ content: "X Only server admins can do this.", ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });
@@ -3523,7 +3523,7 @@ async function startDiscordBot() {
     if (!accountId) return;
 
     await supabase.from("settings").delete().eq("key", "status_broadcast:" + accountId);
-    await interaction.editReply({ content: "âœ… Status broadcasts stopped for your account." });
+    await interaction.editReply({ content: "OK Status broadcasts stopped for your account." });
   }
 
   // Schedule: run every hour
