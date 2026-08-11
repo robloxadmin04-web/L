@@ -18,6 +18,13 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://solaries.up.railway.app";
 
+// How many days of access_log rows to keep before auto-deleting them, and how
+// many script_versions rows to keep per script. Both are safe to tune via env
+// vars without touching code. 35-day log retention leaves a buffer past the
+// 30-day window /api/analytics reads, so charts stay accurate.
+const LOG_RETENTION_DAYS = parseInt(process.env.LOG_RETENTION_DAYS || "35", 10);
+const SCRIPT_VERSION_KEEP = parseInt(process.env.SCRIPT_VERSION_KEEP || "10", 10);
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY");
 }
@@ -30,7 +37,7 @@ app.use(express.json({ limit: "2mb" }));
 app.set("trust proxy", true);
 
 // ============================================================
-// CORS — only allow requests from your own origin
+// CORS â€” only allow requests from your own origin
 // ============================================================
 const ALLOWED_ORIGIN = process.env.PUBLIC_BASE_URL || "https://solaries.up.railway.app";
 app.use((req, res, next) => {
@@ -655,7 +662,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
       if (fresh && fresh.hwid && fresh.hwid !== hwid) {
         return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
       }
-      // (Kung fresh.hwid === hwid, ibig sabihin parehong device — hayaan lang dumaan.)
+      // (Kung fresh.hwid === hwid, ibig sabihin parehong device â€” hayaan lang dumaan.)
     }
   } else if (keyRow.hwid !== hwid) {
     return block("key locked to a different device", 403, keyRow.id, projectId, script.id);
@@ -697,7 +704,7 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     });
   }
 
-  // FIX 3: sharing detection — auto-revoke a key used from too many devices in 24h
+  // FIX 3: sharing detection â€” auto-revoke a key used from too many devices in 24h
   if (script.key_mode === "keyed" && key) {
     const { data: kr } = await supabase
       .from("keys").select("id, owner_account_id").eq("key", key).maybeSingle();
@@ -1125,6 +1132,7 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
     size_bytes: Buffer.byteLength(source, "utf8"),
     note: "Initial",
   });
+  await pruneScriptVersions(data.id);
   res.json({ ok: true, script: data });
 });
 
@@ -1167,6 +1175,7 @@ app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
       source: body.source, size_bytes: Buffer.byteLength(body.source, "utf8"),
       note: body.version_note || null,
     });
+    await pruneScriptVersions(data.id);
   }
   res.json({ ok: true, script: data });
 });
@@ -1213,6 +1222,7 @@ app.post("/api/scripts/:id/restore/:v", requireAuth, async (req, res) => {
     source: v.source, size_bytes: Buffer.byteLength(v.source, "utf8"),
     note: "Restored from v" + req.params.v,
   });
+  await pruneScriptVersions(req.params.id);
   res.json({ ok: true, script: updated });
 });
 
@@ -1473,6 +1483,59 @@ setInterval(() => {
   const url = PUBLIC_BASE_URL + "/healthz";
   fetch(url).catch(() => {});
 }, 10 * 60 * 1000);
+
+// ============================================================
+// STORAGE MAINTENANCE â€” keeps the Supabase database from filling
+// up the free-tier 500MB limit over time. Two things grow without
+// bound if left alone: access_log rows (one per script load) and
+// script_versions rows (a full copy of the source per edit).
+// Tune via LOG_RETENTION_DAYS / SCRIPT_VERSION_KEEP env vars.
+// ============================================================
+
+// Deletes access_log rows older than LOG_RETENTION_DAYS. Safe to run
+// anytime â€” every read query against access_log only looks back 24h
+// or 30 days (see /api/analytics), both well inside the retention window.
+async function cleanupOldLogs() {
+  try {
+    const cutoff = new Date(Date.now() - LOG_RETENTION_DAYS * 24 * 3600 * 1000).toISOString();
+    const { error, count } = await supabase
+      .from("access_log")
+      .delete({ count: "exact" })
+      .lt("created_at", cutoff);
+    if (error) {
+      console.error("cleanupOldLogs error:", error.message);
+    } else {
+      console.log("cleanupOldLogs: removed " + (count ?? "?") + " access_log row(s) older than " + LOG_RETENTION_DAYS + " days");
+    }
+  } catch (e) {
+    console.error("cleanupOldLogs failed:", e.message);
+  }
+}
+
+// Keeps only the newest `keep` rows in script_versions for one script,
+// deleting older version history. Call this right after inserting a
+// new version so history never grows unbounded.
+async function pruneScriptVersions(scriptId, keep = SCRIPT_VERSION_KEEP) {
+  try {
+    const { data: rows, error } = await supabase
+      .from("script_versions")
+      .select("id, version")
+      .eq("script_id", scriptId)
+      .order("version", { ascending: false });
+    if (error || !rows || rows.length <= keep) return;
+    const idsToDelete = rows.slice(keep).map((r) => r.id);
+    if (idsToDelete.length === 0) return;
+    const { error: delErr } = await supabase.from("script_versions").delete().in("id", idsToDelete);
+    if (delErr) console.error("pruneScriptVersions error:", delErr.message);
+  } catch (e) {
+    console.error("pruneScriptVersions failed:", e.message);
+  }
+}
+
+// Run once a day, plus once shortly after boot so a freshly deployed
+// instance starts trimming right away instead of waiting 24h.
+setInterval(cleanupOldLogs, 24 * 3600 * 1000);
+setTimeout(cleanupOldLogs, 60 * 1000);
 
 // ============================================================
 // Start HTTP server
@@ -3329,14 +3392,14 @@ async function startDiscordBot() {
       const statusColor =
         project.status === "active" ? 0x22c55e : 0xef4444;
       const statusEmoji =
-        project.status === "active" ? "🟢" : "🔴";
+        project.status === "active" ? "ðŸŸ¢" : "ðŸ”´";
 
       const lastUsedText = lastLog
         ? `<t:${Math.floor(new Date(lastLog.created_at).getTime() / 1000)}:R>`
         : "Never";
 
       const scriptLines = (scripts || [])
-        .map((s) => `${s.enabled ? "✅" : "❌"} ${s.name}`)
+        .map((s) => `${s.enabled ? "âœ…" : "âŒ"} ${s.name}`)
         .join("\n") || "No scripts";
 
       const embed = new EmbedBuilder()
@@ -3349,7 +3412,7 @@ async function startDiscordBot() {
           { name: "Last Used", value: lastUsedText, inline: true },
           { name: "Scripts", value: scriptLines, inline: false }
         )
-        .setFooter({ text: "Solaries · Updated" })
+        .setFooter({ text: "Solaries Â· Updated" })
         .setTimestamp(now);
 
       embeds.push(embed);
@@ -3358,7 +3421,7 @@ async function startDiscordBot() {
     return embeds;
   }
 
-  // Send or edit the status message in the configured channel — once PER ACCOUNT
+  // Send or edit the status message in the configured channel â€” once PER ACCOUNT
   // (FIX: previously a single global "status_broadcast" settings row meant only
   // one account's config could exist at a time, and that one run pulled every
   // tenant's projects. Now each account gets its own row + its own embed set.)
@@ -3395,7 +3458,7 @@ async function startDiscordBot() {
               await msg.edit({ embeds });
               continue;
             } catch (e) {
-              // Message deleted or not found — send a new one
+              // Message deleted or not found â€” send a new one
             }
           }
 
@@ -3417,7 +3480,7 @@ async function startDiscordBot() {
   // /setstatus command handler
   async function handleSetStatus(interaction) {
     if (!interaction.memberPermissions?.has("Administrator") && interaction.user.id !== interaction.guild?.ownerId) {
-      return interaction.reply({ content: "❌ Only server admins can set the status channel.", ephemeral: true });
+      return interaction.reply({ content: "âŒ Only server admins can set the status channel.", ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });
@@ -3429,7 +3492,7 @@ async function startDiscordBot() {
 
     const channel = interaction.options.getChannel("channel");
     if (!channel || !channel.isTextBased()) {
-      return interaction.editReply({ content: "❌ Please select a valid text channel." });
+      return interaction.editReply({ content: "âŒ Please select a valid text channel." });
     }
 
     // Save config (clear old messageId so a fresh message is sent)
@@ -3445,13 +3508,13 @@ async function startDiscordBot() {
     // Send the first status message immediately
     await broadcastStatus();
 
-    await interaction.editReply({ content: `✅ Status updates for your projects will be posted in <#${channel.id}> every hour.` });
+    await interaction.editReply({ content: `âœ… Status updates for your projects will be posted in <#${channel.id}> every hour.` });
   }
 
   // /clearstatus command handler
   async function handleClearStatus(interaction) {
     if (!interaction.memberPermissions?.has("Administrator") && interaction.user.id !== interaction.guild?.ownerId) {
-      return interaction.reply({ content: "❌ Only server admins can do this.", ephemeral: true });
+      return interaction.reply({ content: "âŒ Only server admins can do this.", ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });
@@ -3460,7 +3523,7 @@ async function startDiscordBot() {
     if (!accountId) return;
 
     await supabase.from("settings").delete().eq("key", "status_broadcast:" + accountId);
-    await interaction.editReply({ content: "✅ Status broadcasts stopped for your account." });
+    await interaction.editReply({ content: "âœ… Status broadcasts stopped for your account." });
   }
 
   // Schedule: run every hour
