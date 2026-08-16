@@ -867,26 +867,31 @@ app.get("/api/status", requireAuth, async (req, res) => {
       .eq("owner_account_id", accountId)
       .order("created_at", { ascending: false });
 
-    const keyStatus = (keys || []).map((k) => {
-      const expired = k.expires_at && new Date(k.expires_at).getTime() < now;
-      const last = k.last_used_at;
-      const isActive = last && (now - new Date(last).getTime()) <= ACTIVE_WINDOW_MIN * 60 * 1000;
-      let status = "idle";
-      if (k.revoked) status = "revoked";
-      else if (expired) status = "expired";
-      else if (isActive) status = "active";
-      return {
-        id: k.id,
-        key: k.key,
-        label: k.label || null,
-        project_name: projById[k.project_id] || "Global",
-        status,
-        hwid_bound: !!k.hwid,
-        hwid_locked: !!k.hwid_locked,
-        expires_at: k.expires_at || null,
-        last_used_at: last || null,
-      };
-    });
+    const keyStatus = (keys || [])
+      // Only show keys that have been claimed (hwid ever bound) OR ever used.
+      // Pure unclaimed + never-loaded bulk keys are hidden from this view.
+      // Keys whose hwid was reset still appear because last_used_at is preserved.
+      .filter((k) => !!k.hwid || !!k.last_used_at)
+      .map((k) => {
+        const expired = k.expires_at && new Date(k.expires_at).getTime() < now;
+        const last = k.last_used_at;
+        const isActive = last && (now - new Date(last).getTime()) <= ACTIVE_WINDOW_MIN * 60 * 1000;
+        let status = "idle";
+        if (k.revoked) status = "revoked";
+        else if (expired) status = "expired";
+        else if (isActive) status = "active";
+        return {
+          id: k.id,
+          key: k.key,
+          label: k.label || null,
+          project_name: projById[k.project_id] || "Global",
+          status,
+          hwid_bound: !!k.hwid,
+          hwid_locked: !!k.hwid_locked,
+          expires_at: k.expires_at || null,
+          last_used_at: last || null,
+        };
+      });
 
     res.json({
       ok: true,
