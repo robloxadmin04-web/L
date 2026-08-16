@@ -169,6 +169,35 @@ function getHwid(req) {
   return String(req.headers["x-hwid"] || req.query.hwid || "").trim();
 }
 
+// ============================================================
+// Raw-fetch nonce: short-lived, single-use token tying the
+// wrapper's follow-up "?raw=1" request to the original request
+// that issued it. Prevents a captured raw=1 URL from being
+// replayed later on its own, even with a valid key.
+// ============================================================
+const rawNonces = new Map(); // nonce -> { scriptSlug, key, expires, used }
+const RAW_NONCE_TTL_MS = 15 * 1000;
+
+function issueRawNonce(scriptSlug, key) {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  rawNonces.set(nonce, { scriptSlug, key: key || "", expires: Date.now() + RAW_NONCE_TTL_MS, used: false });
+  return nonce;
+}
+function consumeRawNonce(nonce, scriptSlug, key) {
+  if (!nonce) return false;
+  const n = rawNonces.get(nonce);
+  if (!n) return false;
+  if (n.used || Date.now() > n.expires) { rawNonces.delete(nonce); return false; }
+  if (n.scriptSlug !== scriptSlug || n.key !== (key || "")) return false;
+  n.used = true;
+  rawNonces.delete(nonce);
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rawNonces) if (now > v.expires) rawNonces.delete(k);
+}, 30 * 1000).unref();
+
 // Tiny server-side bootstrap: grabs the HWID and re-hits the loader with it.
 // Returned on the first keyed hit that has no HWID, so the user's loader
 // can stay a short one-liner while HWID binding still works.
@@ -737,14 +766,21 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   // Raw passthrough: the GUI wrappers re-fetch the script with ?raw=1 so we
   // never embed the source inside loadstring([==[...]==]) (which can break on
   // scripts containing ]] or [[). This returns the plain script only.
+  // Gated by a short-lived, single-use nonce (see issueRawNonce/consumeRawNonce)
+  // so a captured raw=1 URL can't be replayed on its own later.
   if (req.query.raw) {
+    const __n = String(req.query.n || "");
+    if (!consumeRawNonce(__n, scriptSlug, key || "")) {
+      return block("missing or expired session token", 401, null, projectId, script.id);
+    }
     return res.status(200).send(__raw);
   }
-  const __rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug + "?key=" + encodeURIComponent(key || "") + "&raw=1";
   if (script.player_ui === "key_gui" && !key) {
     return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL, __opts));
   }
   if (script.player_ui === "loading") {
+    const __rawNonce = issueRawNonce(scriptSlug, key || "");
+    const __rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug + "?key=" + encodeURIComponent(key || "") + "&raw=1&n=" + __rawNonce;
     return res.status(200).send(wrapLoadingGui(__raw, __opts, __rawUrl));
   }
   return res.status(200).send(__raw);
