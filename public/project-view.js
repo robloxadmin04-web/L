@@ -236,9 +236,10 @@ function renderScripts() {
 function openLoader(script) {
   const origin = window.location.origin;
   const base = origin + "/v1/load/" + script.slug;
+  const pidLine = 'local __pid=tostring(game:GetService("Players").LocalPlayer.UserId)\n';
   const line = script.key_mode === "keyless"
-    ? 'loadstring(game:HttpGet("' + base + '", true))()'
-    : '_G.script_key = "YOUR-KEY-HERE"\nloadstring(game:HttpGet("' + base + '?key=".._G.script_key, true))()';
+    ? pidLine + 'loadstring(game:HttpGet("' + base + '?pid=".. __pid, true))()'
+    : '_G.script_key = "YOUR-KEY-HERE"\n' + pidLine + 'loadstring(game:HttpGet("' + base + '?key=".._G.script_key.."&pid="..__pid, true))()';
   el.loaderCode.textContent = line;
   el.loaderHint.textContent = script.key_mode === "keyless"
     ? "Keyless. Anyone with this loader can run it."
