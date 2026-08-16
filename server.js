@@ -1490,6 +1490,7 @@ app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
 });
 
 app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
   if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
   const body = req.body || {};
@@ -1534,6 +1535,7 @@ app.patch("/api/scripts/:id", requireAuth, async (req, res) => {
 });
 
 app.delete("/api/scripts/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
   if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
   await supabase.from("scripts").delete().eq("id", req.params.id);
@@ -1596,10 +1598,23 @@ app.post("/api/keys", requireAuth, async (req, res) => {
   if ((count || 0) >= limits.max_keys) return res.status(403).json({ ok: false, error: `Key limit reached (${limits.max_keys}).` });
 
   const body = req.body || {};
+
+  // Verify the project actually belongs to this account before attaching
+  // a key to it - otherwise any signed-in account could point project_id
+  // at someone else's project.
+  let projectId = null;
+  if (body.project_id) {
+    if (!isValidUUID(body.project_id)) return res.status(400).json({ ok: false, error: "Invalid project_id" });
+    if (!(await ownsProject(body.project_id, req.session.account_id))) {
+      return res.status(404).json({ ok: false, error: "Project not found" });
+    }
+    projectId = body.project_id;
+  }
+
   const key = makeKey(body.prefix || "KF");
   const insert = {
     owner_account_id: req.session.account_id,
-    project_id: body.project_id || null,
+    project_id: projectId,
     key,
     label: String(body.label || "").trim() || null,
     hwid_locked: body.hwid_locked === false ? false : true,
@@ -1616,6 +1631,7 @@ app.post("/api/keys", requireAuth, async (req, res) => {
 });
 
 app.patch("/api/keys/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const patch = {};
   const body = req.body || {};
   if (typeof body.revoked === "boolean") patch.revoked = body.revoked;
@@ -1630,6 +1646,7 @@ app.patch("/api/keys/:id", requireAuth, async (req, res) => {
 });
 
 app.post("/api/keys/:id/reset-hwid", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const { data, error } = await supabase.from("keys").update({ hwid: null })
     .eq("id", req.params.id).eq("owner_account_id", req.session.account_id).select().single();
   if (error) return res.status(500).json({ ok: false, error: "Could not reset HWID" });
@@ -1673,6 +1690,7 @@ app.post("/api/projects/:pid/blocklist", requireAuth, async (req, res) => {
 });
 
 app.delete("/api/blocklist/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const { error } = await supabase.from("blocklist").delete()
     .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
   if (error) return res.status(500).json({ ok: false, error: "Could not remove" });
@@ -1705,6 +1723,7 @@ app.post("/api/projects/:pid/allowlist", requireAuth, async (req, res) => {
 });
 
 app.delete("/api/allowlist/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const { error } = await supabase.from("allowlist").delete()
     .eq("id", req.params.id).eq("owner_account_id", req.session.account_id);
   if (error) return res.status(500).json({ ok: false, error: "Could not remove" });
@@ -1775,6 +1794,7 @@ app.get("/api/discord/panels", requireAuth, async (req, res) => {
 });
 
 app.delete("/api/discord/panels/:id", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const { error } = await supabase.from("discord_panels").delete()
     .eq("id", req.params.id).eq("account_id", req.session.account_id);
   if (error) return res.status(500).json({ ok: false, error: "Could not delete" });
