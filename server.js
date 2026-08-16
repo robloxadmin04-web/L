@@ -3270,7 +3270,8 @@ async function startDiscordBot() {
         "`/user info|blacklist|unblacklist|ban|unban`\n" +
         "`/hwid reset` `/whitelist`\n" +
         "`/project create|delete|list|select`\n" +
-        "`/buyerrole set|clear|list` `/setscript`";
+        "`/buyerrole set|clear|list` `/setscript`\n" +
+        "`/security alerts|blockip|blockhwid|unblock` - Security monitoring & access control";
     }
 
     interaction.editReply({ content: text });
@@ -3545,6 +3546,14 @@ async function startDiscordBot() {
         ])
         .order("created_at", { ascending: false })
         .limit(10);
+
+      if (scriptFilter) {
+        // Filter by script slug: join through scripts table
+        const { data: sc } = await supabase.from("scripts")
+          .select("id").eq("slug", scriptFilter).maybeSingle();
+        if (!sc) return interaction.editReply({ content: "Script `" + scriptFilter + "` not found." });
+        query = query.eq("script_id", sc.id);
+      }
 
       const { data: rows } = await query;
       if (!rows || rows.length === 0) {
