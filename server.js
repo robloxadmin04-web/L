@@ -1668,7 +1668,7 @@ async function startDiscordBot() {
   // Called from the HTTP load endpoint (outside the bot block) via
   // the global scrapeAlert() shim set up below.
   // ============================================================
-  async function sendAlertToLogChannel(accountId, embed) {
+  async function sendAlertToLogChannel(accountId, embed, components) {
     try {
       const { data: ds } = await supabase
         .from("discord_settings")
@@ -1678,7 +1678,9 @@ async function startDiscordBot() {
       if (!ds?.log_channel_id) return;
       const channel = await client.channels.fetch(ds.log_channel_id).catch(() => null);
       if (!channel) return;
-      await channel.send({ embeds: [embed] });
+      const payload = { embeds: [embed] };
+      if (components && components.length) payload.components = components;
+      await channel.send(payload);
     } catch (e) {
       console.error("sendAlertToLogChannel error:", e.message);
     }
@@ -1705,7 +1707,42 @@ async function startDiscordBot() {
         { name: "Reason", value: details.reason       || type, inline: false },
       )
       .setFooter({ text: "Solaries Security Alert" });
-    await sendAlertToLogChannel(accountId, embed);
+
+    // Build action buttons if we have a key or IP to act on
+    const components = [];
+    const row = new ActionRowBuilder();
+    let hasButtons = false;
+
+    if (details.key) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId("sol_alertrevoke_" + Buffer.from(details.key).toString("base64"))
+          .setLabel("Revoke Key")
+          .setStyle(ButtonStyle.Danger)
+      );
+      hasButtons = true;
+    }
+    if (details.ip) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId("sol_alertblockip_" + Buffer.from((details.ip + "|" + (details.scriptSlug || ""))).toString("base64"))
+          .setLabel("Block IP")
+          .setStyle(ButtonStyle.Danger)
+      );
+      hasButtons = true;
+    }
+    if (details.hwid) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId("sol_alertblockhwid_" + Buffer.from((details.hwid + "|" + (details.scriptSlug || ""))).toString("base64"))
+          .setLabel("Block HWID")
+          .setStyle(ButtonStyle.Danger)
+      );
+      hasButtons = true;
+    }
+    if (hasButtons) components.push(row);
+
+    await sendAlertToLogChannel(accountId, embed, components);
   };
 
   const client = new Client({
@@ -2019,6 +2056,9 @@ async function startDiscordBot() {
           else if (action === "resethwid") await handleResetHwid(interaction, scriptId);
           else if (action === "session") await handleSessionStatus(interaction, scriptId);
           else if (action === "getkey") await handleGetKey(interaction, scriptId);
+          else if (action === "alertrevoke") await handleAlertRevoke(interaction, scriptId);
+          else if (action === "alertblockip") await handleAlertBlockIp(interaction, scriptId);
+          else if (action === "alertblockhwid") await handleAlertBlockHwid(interaction, scriptId);
         }
       } else if (interaction.isModalSubmit()) {
         const parts = interaction.customId.split("_");
@@ -3465,6 +3505,120 @@ async function startDiscordBot() {
 
   setInterval(checkExpiringKeys, 30 * 60 * 1000);
   setTimeout(checkExpiringKeys, 60 * 1000);
+
+  // ============================================================
+  // SECURITY ALERT BUTTON HANDLERS
+  // Handles Revoke Key / Block IP / Block HWID buttons sent with
+  // scrape-attempt alerts in the log channel.
+  // ============================================================
+  async function handleAlertRevoke(interaction, encoded) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    let keyValue;
+    try { keyValue = Buffer.from(encoded, "base64").toString("utf8"); } catch { return interaction.editReply({ content: "Invalid data." }); }
+
+    const { data: keyRow } = await supabase.from("keys")
+      .select("id, key, revoked, owner_account_id")
+      .eq("key", keyValue).maybeSingle();
+
+    if (!keyRow) return interaction.editReply({ content: "Key not found." });
+    if (keyRow.owner_account_id !== accountId) return interaction.editReply({ content: "That key doesn't belong to your account." });
+    if (keyRow.revoked) return interaction.editReply({ content: "Key is already revoked." });
+
+    await supabase.from("keys").update({ revoked: true }).eq("id", keyRow.id);
+    await interaction.editReply({ content: "✅ Key `" + keyValue.slice(0, 6) + "..." + keyValue.slice(-4) + "` has been revoked." });
+
+    // Disable the buttons on the alert message so it's clear action was taken
+    try {
+      const msg = interaction.message;
+      const disabledRow = new ActionRowBuilder().addComponents(
+        ...msg.components[0].components.map((btn) =>
+          ButtonBuilder.from(btn).setDisabled(true)
+        )
+      );
+      await msg.edit({ components: [disabledRow] });
+    } catch (e) { /* non-fatal */ }
+  }
+
+  async function handleAlertBlockIp(interaction, encoded) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    let ip, scriptSlug;
+    try {
+      const decoded = Buffer.from(encoded, "base64").toString("utf8");
+      [ip, scriptSlug] = decoded.split("|");
+    } catch { return interaction.editReply({ content: "Invalid data." }); }
+    if (!ip) return interaction.editReply({ content: "No IP in alert data." });
+
+    // Find project_id from script slug
+    const { data: script } = await supabase.from("scripts")
+      .select("project_id, projects!inner(owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
+
+    if (!script || script.projects.owner_account_id !== accountId)
+      return interaction.editReply({ content: "Script not found or not yours." });
+
+    const { error } = await supabase.from("blocklist").insert({
+      project_id: script.project_id,
+      entry_type: "ip",
+      value: ip,
+    });
+    if (error && error.message.includes("duplicate"))
+      return interaction.editReply({ content: "IP `" + ip + "` is already blocked." });
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+
+    await interaction.editReply({ content: "🚫 IP `" + ip + "` has been blocked from `" + (scriptSlug || "script") + "`." });
+    try {
+      const msg = interaction.message;
+      const disabledRow = new ActionRowBuilder().addComponents(
+        ...msg.components[0].components.map((btn) =>
+          ButtonBuilder.from(btn).setDisabled(true)
+        )
+      );
+      await msg.edit({ components: [disabledRow] });
+    } catch (e) { /* non-fatal */ }
+  }
+
+  async function handleAlertBlockHwid(interaction, encoded) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    let hwid, scriptSlug;
+    try {
+      const decoded = Buffer.from(encoded, "base64").toString("utf8");
+      [hwid, scriptSlug] = decoded.split("|");
+    } catch { return interaction.editReply({ content: "Invalid data." }); }
+    if (!hwid) return interaction.editReply({ content: "No HWID in alert data." });
+
+    const { data: script } = await supabase.from("scripts")
+      .select("project_id, projects!inner(owner_account_id)")
+      .eq("slug", scriptSlug).maybeSingle();
+
+    if (!script || script.projects.owner_account_id !== accountId)
+      return interaction.editReply({ content: "Script not found or not yours." });
+
+    const { error } = await supabase.from("blocklist").insert({
+      project_id: script.project_id,
+      entry_type: "hwid",
+      value: hwid,
+    });
+    if (error && error.message.includes("duplicate"))
+      return interaction.editReply({ content: "HWID is already blocked." });
+    if (error) return interaction.editReply({ content: "Error: " + error.message });
+
+    await interaction.editReply({ content: "🚫 HWID `" + hwid.slice(0, 8) + "...` has been blocked from `" + (scriptSlug || "script") + "`." });
+    try {
+      const msg = interaction.message;
+      const disabledRow = new ActionRowBuilder().addComponents(
+        ...msg.components[0].components.map((btn) =>
+          ButtonBuilder.from(btn).setDisabled(true)
+        )
+      );
+      await msg.edit({ components: [disabledRow] });
+    } catch (e) { /* non-fatal */ }
+  }
 
   // ============================================================
   // HOURLY STATUS BROADCASTER
