@@ -1971,6 +1971,22 @@ async function startDiscordBot() {
       .setName("clearstatus")
       .setDescription("Stop hourly status updates (Owner only)")
       .toJSON(),
+
+    new SlashCommandBuilder()
+      .setName("security")
+      .setDescription("Monitor and manage security alerts (Owner only)")
+      .addSubcommand((s) => s.setName("alerts").setDescription("View recent suspicious load attempts")
+        .addStringOption((o) => o.setName("script").setDescription("Filter by script slug (optional)").setRequired(false)))
+      .addSubcommand((s) => s.setName("blockip").setDescription("Manually block an IP from a script")
+        .addStringOption((o) => o.setName("ip").setDescription("IP address to block").setRequired(true))
+        .addStringOption((o) => o.setName("script").setDescription("Script slug").setRequired(true)))
+      .addSubcommand((s) => s.setName("blockhwid").setDescription("Manually block a HWID from a script")
+        .addStringOption((o) => o.setName("hwid").setDescription("HWID to block").setRequired(true))
+        .addStringOption((o) => o.setName("script").setDescription("Script slug").setRequired(true)))
+      .addSubcommand((s) => s.setName("unblock").setDescription("Remove a blocked IP or HWID")
+        .addStringOption((o) => o.setName("value").setDescription("IP or HWID to unblock").setRequired(true))
+        .addStringOption((o) => o.setName("script").setDescription("Script slug").setRequired(true)))
+      .toJSON(),
   ];
 
   client.once(Events.ClientReady, async (c) => {
@@ -2044,6 +2060,7 @@ async function startDiscordBot() {
         else if (cmd === "status") await handleStatus(interaction);
         else if (cmd === "setstatus") await handleSetStatus(interaction);
         else if (cmd === "clearstatus") await handleClearStatus(interaction);
+        else if (cmd === "security") await handleSecurity(interaction, sub);
       } else if (interaction.isButton()) {
         // Custom IDs: "sol_<action>_<scriptId>"
         const parts = interaction.customId.split("_");
@@ -3505,6 +3522,115 @@ async function startDiscordBot() {
 
   setInterval(checkExpiringKeys, 30 * 60 * 1000);
   setTimeout(checkExpiringKeys, 60 * 1000);
+
+  // ============================================================
+  // /security alerts|blockip|blockhwid|unblock
+  // ============================================================
+  async function handleSecurity(interaction, sub) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+
+    // --- alerts ---
+    if (sub === "alerts") {
+      const scriptFilter = interaction.options.getString("script");
+      let query = supabase
+        .from("access_log")
+        .select("id, reason, hwid, ip, created_at, scripts(name, slug), keys(key)")
+        .eq("owner_account_id", accountId)
+        .eq("event", "blocked")
+        .in("reason", [
+          "missing or expired session token",
+          "rate limited",
+        ])
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      const { data: rows } = await query;
+      if (!rows || rows.length === 0) {
+        return interaction.editReply({ content: "✅ No suspicious attempts found." });
+      }
+
+      const lines = rows.map((r) => {
+        const when = new Date(r.created_at).toISOString().slice(0, 16).replace("T", " ");
+        const script = r.scripts?.slug || "-";
+        const key = r.keys?.key ? r.keys.key.slice(0, 6) + "..." + r.keys.key.slice(-4) : "none";
+        const ip = r.ip || "?";
+        const hwid = r.hwid ? r.hwid.slice(0, 8) + "..." : "none";
+        return `\`${when}\` **${script}** — IP: \`${ip}\` HWID: \`${hwid}\` Key: \`${key}\`\n> ${r.reason}`;
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(0xef4444)
+        .setTitle("🔒 Recent Security Alerts")
+        .setDescription(lines.join("\n\n"))
+        .setFooter({ text: "Last 10 suspicious attempts" })
+        .setTimestamp();
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // --- blockip ---
+    if (sub === "blockip") {
+      const ip = interaction.options.getString("ip", true).trim();
+      const scriptSlug = interaction.options.getString("script", true).trim();
+
+      const { data: script } = await supabase.from("scripts")
+        .select("project_id, projects!inner(owner_account_id)")
+        .eq("slug", scriptSlug).maybeSingle();
+      if (!script || script.projects.owner_account_id !== accountId)
+        return interaction.editReply({ content: "Script not found or not yours." });
+
+      const { error } = await supabase.from("blocklist").insert({
+        project_id: script.project_id, entry_type: "ip", value: ip,
+      });
+      if (error && error.message.includes("duplicate"))
+        return interaction.editReply({ content: `IP \`${ip}\` is already blocked.` });
+      if (error) return interaction.editReply({ content: "Error: " + error.message });
+      return interaction.editReply({ content: `🚫 IP \`${ip}\` blocked from \`${scriptSlug}\`.` });
+    }
+
+    // --- blockhwid ---
+    if (sub === "blockhwid") {
+      const hwid = interaction.options.getString("hwid", true).trim();
+      const scriptSlug = interaction.options.getString("script", true).trim();
+
+      const { data: script } = await supabase.from("scripts")
+        .select("project_id, projects!inner(owner_account_id)")
+        .eq("slug", scriptSlug).maybeSingle();
+      if (!script || script.projects.owner_account_id !== accountId)
+        return interaction.editReply({ content: "Script not found or not yours." });
+
+      const { error } = await supabase.from("blocklist").insert({
+        project_id: script.project_id, entry_type: "hwid", value: hwid,
+      });
+      if (error && error.message.includes("duplicate"))
+        return interaction.editReply({ content: "HWID is already blocked." });
+      if (error) return interaction.editReply({ content: "Error: " + error.message });
+      return interaction.editReply({ content: `🚫 HWID \`${hwid.slice(0, 8)}...\` blocked from \`${scriptSlug}\`.` });
+    }
+
+    // --- unblock ---
+    if (sub === "unblock") {
+      const value = interaction.options.getString("value", true).trim();
+      const scriptSlug = interaction.options.getString("script", true).trim();
+
+      const { data: script } = await supabase.from("scripts")
+        .select("project_id, projects!inner(owner_account_id)")
+        .eq("slug", scriptSlug).maybeSingle();
+      if (!script || script.projects.owner_account_id !== accountId)
+        return interaction.editReply({ content: "Script not found or not yours." });
+
+      const { data: deleted, error } = await supabase.from("blocklist")
+        .delete()
+        .eq("project_id", script.project_id)
+        .eq("value", value)
+        .select();
+      if (error) return interaction.editReply({ content: "Error: " + error.message });
+      if (!deleted || deleted.length === 0)
+        return interaction.editReply({ content: `No block found for \`${value}\` on \`${scriptSlug}\`.` });
+      return interaction.editReply({ content: `✅ Unblocked \`${value}\` from \`${scriptSlug}\`.` });
+    }
+  }
 
   // ============================================================
   // SECURITY ALERT BUTTON HANDLERS
