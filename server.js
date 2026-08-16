@@ -246,19 +246,42 @@ async function isValidRobloxPlayer(pid) {
 // request was handled (blocked) and the caller should stop; false
 // if the request may proceed.
 async function gateLoaderRequest(req, res) {
+  // TEMP DEBUG (remove after diagnosing) - dumps what the gate actually saw
+  console.log("[gate-debug]", {
+    ua: req.headers["user-agent"] || "(none)",
+    accept: req.headers["accept"] || "(none)",
+    pid: req.query.pid || "(none)",
+    ip: getClientIp(req),
+  });
+
   if (isBrowserNav(req)) {
+    console.log("[gate-debug] blocked at: isBrowserNav");
     res.status(403).type("text/html").send(getBlockHtml());
     return true;
   }
-  if (!isRobloxClient(req) || isKnownScraperClient(req)) {
+  if (!isRobloxClient(req)) {
+    console.log("[gate-debug] blocked at: !isRobloxClient (UA did not match /Roblox/i)");
+    res.status(403).type("text/plain").send("-- forbidden");
+    return true;
+  }
+  if (isKnownScraperClient(req)) {
+    console.log("[gate-debug] blocked at: isKnownScraperClient (UA matched non-Roblox client pattern)");
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
   const pid = String(req.query.pid || "").trim();
-  if (!pid || !(await isValidRobloxPlayer(pid))) {
+  if (!pid) {
+    console.log("[gate-debug] blocked at: missing pid");
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
+  const validPid = await isValidRobloxPlayer(pid);
+  if (!validPid) {
+    console.log("[gate-debug] blocked at: isValidRobloxPlayer returned false for pid=" + pid);
+    res.status(403).type("text/plain").send("-- forbidden");
+    return true;
+  }
+  console.log("[gate-debug] PASSED gate for pid=" + pid);
   return false;
 }
 
