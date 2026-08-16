@@ -601,6 +601,20 @@ app.get("/v1/load/:script_slug", async (req, res) => {
 
   // FIX B: throttle loader hits per IP to blunt abuse / scraping
   if (!rateLimit("load:" + ip, 30, 60 * 1000)) {
+    // Alert owner — repeated rapid hits from same IP is a scraping signal
+    if (global.__solScrapeAlert) {
+      // Fetch script owner_account_id best-effort (non-blocking)
+      supabase.from("scripts")
+        .select("project_id, projects!inner(owner_account_id)")
+        .eq("slug", scriptSlug).maybeSingle()
+        .then(({ data }) => {
+          if (data?.projects?.owner_account_id) {
+            global.__solScrapeAlert(data.projects.owner_account_id, "rate_limit", {
+              scriptSlug, ip, hwid, key, reason: "30+ requests in 60s from same IP",
+            });
+          }
+        }).catch(() => {});
+    }
     return res.status(429).send("-- rate limited");
   }
 
@@ -798,6 +812,16 @@ app.get("/v1/load/:script_slug", async (req, res) => {
   if (req.query.raw) {
     const __n = String(req.query.n || "");
     if (!consumeRawNonce(__n, scriptSlug, key || "")) {
+      // This is the clearest scraping signal: someone replayed or manually
+      // crafted a raw=1 URL without going through the normal loader flow.
+      if (global.__solScrapeAlert) {
+        global.__solScrapeAlert(accountId, __n ? "nonce_replay" : "raw_no_key", {
+          scriptSlug, ip, hwid, key,
+          reason: __n
+            ? "raw=1 hit with invalid/expired/used nonce — possible URL replay"
+            : "raw=1 hit with no nonce — direct URL construction attempt",
+        });
+      }
       return block("missing or expired session token", 401, null, projectId, script.id);
     }
     return res.status(200).send(__raw);
@@ -1637,6 +1661,52 @@ async function startDiscordBot() {
       return false;
     }
   }
+
+  // ============================================================
+  // SCRAPE ALERT - sends a warning embed to the owner's log channel
+  // when a suspicious raw-code extraction attempt is detected.
+  // Called from the HTTP load endpoint (outside the bot block) via
+  // the global scrapeAlert() shim set up below.
+  // ============================================================
+  async function sendAlertToLogChannel(accountId, embed) {
+    try {
+      const { data: ds } = await supabase
+        .from("discord_settings")
+        .select("log_channel_id")
+        .eq("account_id", accountId)
+        .maybeSingle();
+      if (!ds?.log_channel_id) return;
+      const channel = await client.channels.fetch(ds.log_channel_id).catch(() => null);
+      if (!channel) return;
+      await channel.send({ embeds: [embed] });
+    } catch (e) {
+      console.error("sendAlertToLogChannel error:", e.message);
+    }
+  }
+
+  // Expose to load endpoint (runs before client is ready, so wrap in ready check)
+  global.__solScrapeAlert = async function (accountId, type, details) {
+    if (!client.isReady()) return;
+    const colorMap = { nonce_replay: 0xef4444, rate_limit: 0xf59e0b, raw_no_key: 0xef4444 };
+    const titleMap = {
+      nonce_replay:  "⚠️ Raw Code Replay Attempt",
+      rate_limit:    "🚦 Rate Limit — Possible Scraper",
+      raw_no_key:    "🔑 Raw Endpoint Hit Without Valid Key",
+    };
+    const embed = new EmbedBuilder()
+      .setColor(colorMap[type] || 0xef4444)
+      .setTitle(titleMap[type] || "⚠️ Suspicious Load Attempt")
+      .setTimestamp()
+      .addFields(
+        { name: "Script", value: details.scriptSlug || "-", inline: true },
+        { name: "IP",     value: details.ip          || "-", inline: true },
+        { name: "HWID",   value: details.hwid         || "none", inline: true },
+        { name: "Key",    value: details.key ? (details.key.slice(0, 6) + "..." + details.key.slice(-4)) : "none", inline: true },
+        { name: "Reason", value: details.reason       || type, inline: false },
+      )
+      .setFooter({ text: "Solaries Security Alert" });
+    await sendAlertToLogChannel(accountId, embed);
+  };
 
   const client = new Client({
     intents: [
