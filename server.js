@@ -3590,7 +3590,9 @@ async function startDiscordBot() {
     });
   }
 
-  // /script - just the raw URL
+  // /script - just the raw loader URL (points at the hosted .lua file,
+  // same one buildHandshakeLoader uses - the old /v1/load/<slug> URL
+  // does NOT work standalone anymore since it requires px/gp/c).
   async function handleScriptCmd(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const scriptSlug = interaction.options.getString("script_id", true).trim();
@@ -3598,7 +3600,7 @@ async function startDiscordBot() {
       .select("name, slug").eq("slug", scriptSlug).maybeSingle();
     if (!script) return interaction.editReply({ content: "Script not found." });
     interaction.editReply({
-      content: "**" + script.name + "** URL:\n`" + PUBLIC_BASE_URL + "/v1/load/" + script.slug + "`",
+      content: "**" + script.name + "** URL:\n`" + PUBLIC_BASE_URL + "/v1/loaders/" + script.slug + ".lua`",
     });
   }
 
