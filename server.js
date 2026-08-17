@@ -180,10 +180,19 @@ async function getPlanLimits(plan) {
   return data || { max_projects: 1, max_scripts_per_project: 3, max_keys: 50, max_obfuscations_per_month: 20 };
 }
 function getClientIp(req) {
-  return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
+  const raw = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
+  // Defense in depth: cap length and drop characters that have no
+  // business in an IP address, in case this value ever ends up in a
+  // filter string, log line, or shell-adjacent context elsewhere.
+  return raw.replace(/[^a-fA-F0-9.:]/g, "").slice(0, 45);
 }
 function getHwid(req) {
-  return String(req.headers["x-hwid"] || req.query.hwid || "").trim();
+  const raw = String(req.headers["x-hwid"] || req.query.hwid || "").trim();
+  // Defense in depth: HWIDs are attacker-controlled input (arbitrary
+  // header value). Restrict to a safe charset and length so this value
+  // can never carry filter/query syntax, control characters, etc. into
+  // anywhere it's used later (DB filters, logs, watermark payloads).
+  return raw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 128);
 }
 
 // ============================================================
@@ -1467,19 +1476,22 @@ async function handleLoadRoute(req, res) {
   const projectId = script.project_id;
   const accountId = script.projects.owner_account_id;
 
+  // SECURITY FIX: hwid/ip are fully attacker-controlled (x-hwid header,
+  // x-forwarded-for) and were previously interpolated directly into a raw
+  // PostgREST .or() filter string - a crafted hwid containing `,` or `)`
+  // could break out of the intended filter and manipulate the query (in
+  // the worst case, malform it enough that Supabase errors and `blocked`
+  // comes back null/undefined, which the old code treated as "not
+  // blocked" - i.e. a blocked device could un-block itself by sending a
+  // malicious x-hwid header). Fixed by using separate parameterized .eq()
+  // queries instead of building filter syntax out of raw input.
   if (hwid || ip) {
-    const orParts = [];
-    if (hwid) orParts.push(`and(entry_type.eq.hwid,value.eq.${hwid})`);
-    if (ip) orParts.push(`and(entry_type.eq.ip,value.eq.${ip})`);
-    if (orParts.length) {
-      const { data: blocked } = await supabase
-        .from("blocklist")
-        .select("id")
-        .eq("project_id", projectId)
-        .or(orParts.join(","))
-        .limit(1);
-      if (blocked && blocked.length) return block("blocked device or ip", 403, null, projectId, script.id);
-    }
+    const checks = [];
+    if (hwid) checks.push(supabase.from("blocklist").select("id").eq("project_id", projectId).eq("entry_type", "hwid").eq("value", hwid).limit(1));
+    if (ip) checks.push(supabase.from("blocklist").select("id").eq("project_id", projectId).eq("entry_type", "ip").eq("value", ip).limit(1));
+    const results = await Promise.all(checks);
+    const isBlocked = results.some((r) => r.data && r.data.length > 0);
+    if (isBlocked) return block("blocked device or ip", 403, null, projectId, script.id);
   }
 
   if (script.projects.whitelist_only && hwid) {
