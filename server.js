@@ -154,18 +154,13 @@ function makeKey(prefix) {
   const safe = (prefix || "KF").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) || "KF";
   return `${safe}-${randomBlock()}-${randomBlock()}-${randomBlock()}`;
 }
-// Builds a full loader snippet (handshake + load) using only plain
-// game:HttpGet, so it works even without an executor request lib -
-// used for the Discord-bot-issued loader text. extraQueryLua is a Lua
-// expression string appended to the query (e.g. for the key param),
-// or "" for none.
-function buildHandshakeLoader(loaderUrl, extraQueryLua) {
-  // loaderUrl passed in by call sites is the old /v1/load/<slug> URL;
-  // swap it for the one-request /v1/bootstrap/<slug> equivalent so the
-  // whole loader collapses to a single loadstring(...) line instead of
-  // a separate visible handshake call.
-  const bootstrapUrl = loaderUrl.replace("/v1/load/", "/v1/bootstrap/");
-  return 'loadstring(game:HttpGet("' + bootstrapUrl + '?px="..tostring(game:GetService("Players").LocalPlayer.UserId).."&gp="..tostring(game.PlaceId)' + (extraQueryLua ? '..' + extraQueryLua : '') + '))()';
+// Builds the one-line loadstring that points at the hosted /v1/loaders/
+// file for this script (see the route above) - all px/gp/handshake work
+// happens inside that file's response, not in this pasted line. key is
+// the actual key string (or "" / null for keyless), known server-side.
+function buildHandshakeLoader(scriptSlug, key) {
+  const url = PUBLIC_BASE_URL + "/v1/loaders/" + scriptSlug + ".lua" + (key ? "?k=" + encodeURIComponent(key) : "");
+  return 'loadstring(game:HttpGet("' + url + '"))()';
 }
 function makeSlug(name) {
   const base = String(name || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
@@ -1287,6 +1282,38 @@ app.get("/v1/bootstrap/:script_slug", async (req, res) => {
   const ip = getClientIp(req);
   if (pid) req.query.c = issueChallenge(pid, ip, gp);
   return handleLoadRoute(req, res);
+});
+
+// ============================================================
+// HOSTED LOADER FILE - the actual pasted-into-executor line becomes
+// just loadstring(game:HttpGet(".../v1/loaders/<slug>.lua"))() with
+// no visible px/gp query junk. All of that (UserId, PlaceId, optional
+// key) is computed *inside* the Lua text this route returns, same
+// idea as Luarmor's hosted /files/... loader files. This route is
+// static-shaped and harmless to expose - it contains no secrets and
+// no script source, just the small bootstrap dance; all real
+// enforcement still happens at /v1/bootstrap -> handleLoadRoute.
+// ============================================================
+app.get("/v1/loaders/:file", (req, res) => {
+  const m = String(req.params.file || "").match(/^([a-z0-9-]{1,40})\.lua$/i);
+  if (!m) return res.status(404).type("text/plain").send("-- not found");
+  const slug = m[1];
+  if (isBrowserNav(req)) return res.status(403).type("text/html").send(getBlockHtml());
+
+  const key = String(req.query.k || "").trim();
+  const bootstrapUrl = PUBLIC_BASE_URL + "/v1/bootstrap/" + slug;
+  const keyLine = key ? 'local _k = "' + key.replace(/"/g, "") + '"\n' : "";
+  const keyQuery = key ? '.."&key=".._k' : "";
+
+  const lua = [
+    keyLine +
+    'local _px = tostring(game:GetService("Players").LocalPlayer.UserId)',
+    'local _gp = tostring(game.PlaceId)',
+    'local _s = game:HttpGet("' + bootstrapUrl + '?px=".._px.."&gp=".._gp' + keyQuery + ')',
+    'loadstring(_s)()',
+  ].join("\n");
+
+  res.type("text/plain").send(lua);
 });
 
 // ============================================================
@@ -2878,11 +2905,9 @@ async function startDiscordBot() {
       }
       userKey = existingKey.key;
 
-      const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-      loader = '_G.script_key = "' + userKey + '"\n' + buildHandshakeLoader(loaderUrl, '"&key=".._G.script_key');
+      loader = buildHandshakeLoader(script.slug, userKey);
     } else {
-      const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-      loader = buildHandshakeLoader(loaderUrl, "");
+      loader = buildHandshakeLoader(script.slug, null);
     }
 
     const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
@@ -3545,19 +3570,18 @@ async function startDiscordBot() {
 
     if (!script) return interaction.editReply({ content: "Script not found." });
 
-    const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
     let loader;
     if (script.key_mode === "keyless") {
-      loader = buildHandshakeLoader(loaderUrl, "");
+      loader = buildHandshakeLoader(script.slug, null);
     } else {
       const { data: keyRow } = await supabase.from("keys")
         .select("key, revoked").eq("discord_id", discordId)
         .eq("project_id", script.project_id)
         .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
       if (keyRow && !keyRow.revoked) {
-        loader = '_G.script_key = "' + keyRow.key + '"\n' + buildHandshakeLoader(loaderUrl, '"&key=".._G.script_key');
+        loader = buildHandshakeLoader(script.slug, keyRow.key);
       } else {
-        loader = '_G.script_key = "YOUR_KEY_HERE"\n' + buildHandshakeLoader(loaderUrl, '"&key=".._G.script_key');
+        loader = buildHandshakeLoader(script.slug, "YOUR_KEY_HERE");
       }
     }
 
