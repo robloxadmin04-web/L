@@ -236,16 +236,10 @@ function renderScripts() {
 function buildHandshakeLoader(loaderUrl, extraQueryLua) {
   // Mirrors server.js's buildHandshakeLoader exactly, so the website loader
   // and the Discord-bot loader are always byte-for-byte the same shape:
-  // handshake first (to get "c"), then load with px/gp/c(/key).
-  const origin = window.location.origin;
-  return [
-    'local _z9 = tostring(game:GetService("Players").LocalPlayer.UserId)',
-    'local _gp = tostring(game.PlaceId)',
-    'local _c = ""',
-    'local _hsOk, _hsBody = pcall(function() return game:HttpGet("' + origin + '/v1/handshake?px=".._z9.."&gp=".._gp) end)',
-    'if _hsOk and _hsBody then _c = tostring(_hsBody) end',
-    'loadstring(game:HttpGet("' + loaderUrl + '?px=".._z9.."&gp=".._gp' + (extraQueryLua ? '..' + extraQueryLua : '') + '.."&c=".._c))()',
-  ].join("\n");
+  // one call to /v1/bootstrap (server does the handshake internally),
+  // no separate handshake round trip visible client-side.
+  const bootstrapUrl = loaderUrl.replace("/v1/load/", "/v1/bootstrap/");
+  return 'loadstring(game:HttpGet("' + bootstrapUrl + '?px="..tostring(game:GetService("Players").LocalPlayer.UserId).."&gp="..tostring(game.PlaceId)' + (extraQueryLua ? '..' + extraQueryLua : '') + '))()';
 }
 
 function openLoader(script) {
