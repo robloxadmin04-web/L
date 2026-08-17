@@ -198,6 +198,45 @@
         <div class="card">
           <div class="card-head">
             <div>
+              <p class="card-kicker">Anti-scrape</p>
+              <h2 class="card-title">Protection tuning</h2>
+            </div>
+          </div>
+          <div class="toggle-block">
+            <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+              <div class="toggle-copy">
+                <p class="toggle-name">Integrity check mode</p>
+                <p class="toggle-desc">What happens when a delivered script detects a hooked loadstring/HttpGet/require/pcall. Start on "Log only" for a few days to confirm no false positives on your userbase's executors, then switch to "Kick".</p>
+              </div>
+              <select id="tIntegrityMode" class="select-field" style="max-width:260px;">
+                <option value="kick">Kick (block + report)</option>
+                <option value="log">Log only (report, don't block)</option>
+                <option value="off">Off (disabled)</option>
+              </select>
+            </div>
+            <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+              <div class="toggle-copy">
+                <p class="toggle-name">Execution ticket TTL (seconds)</p>
+                <p class="toggle-desc">How long a delivered script has to redeem its single-use execution ticket. Raise this if legit players on slow connections are getting "expired session token" errors. Range: 5-120s.</p>
+              </div>
+              <input id="iNonceTtl" type="number" class="text-field" min="5" max="120" step="1" style="max-width:120px;" />
+            </div>
+            <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+              <div class="toggle-copy">
+                <p class="toggle-name">Loader rate limit (requests/min per IP)</p>
+                <p class="toggle-desc">Raise this if players sharing a public IP (school/office/carrier NAT) are getting rate-limited together. Lower it to clamp down harder on scraping. Range: 5-300.</p>
+              </div>
+              <input id="iRateLimit" type="number" class="text-field" min="5" max="300" step="1" style="max-width:120px;" />
+            </div>
+            <div class="toggle-row">
+              <button class="primary-btn" type="button" id="btnSaveTuning">Save protection tuning</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
               <p class="card-kicker">Blocklist</p>
               <h2 class="card-title">Blocked devices, IPs, and keys</h2>
             </div>
