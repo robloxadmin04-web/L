@@ -2,18 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
     <title>Access Denied</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0a0a0b;
+        --bg: #08080a;
+        --bg-raised: #0f0f12;
+        --line: #1c1c20;
         --text: #e8e8ea;
         --muted: #6b6b70;
-        --accent: #8a8a92;
+        --faint: #3a3a3f;
+        --accent: #e8e8ea;
       }
 
-      * { box-sizing: border-box; }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
       html, body {
         height: 100%;
@@ -22,30 +25,97 @@
 
       body {
         background: var(--bg);
+        background-image:
+          radial-gradient(ellipse 900px 500px at 50% 0%, rgba(255,255,255,0.035), transparent 60%);
         color: var(--text);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 24px;
+        overflow: hidden;
       }
 
+      .stage {
+        position: relative;
+        width: 100%;
+        max-width: 340px;
+      }
+
+      /* ---------- Access denied (default) view ---------- */
+
       .content {
-        max-width: 320px;
         text-align: center;
+        transition: opacity 0.35s ease, filter 0.35s ease, transform 0.35s ease;
+      }
+
+      .content.is-hidden {
+        opacity: 0;
+        filter: blur(6px);
+        transform: scale(0.97);
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+      }
+
+      .icon-wrap {
+        width: 52px;
+        height: 52px;
+        margin: 0 auto 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        cursor: pointer;
+        -webkit-user-select: none;
+        user-select: none;
+        transition: background 0.2s ease, transform 0.15s ease;
+      }
+
+      .icon-wrap:active {
+        transform: scale(0.93);
       }
 
       .icon {
-        width: 28px;
-        height: 28px;
-        margin: 0 auto 20px;
+        width: 26px;
+        height: 26px;
         color: var(--muted);
+        transition: color 0.3s ease, transform 0.3s ease;
+      }
+
+      .icon-wrap:hover .icon {
+        color: var(--text);
       }
 
       .icon svg {
         width: 100%;
         height: 100%;
         display: block;
+      }
+
+      .icon .shackle {
+        transform-origin: 12px 9px;
+        transition: transform 0.25s ease;
+      }
+
+      /* subtle progress ring hinting something is happening, only visible mid-sequence */
+      .icon-wrap svg.ring {
+        position: absolute;
+        width: 52px;
+        height: 52px;
+        transform: rotate(-90deg);
+        pointer-events: none;
+      }
+      .icon-ring-track { opacity: 0; }
+      .icon-ring-fill {
+        fill: none;
+        stroke: var(--faint);
+        stroke-width: 1;
+        stroke-linecap: round;
+        stroke-dasharray: 150.8;
+        stroke-dashoffset: 150.8;
+        transition: stroke-dashoffset 0.25s ease, opacity 0.4s ease;
+        opacity: 0;
       }
 
       h1 {
@@ -63,13 +133,21 @@
         margin: 0;
       }
 
+      .content .foot {
+        margin-top: 28px;
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+        color: var(--faint);
+        text-transform: uppercase;
+      }
+
       @media (max-width: 380px) {
         h1 { font-size: 16px; }
         p { font-size: 13px; }
       }
 
       @media (prefers-reduced-motion: no-preference) {
-        .content {
+        .content:not(.is-hidden) {
           animation: fade 0.4s ease-out;
         }
       }
@@ -78,18 +156,500 @@
         from { opacity: 0; transform: translateY(4px); }
         to { opacity: 1; transform: translateY(0); }
       }
+
+      /* ---------- Game view ---------- */
+
+      .game {
+        opacity: 0;
+        transform: scale(0.96);
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transition: opacity 0.4s ease, transform 0.4s ease;
+      }
+
+      .game.is-active {
+        opacity: 1;
+        transform: scale(1);
+        pointer-events: auto;
+        position: relative;
+        inset: auto;
+      }
+
+      .game-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        max-width: 220px;
+        margin-bottom: 12px;
+      }
+
+      .game-title {
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+
+      .game-score {
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+      }
+
+      .game-score b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .board-wrap {
+        position: relative;
+        border-radius: 10px;
+        padding: 1px;
+        background: linear-gradient(160deg, #232327, #111113);
+      }
+
+      canvas#board {
+        display: block;
+        width: 220px;
+        height: 220px;
+        background: var(--bg-raised);
+        border-radius: 9px;
+        image-rendering: pixelated;
+      }
+
+      .board-overlay {
+        position: absolute;
+        inset: 1px;
+        border-radius: 9px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 10px;
+        background: rgba(8, 8, 10, 0.72);
+        backdrop-filter: blur(2px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+        text-align: center;
+        padding: 16px;
+      }
+
+      .board-overlay.is-shown {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .board-overlay .msg {
+        font-size: 12.5px;
+        color: var(--text);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .board-overlay .sub {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .btn {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--text);
+        font-size: 11.5px;
+        padding: 7px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        letter-spacing: 0.01em;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .btn:hover {
+        border-color: var(--muted);
+        background: rgba(255,255,255,0.03);
+      }
+
+      .touch-pad {
+        display: grid;
+        grid-template-columns: repeat(3, 40px);
+        grid-template-rows: repeat(2, 34px);
+        gap: 6px;
+        margin-top: 16px;
+        justify-content: center;
+      }
+
+      .touch-pad button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--bg-raised);
+        color: var(--muted);
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+      }
+
+      .touch-pad button svg { width: 14px; height: 14px; }
+
+      .touch-pad button:active {
+        background: #17171b;
+        color: var(--text);
+        transform: scale(0.94);
+      }
+
+      .tp-up { grid-column: 2; grid-row: 1; }
+      .tp-left { grid-column: 1; grid-row: 2; }
+      .tp-down { grid-column: 2; grid-row: 2; }
+      .tp-right { grid-column: 3; grid-row: 2; }
+
+      @media (hover: hover) and (pointer: fine) {
+        .touch-pad { display: none; }
+      }
+
+      .exit-link {
+        margin-top: 18px;
+        font-size: 11px;
+        color: var(--faint);
+        cursor: pointer;
+        letter-spacing: 0.01em;
+        transition: color 0.2s ease;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .exit-link:hover {
+        color: var(--muted);
+      }
     </style>
   </head>
   <body>
-    <div class="content">
-      <div class="icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="5" y="11" width="14" height="9" rx="1.5"/>
-          <path d="M8 11V7.5a4 4 0 0 1 8 0V11"/>
-        </svg>
+    <div class="stage">
+      <!-- Default access-denied screen -->
+      <div class="content" id="content">
+        <div class="icon-wrap" id="lockTrigger" role="button" tabindex="0" aria-label="Security icon">
+          <svg class="ring" viewBox="0 0 52 52" aria-hidden="true">
+            <circle class="icon-ring-fill" id="ringFill" cx="26" cy="26" r="24" />
+          </svg>
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="11" width="14" height="9" rx="1.5"/>
+              <path class="shackle" d="M8 11V7.5a4 4 0 0 1 8 0V11"/>
+            </svg>
+          </div>
+        </div>
+        <h1>Access denied</h1>
+        <p>This link only works when run from inside Roblox.</p>
+        <div class="foot">Error 403 &middot; Restricted context</div>
       </div>
-      <h1>Access denied</h1>
-      <p>This link only works when run from inside Roblox.</p>
+
+      <!-- Hidden mini-game -->
+      <div class="game" id="game">
+        <div class="game-header">
+          <span class="game-title">Locked mode</span>
+          <span class="game-score">Score <b id="score">0</b></span>
+        </div>
+
+        <div class="board-wrap">
+          <canvas id="board" width="22" height="22"></canvas>
+          <div class="board-overlay" id="overlay">
+            <div class="msg" id="overlayMsg">Tap or press a key to start</div>
+            <div class="sub" id="overlaySub">Arrow keys / WASD or swipe</div>
+          </div>
+        </div>
+
+        <div class="touch-pad" aria-hidden="true">
+          <button class="tp-up" data-dir="up" aria-label="Up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          <button class="tp-left" data-dir="left" aria-label="Left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg></button>
+          <button class="tp-down" data-dir="down" aria-label="Down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></button>
+          <button class="tp-right" data-dir="right" aria-label="Right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+        </div>
+
+        <div class="exit-link" id="exitLink">&larr; Back to access denied</div>
+      </div>
     </div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        var content = document.getElementById("content");
+        var game = document.getElementById("game");
+        var lockTrigger = document.getElementById("lockTrigger");
+        var ringFill = document.getElementById("ringFill");
+        var exitLink = document.getElementById("exitLink");
+
+        var REQUIRED_TAPS = 5;
+        var TAP_WINDOW_MS = 1600;
+        var taps = [];
+
+        function updateRing() {
+          var pct = Math.min(taps.length / REQUIRED_TAPS, 1);
+          var circumference = 150.8;
+          ringFill.style.opacity = taps.length > 0 ? 1 : 0;
+          ringFill.style.strokeDashoffset = circumference * (1 - pct);
+        }
+
+        function resetTaps() {
+          taps = [];
+          updateRing();
+        }
+
+        function registerTap() {
+          var now = Date.now();
+          taps = taps.filter(function (t) { return now - t < TAP_WINDOW_MS; });
+          taps.push(now);
+          updateRing();
+
+          if (taps.length >= REQUIRED_TAPS) {
+            enterGame();
+            resetTaps();
+          }
+        }
+
+        lockTrigger.addEventListener("click", registerTap);
+        lockTrigger.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            registerTap();
+          }
+        });
+
+        function enterGame() {
+          content.classList.add("is-hidden");
+          game.classList.add("is-active");
+          resetGame();
+        }
+
+        function exitGame() {
+          game.classList.remove("is-active");
+          content.classList.remove("is-hidden");
+          stopLoop();
+        }
+
+        exitLink.addEventListener("click", exitGame);
+
+        // ---------------- Snake game ----------------
+
+        var canvas = document.getElementById("board");
+        var ctx = canvas.getContext("2d");
+        var GRID = 14;
+        var CELL = 22; // canvas internal resolution: GRID*CELL/? -> we scale via CSS, keep internal small
+        canvas.width = GRID;
+        canvas.height = GRID;
+
+        var scoreEl = document.getElementById("score");
+        var overlay = document.getElementById("overlay");
+        var overlayMsg = document.getElementById("overlayMsg");
+        var overlaySub = document.getElementById("overlaySub");
+
+        var COLOR_BG = "#0f0f12";
+        var COLOR_SNAKE = "#e8e8ea";
+        var COLOR_SNAKE_HEAD = "#ffffff";
+        var COLOR_FOOD = "#6b6b70";
+        var COLOR_GRID = "#17171a";
+
+        var snake, dir, nextDir, food, score, alive, started, loopId, speedMs;
+
+        function resetGame() {
+          snake = [
+            { x: 6, y: 7 },
+            { x: 5, y: 7 },
+            { x: 4, y: 7 }
+          ];
+          dir = { x: 1, y: 0 };
+          nextDir = dir;
+          score = 0;
+          alive = true;
+          started = false;
+          speedMs = 150;
+          scoreEl.textContent = "0";
+          placeFood();
+          draw();
+          showOverlay("Tap or press a key to start", "Arrow keys / WASD or swipe");
+        }
+
+        function placeFood() {
+          var attempts = 0;
+          while (attempts < 100) {
+            var fx = Math.floor(Math.random() * GRID);
+            var fy = Math.floor(Math.random() * GRID);
+            var collide = snake.some(function (s) { return s.x === fx && s.y === fy; });
+            if (!collide) {
+              food = { x: fx, y: fy };
+              return;
+            }
+            attempts++;
+          }
+          food = { x: 0, y: 0 };
+        }
+
+        function draw() {
+          ctx.fillStyle = COLOR_BG;
+          ctx.fillRect(0, 0, GRID, GRID);
+
+          ctx.fillStyle = COLOR_GRID;
+          for (var gx = 0; gx < GRID; gx += 2) {
+            for (var gy = 0; gy < GRID; gy += 2) {
+              ctx.fillRect(gx, gy, 1, 1);
+            }
+          }
+
+          ctx.fillStyle = COLOR_FOOD;
+          ctx.fillRect(food.x, food.y, 1, 1);
+
+          for (var i = 0; i < snake.length; i++) {
+            ctx.fillStyle = i === 0 ? COLOR_SNAKE_HEAD : COLOR_SNAKE;
+            ctx.globalAlpha = i === 0 ? 1 : Math.max(0.55, 1 - i * 0.03);
+            ctx.fillRect(snake[i].x, snake[i].y, 1, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        function showOverlay(msg, sub) {
+          overlayMsg.textContent = msg;
+          overlaySub.textContent = sub || "";
+          overlay.classList.add("is-shown");
+        }
+
+        function hideOverlay() {
+          overlay.classList.remove("is-shown");
+        }
+
+        function step() {
+          if (!alive) return;
+          dir = nextDir;
+          var head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+          if (head.x < 0 || head.y < 0 || head.x >= GRID || head.y >= GRID) {
+            return gameOver();
+          }
+          var hitSelf = snake.some(function (s) { return s.x === head.x && s.y === head.y; });
+          if (hitSelf) {
+            return gameOver();
+          }
+
+          snake.unshift(head);
+
+          if (head.x === food.x && head.y === food.y) {
+            score++;
+            scoreEl.textContent = String(score);
+            placeFood();
+            if (speedMs > 70) speedMs -= 3;
+            restartLoop();
+          } else {
+            snake.pop();
+          }
+
+          draw();
+        }
+
+        function gameOver() {
+          alive = false;
+          stopLoop();
+          draw();
+          showOverlay("Run ended \u2014 " + score + " pts", "Tap or press a key to retry");
+          started = false;
+        }
+
+        function startLoop() {
+          stopLoop();
+          loopId = setInterval(step, speedMs);
+        }
+
+        function restartLoop() {
+          if (started && alive) startLoop();
+        }
+
+        function stopLoop() {
+          if (loopId) {
+            clearInterval(loopId);
+            loopId = null;
+          }
+        }
+
+        function beginRun() {
+          if (started) return;
+          if (!alive) resetGame();
+          started = true;
+          alive = true;
+          hideOverlay();
+          startLoop();
+        }
+
+        function setDirection(nx, ny) {
+          // prevent reversing directly into self
+          if (snake.length > 1 && nx === -dir.x && ny === -dir.y) return;
+          nextDir = { x: nx, y: ny };
+          beginRun();
+        }
+
+        var keyMap = {
+          ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+          w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+          W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0]
+        };
+
+        document.addEventListener("keydown", function (e) {
+          if (!game.classList.contains("is-active")) return;
+          if (e.key === "Escape") { exitGame(); return; }
+          var mapped = keyMap[e.key];
+          if (mapped) {
+            e.preventDefault();
+            setDirection(mapped[0], mapped[1]);
+          }
+        });
+
+        // touch d-pad
+        var pad = document.querySelectorAll(".touch-pad button");
+        pad.forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var d = btn.getAttribute("data-dir");
+            if (d === "up") setDirection(0, -1);
+            if (d === "down") setDirection(0, 1);
+            if (d === "left") setDirection(-1, 0);
+            if (d === "right") setDirection(1, 0);
+          });
+        });
+
+        // swipe on the board itself
+        var touchStart = null;
+        canvas.addEventListener("touchstart", function (e) {
+          var t = e.changedTouches[0];
+          touchStart = { x: t.clientX, y: t.clientY };
+        }, { passive: true });
+
+        canvas.addEventListener("touchend", function (e) {
+          if (!touchStart) return;
+          var t = e.changedTouches[0];
+          var dx = t.clientX - touchStart.x;
+          var dy = t.clientY - touchStart.y;
+          if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+            beginRun();
+            touchStart = null;
+            return;
+          }
+          if (Math.abs(dx) > Math.abs(dy)) {
+            setDirection(dx > 0 ? 1 : -1, 0);
+          } else {
+            setDirection(0, dy > 0 ? 1 : -1);
+          }
+          touchStart = null;
+        });
+
+        overlay.addEventListener("click", beginRun);
+        canvas.addEventListener("click", beginRun);
+
+        resetGame();
+      })();
+    </script>
   </body>
 </html>
