@@ -402,6 +402,17 @@ if (el.btnAutoSlug) {
 if (el.sName) {
   el.sName.addEventListener("input", updateSlugPreview);
 }
+if (el.sGame) {
+  // PlaceIds are numeric only - strip anything else as the user types,
+  // same pattern as the slug field's live cleanup.
+  el.sGame.addEventListener("input", function () {
+    const cleaned = el.sGame.value.replace(/[^0-9]/g, "");
+    if (cleaned !== el.sGame.value) el.sGame.value = cleaned;
+  });
+}
+function isValidGameId(v) {
+  return v === "" || /^\d{1,20}$/.test(v);
+}
 
 el.sourceDrop.addEventListener("click", function () { el.sourceFile.click(); });
 el.sourceFile.addEventListener("change", function (e) {
@@ -457,6 +468,13 @@ async function createScript() {
     el.btnNext.textContent = "Create script";
     return;
   }
+  if (!isValidGameId(el.sGame.value.trim())) {
+    el.wizardErr.textContent = "Game ID must be a numeric Roblox PlaceId (or left blank).";
+    el.wizardErr.classList.add("is-visible");
+    el.btnNext.disabled = false;
+    el.btnNext.textContent = "Create script";
+    return;
+  }
   try {
     const body = {
       name: el.sName.value.trim(),
@@ -485,6 +503,13 @@ async function createScript() {
 async function updateScript() {
   el.btnNext.disabled = true;
   el.btnNext.textContent = "Saving...";
+  if (!isValidGameId(el.sGame.value.trim())) {
+    el.wizardErr.textContent = "Game ID must be a numeric Roblox PlaceId (or left blank).";
+    el.wizardErr.classList.add("is-visible");
+    el.btnNext.disabled = false;
+    el.btnNext.textContent = "Save changes";
+    return;
+  }
   try {
     const body = {
       name: el.sName.value.trim(),
