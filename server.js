@@ -395,6 +395,66 @@ function decodeWatermark(token) {
   }
 }
 
+// Simple string-literal obfuscation, applied at delivery time (DB copy of
+// script.source stays plain/readable in the dashboard). This does NOT
+// stop a determined dumper - it's a speed bump, not a VM. What it does:
+// every simple double-quoted string literal (no backslash escapes, to
+// avoid misparsing) gets pulled out into an XOR-encoded byte table with
+// a random per-request key, and replaced in the code with a call to a
+// tiny decoder. A raw memory/console dump of the delivered body shows
+// scrambled byte tables and __sol_ds(n) calls instead of readable
+// strings - someone has to actually read and run the decoder logic to
+// recover them, instead of just eyeballing a text dump.
+// Deliberately conservative: skips strings containing backslashes,
+// long-bracket strings [[...]], and anything that looks like a comment
+// line, rather than risk corrupting the script. For real protection
+// against a motivated attacker, pair this with a proper VM-based
+// obfuscator (Luraph, Prometheus, etc.) - this is a cheap first layer,
+// not a replacement for one.
+function obfuscateStrings(src) {
+  if (typeof src !== "string" || !src.trim()) return src;
+  const key = 20 + Math.floor(Math.random() * 200);
+  const byteTables = [];
+  const lines = src.split("\n");
+  const obfLines = lines.map((line) => {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("--")) return line; // don't touch comment lines
+    return line.replace(/"((?:[^"\\\n])*)"/g, (match, inner) => {
+      if (inner.length === 0) return match;
+      const bytes = [];
+      for (let i = 0; i < inner.length; i++) bytes.push(inner.charCodeAt(i) ^ key);
+      byteTables.push(bytes);
+      return "__sol_ds(" + (byteTables.length - 1) + ")";
+    });
+  });
+  if (byteTables.length === 0) return src; // nothing eligible, skip decoder overhead entirely
+
+  const tableLua = byteTables.map((bytes) => "{" + bytes.join(",") + "}").join(",");
+  const decoder = [
+    "local __sol_dk = " + key,
+    "local __sol_dt = {" + tableLua + "}",
+    "local function __sol_dxor(a, b)",
+    "  if bit32 and bit32.bxor then return bit32.bxor(a, b) end",
+    "  if bit and bit.bxor then return bit.bxor(a, b) end",
+    "  local r, bitv = 0, 1",
+    "  while a > 0 or b > 0 do",
+    "    local ba, bb = a % 2, b % 2",
+    "    if ba ~= bb then r = r + bitv end",
+    "    a, b, bitv = (a - ba) / 2, (b - bb) / 2, bitv * 2",
+    "  end",
+    "  return r",
+    "end",
+    "local function __sol_ds(i)",
+    "  local t = __sol_dt[i + 1]",
+    "  local out = {}",
+    "  for j = 1, #t do out[j] = string.char(__sol_dxor(t[j], __sol_dk)) end",
+    "  return table.concat(out)",
+    "end",
+  ].join("\n");
+
+  return decoder + "\n" + obfLines.join("\n");
+}
+
 function injectWatermark(source, keyId, hwid, ip) {
   const token = makeWatermark(keyId, hwid, ip);
   // Placed as a harmless comment; invisible to normal script behavior,
@@ -1429,7 +1489,7 @@ async function handleLoadRoute(req, res) {
       if (script.player_ui === "key_gui") {
         const __cToken = issueCanaryToken(scriptSlug, "");
         const __cUrl = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
-        return res.status(200).send(wrapKeyGui(script.source || "-- empty script", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl));
+        return res.status(200).send(wrapKeyGui(obfuscateStrings(script.source || "-- empty script"), scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl));
       }
       return block("missing key", 401, null, projectId, script.id);
     }
@@ -1557,7 +1617,7 @@ async function handleLoadRoute(req, res) {
     }
   }
 
-  const __raw = script.source || "-- empty script";
+  const __raw = obfuscateStrings(script.source || "-- empty script");
   const __opts = { silent: script.silent_mode, fast: script.fast_mode };
   // Raw passthrough: the GUI wrappers re-fetch the script with ?raw=1 so we
   // never embed the source inside loadstring([==[...]==]) (which can break on
@@ -1696,8 +1756,35 @@ app.get("/v1/loaders/:file", (req, res) => {
   const bootstrapUrl = PUBLIC_BASE_URL + "/v1/bootstrap/" + slug;
   const keyLine = key ? 'local _k = "' + key.replace(/"/g, "") + '"\n' : "";
   const keyQuery = key ? '.."&key=".._k' : "";
+  const __cToken = issueCanaryToken(slug, key || "");
+  const __cUrl = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
+
+  // Earliest possible hook check: runs BEFORE we ever fetch /v1/bootstrap,
+  // so a hooked loadstring gets nothing at all if it fails - not even the
+  // disposable stage-1 stub. This is the very first Lua that executes
+  // client-side, so it's checking loadstring as close to "untouched" as
+  // we can get.
+  const __earlyCheck = [
+    'local function __sol_early_ok()',
+    '  local ok1, info = pcall(debug.getinfo, loadstring, "S")',
+    '  if ok1 and info and info.what ~= "C" then return false end',
+    '  local iscc = iscclosure or is_cclosure or checkclosure',
+    '  if type(iscc) == "function" then',
+    '    local ok2, r = pcall(iscc, loadstring)',
+    '    if ok2 and r == false then return false end',
+    '  end',
+    '  return true',
+    'end',
+    'if not __sol_early_ok() then',
+    '  pcall(function() game:HttpGet("' + __cUrl + '?r=early_hook") end)',
+    '  local __plr = game:GetService("Players").LocalPlayer',
+    '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
+    '  return',
+    'end',
+  ].join("\n") + "\n";
 
   const lua = [
+    __earlyCheck +
     keyLine +
     'local _px = tostring(game:GetService("Players").LocalPlayer.UserId)',
     'local _gp = tostring(game.PlaceId)',
@@ -2229,6 +2316,65 @@ app.get("/api/keys", requireAuth, async (req, res) => {
     .eq("owner_account_id", req.session.account_id).order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   res.json({ ok: true, keys: data });
+});
+
+// ============================================================
+// WATERMARK DECODE / TRACE - paste a leaked copy of a delivered
+// script here (dashboard-only tool) and it pulls the "--[[wm:...]]"
+// marker (see injectWatermark/decodeWatermark above) back out to tell
+// you which key/hwid/ip/timestamp it was served to. Scoped to keys
+// owned by the signed-in account, so this can't be used to probe
+// other people's keys even if someone guesses at a token format.
+// Optional ?revoke=1 immediately revokes the matched key in the same
+// call, for "found a leak, kill it now" workflows.
+// ============================================================
+app.post("/api/watermark/decode", requireAuth, async (req, res) => {
+  const text = String((req.body || {}).text || "");
+  if (!text.trim()) return res.status(400).json({ ok: false, error: "No text provided" });
+
+  const m = text.match(/--\[\[wm:([A-Za-z0-9+/_-]+)\]\]/);
+  if (!m) return res.status(404).json({ ok: false, error: "No watermark found in the pasted text" });
+
+  const payload = decodeWatermark(m[1]);
+  if (!payload) return res.status(400).json({ ok: false, error: "Watermark present but could not be decoded (corrupted, edited, or from a different server secret)" });
+
+  let keyRow = null;
+  if (payload.k) {
+    const { data } = await supabase.from("keys")
+      .select("id, key, label, revoked, project_id, hwid, hwid_locked, expires_at, created_at")
+      .eq("id", payload.k)
+      .eq("owner_account_id", req.session.account_id)
+      .maybeSingle();
+    keyRow = data || null;
+  }
+
+  let revoked = false;
+  if (req.query.revoke === "1" && keyRow && !keyRow.revoked) {
+    const { error: revokeErr } = await supabase.from("keys").update({ revoked: true }).eq("id", keyRow.id);
+    if (!revokeErr) {
+      revoked = true;
+      keyRow.revoked = true;
+      await supabase.from("access_log").insert({
+        owner_account_id: req.session.account_id,
+        key_id: keyRow.id, project_id: keyRow.project_id,
+        event: "blocked",
+        reason: "revoked via watermark trace on leaked copy",
+        hwid: payload.h || null, ip: payload.i || null,
+      });
+    }
+  }
+
+  res.json({
+    ok: true,
+    watermark: {
+      key_id: payload.k || null,
+      hwid_prefix: payload.h || null,
+      ip: payload.i || null,
+      served_at: payload.t ? new Date(payload.t).toISOString() : null,
+    },
+    key: keyRow, // null if the key belongs to a different account, was deleted, or watermark had no key (keyless delivery)
+    revoked,
+  });
 });
 
 app.post("/api/keys", requireAuth, async (req, res) => {
