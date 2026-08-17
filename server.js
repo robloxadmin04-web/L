@@ -444,9 +444,10 @@ function encryptDelivery(plaintext, nonce) {
 const rawNonces = new Map(); // nonce -> { scriptSlug, key, expires, used }
 const RAW_NONCE_TTL_MS = 15 * 1000;
 
-function issueRawNonce(scriptSlug, key) {
+function issueRawNonce(scriptSlug, key, ttlMs) {
   const nonce = crypto.randomBytes(16).toString("hex");
-  rawNonces.set(nonce, { scriptSlug, key: key || "", expires: Date.now() + RAW_NONCE_TTL_MS, used: false });
+  const ttl = (typeof ttlMs === "number" && ttlMs > 0) ? ttlMs : RAW_NONCE_TTL_MS;
+  rawNonces.set(nonce, { scriptSlug, key: key || "", expires: Date.now() + ttl, used: false });
   return nonce;
 }
 function consumeRawNonce(nonce, scriptSlug, key, skipScopeCheck) {
@@ -556,7 +557,21 @@ setInterval(() => {
 // Every check is best-effort and individually bypassable by a determined
 // attacker who patches iscclosure itself - the point is to raise cost,
 // not to claim this is unbeatable (see the design note above wrapExecCheck).
-function buildIntegritySnippet(canaryUrl) {
+function buildIntegritySnippet(canaryUrl, kickOnFail) {
+  const failAction = kickOnFail === false
+    ? [
+        "if __sol_suspect then",
+        "  __sol_report(__sol_reason)",
+        "end",
+      ]
+    : [
+        "if __sol_suspect then",
+        "  __sol_report(__sol_reason)",
+        '  local __plr = game:GetService("Players").LocalPlayer',
+        '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
+        "  return",
+        "end",
+      ];
   return [
     "local function __sol_report(reason)",
     '  pcall(function() game:HttpGet("' + canaryUrl + '?r=" .. tostring(reason)) end)',
@@ -585,13 +600,7 @@ function buildIntegritySnippet(canaryUrl) {
     "    end",
     "  end",
     "end",
-    "if __sol_suspect then",
-    "  __sol_report(__sol_reason)",
-    '  local __plr = game:GetService("Players").LocalPlayer',
-    '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
-    "  return",
-    "end",
-  ].join("\n");
+  ].concat(failAction).join("\n");
 }
 
 // Wraps a delivered script body with the integrity preamble. Distinct from
@@ -599,8 +608,12 @@ function buildIntegritySnippet(canaryUrl) {
 // proves "this specific runtime hasn't visibly tampered with the functions
 // we're about to rely on". The two stack: integrity check runs first,
 // then the existing exec-ticket check, then the real body.
-function wrapIntegrityCheck(source, canaryUrl) {
-  return buildIntegritySnippet(canaryUrl) + "\n" + source;
+// kickOnFail=false -> "log-only" mode: still fires the canary report, but
+// lets the real script run anyway. Useful for the first deployment window
+// while you confirm the check has no false positives on your userbase's
+// mix of executors (see the tuning card in the dashboard).
+function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
+  return buildIntegritySnippet(canaryUrl, kickOnFail) + "\n" + source;
 }
 
 // Tiny server-side bootstrap: grabs the HWID and re-hits the loader with it.
@@ -1161,23 +1174,12 @@ async function handleLoadRoute(req, res) {
   const hwid = getHwid(req);
   const ip = getClientIp(req);
 
-  // FIX B: throttle loader hits per IP to blunt abuse / scraping
-  if (!rateLimit("load:" + ip, 30, 60 * 1000)) {
-    // Alert owner — repeated rapid hits from same IP is a scraping signal
-    if (global.__solScrapeAlert) {
-      // Fetch script owner_account_id best-effort (non-blocking)
-      supabase.from("scripts")
-        .select("project_id, projects!inner(owner_account_id)")
-        .eq("slug", scriptSlug).maybeSingle()
-        .then(({ data }) => {
-          if (data?.projects?.owner_account_id) {
-            global.__solScrapeAlert(data.projects.owner_account_id, "rate_limit", {
-              scriptSlug, ip, hwid, key, reason: "30+ requests in 60s from same IP",
-            });
-          }
-        }).catch(() => {});
-    }
-    return res.status(429).send("-- rate limited");
+  // Hard floor: always applied, before any DB touch, regardless of the
+  // per-project tunable below. Keeps a flood of hits from a single IP
+  // from hitting the database at all, no matter how high someone sets
+  // the tunable loader rate limit for a given project.
+  if (!rateLimit("load-floor:" + ip, 60, 10 * 1000)) {
+    return res.status(429).send("-- too many requests");
   }
 
   async function block(reason, code, keyId, projectId, scriptId) {
@@ -1196,13 +1198,42 @@ async function handleLoadRoute(req, res) {
 
   const { data: script } = await supabase
     .from("scripts")
-    .select("id, project_id, source, key_mode, enabled, player_ui, same_device, silent_mode, fast_mode, game_id, projects!inner(id, status, whitelist_only, owner_account_id)")
+    .select("id, project_id, source, key_mode, enabled, player_ui, same_device, silent_mode, fast_mode, game_id, projects!inner(id, status, whitelist_only, owner_account_id, integrity_mode, raw_nonce_ttl_sec, load_rate_limit_per_min)")
     .eq("slug", scriptSlug)
     .maybeSingle();
 
   if (!script) return res.status(404).send("-- script not found");
   if (!script.enabled) return block("script disabled", 403, null, script.project_id, script.id);
   if (script.projects.status === "paused") return block("project paused", 403, null, script.project_id, script.id);
+
+  // ------------------------------------------------------------
+  // Protection tuning (per-project, editable in the dashboard's
+  // "Protection tuning" card - see /api/projects PATCH). Falls back
+  // to the original hardcoded defaults when a project hasn't set
+  // these yet (existing rows, or the columns not created).
+  // ------------------------------------------------------------
+  const __integrityMode = ["kick", "log", "off"].includes(script.projects.integrity_mode)
+    ? script.projects.integrity_mode : "kick";
+  const __nonceTtlMs = (Number.isFinite(script.projects.raw_nonce_ttl_sec) && script.projects.raw_nonce_ttl_sec > 0)
+    ? script.projects.raw_nonce_ttl_sec * 1000 : RAW_NONCE_TTL_MS;
+  const __loadRatePerMin = (Number.isFinite(script.projects.load_rate_limit_per_min) && script.projects.load_rate_limit_per_min > 0)
+    ? script.projects.load_rate_limit_per_min : 30;
+
+  // FIX B: throttle loader hits per IP to blunt abuse / scraping.
+  // Threshold is per-project tunable (__loadRatePerMin); this check now
+  // runs after the script/project lookup so the tuned value can be used,
+  // instead of the old hardcoded 30/60s applied before the project was
+  // even known.
+  if (!rateLimit("load:" + ip, __loadRatePerMin, 60 * 1000)) {
+    // Alert owner — repeated rapid hits from same IP is a scraping signal
+    if (global.__solScrapeAlert && script.projects.owner_account_id) {
+      global.__solScrapeAlert(script.projects.owner_account_id, "rate_limit", {
+        scriptSlug, ip, hwid, key, reason: __loadRatePerMin + "+ requests in 60s from same IP",
+      });
+    }
+    return res.status(429).send("-- rate limited");
+  }
+
 
   // FIX #NEW: if the script owner configured an expected Roblox PlaceId,
   // require the caller's reported `gp` (game.PlaceId, sent by every
@@ -1409,11 +1440,13 @@ async function handleLoadRoute(req, res) {
     // getting the encrypted bytes) - it gates actually running the code
     // inside them, and is consumed the instant the real client executes
     // it, so a saved copy fails the redeem and the player gets kicked.
-    const __execTicket = issueRawNonce(scriptSlug, key || "");
+    const __execTicket = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
     const __canaryToken = issueCanaryToken(scriptSlug, key || "");
     const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
-    const __ticketed = wrapIntegrityCheck(wrapExecCheck(__wm, __verifyUrl), __canaryUrl);
+    const __ticketed = __integrityMode === "off"
+      ? wrapExecCheck(__wm, __verifyUrl)
+      : wrapIntegrityCheck(wrapExecCheck(__wm, __verifyUrl), __canaryUrl, __integrityMode === "kick");
     const __enc = encryptDelivery(__ticketed, __n);
     return res.status(200).send(__enc);
   }
@@ -1421,23 +1454,25 @@ async function handleLoadRoute(req, res) {
     return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL, __opts));
   }
   if (script.player_ui === "loading") {
-    const __rawNonce = issueRawNonce(scriptSlug, key || "");
+    const __rawNonce = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
     const _z9 = String(req.query.px || "").trim();
     const __rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug + "?key=" + encodeURIComponent(key || "") + "&px=" + encodeURIComponent(_z9) + "&raw=1&n=" + __rawNonce;
     return res.status(200).send(wrapLoadingGui(__raw, __opts, __rawUrl, __rawNonce));
   }
   // Plain delivery: mint a short-lived, single-use "execution ticket" nonce
   // and prepend a tiny preamble that must redeem it via /v1/verify within
-  // RAW_NONCE_TTL_MS seconds of THIS load response being generated. A copy
-  // of the delivered script saved and re-run later (outside the normal
-  // loadstring(game:HttpGet(...))() flow) will fail the redeem and kick
-  // the player instead of running.
+  // the project's configured nonce TTL (falls back to RAW_NONCE_TTL_MS) of
+  // THIS load response being generated. A copy of the delivered script
+  // saved and re-run later (outside the normal loadstring(game:HttpGet(...))()
+  // flow) will fail the redeem and kick the player instead of running.
   {
-    const __execNonce = issueRawNonce(scriptSlug, key || "");
+    const __execNonce = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce;
     const __canaryToken = issueCanaryToken(scriptSlug, key || "");
     const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
-    const __checked = wrapIntegrityCheck(wrapExecCheck(injectWatermark(__raw, null, hwid, ip), __verifyUrl), __canaryUrl);
+    const __checked = __integrityMode === "off"
+      ? wrapExecCheck(injectWatermark(__raw, null, hwid, ip), __verifyUrl)
+      : wrapIntegrityCheck(wrapExecCheck(injectWatermark(__raw, null, hwid, ip), __verifyUrl), __canaryUrl, __integrityMode === "kick");
     return res.status(200).send(__checked);
   }
 }
@@ -1756,7 +1791,7 @@ app.delete("/api/analytics/logs", requireAuth, async (req, res) => {
 // ============================================================
 app.get("/api/projects", requireAuth, async (req, res) => {
   const { data, error } = await supabase.from("projects")
-    .select("id, name, slug, note, status, whitelist_only, created_at")
+    .select("id, name, slug, note, status, whitelist_only, created_at, integrity_mode, raw_nonce_ttl_sec, load_rate_limit_per_min")
     .eq("owner_account_id", req.session.account_id).order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   const withCounts = await Promise.all((data || []).map(async (p) => {
@@ -1792,6 +1827,24 @@ app.patch("/api/projects/:id", requireAuth, async (req, res) => {
   if (typeof req.body?.note === "string") patch.note = req.body.note;
   if (req.body?.status === "active" || req.body?.status === "paused") patch.status = req.body.status;
   if (typeof req.body?.whitelist_only === "boolean") patch.whitelist_only = req.body.whitelist_only;
+  // ------------------------------------------------------------
+  // Protection tuning fields (dashboard "Protection tuning" card).
+  // Clamped server-side too, since the DB column has no CHECK
+  // constraint of its own — never trust the client-side clamp alone.
+  // ------------------------------------------------------------
+  if (["kick", "log", "off"].includes(req.body?.integrity_mode)) {
+    patch.integrity_mode = req.body.integrity_mode;
+  }
+  if (req.body?.raw_nonce_ttl_sec !== undefined) {
+    const n = parseInt(req.body.raw_nonce_ttl_sec, 10);
+    if (!Number.isFinite(n)) return res.status(400).json({ ok: false, error: "raw_nonce_ttl_sec must be a number" });
+    patch.raw_nonce_ttl_sec = Math.min(120, Math.max(5, n));
+  }
+  if (req.body?.load_rate_limit_per_min !== undefined) {
+    const n = parseInt(req.body.load_rate_limit_per_min, 10);
+    if (!Number.isFinite(n)) return res.status(400).json({ ok: false, error: "load_rate_limit_per_min must be a number" });
+    patch.load_rate_limit_per_min = Math.min(300, Math.max(5, n));
+  }
   const { data, error } = await supabase.from("projects").update(patch)
     .eq("id", req.params.id).eq("owner_account_id", req.session.account_id).select().single();
   if (error) return res.status(500).json({ ok: false, error: "Could not update project" });
