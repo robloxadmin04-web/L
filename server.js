@@ -254,9 +254,18 @@ async function gateLoaderRequest(req, res) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
+  const ip = getClientIp(req);
+  if (isRateLimited("load-ip", ip, 20, 10 * 1000)) {
+    res.status(429).type("text/plain").send("-- too many requests");
+    return true;
+  }
   const pid = String(req.query.px || "").trim();
   if (!pid) {
     res.status(403).type("text/plain").send("-- forbidden");
+    return true;
+  }
+  if (isRateLimited("load-pid", pid, 8, 10 * 1000)) {
+    res.status(429).type("text/plain").send("-- too many requests");
     return true;
   }
   const validPid = await isValidRobloxPlayer(pid);
@@ -383,6 +392,32 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, v] of rawNonces) if (now > v.expires) rawNonces.delete(k);
 }, 30 * 1000).unref();
+
+// ============================================================
+// RATE LIMITING - simple in-memory sliding window, per scope+key.
+// Not for full DDoS defense, just to blunt brute-force key/nonce
+// guessing and abnormal request bursts from a single IP or pid.
+// ============================================================
+const rateBuckets = new Map(); // "scope:key" -> number[] (hit timestamps, ms)
+
+function isRateLimited(scope, key, maxHits, windowMs) {
+  if (!key) return false;
+  const bucketKey = scope + ":" + key;
+  const now = Date.now();
+  let hits = rateBuckets.get(bucketKey);
+  if (!hits) { hits = []; rateBuckets.set(bucketKey, hits); }
+  while (hits.length && now - hits[0] > windowMs) hits.shift();
+  if (hits.length >= maxHits) return true;
+  hits.push(now);
+  return false;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, hits] of rateBuckets) {
+    while (hits.length && now - hits[0] > 60 * 1000) hits.shift();
+    if (hits.length === 0) rateBuckets.delete(k);
+  }
+}, 60 * 1000).unref();
 
 // Prepends a tiny preamble that redeems a one-time execution ticket before
 // the real script body runs. If the redeem fails (ticket missing, expired,
@@ -856,6 +891,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
 app.get("/v1/verify/:nonce", async (req, res) => {
   res.type("text/plain");
   if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("0");
+  if (isRateLimited("verify-ip", getClientIp(req), 15, 15 * 1000)) return res.status(429).send("0");
   const ok = consumeRawNonce(String(req.params.nonce || ""), null, null, true);
   res.status(200).send(ok ? "1" : "0");
 });
