@@ -369,12 +369,12 @@ function issueRawNonce(scriptSlug, key) {
   rawNonces.set(nonce, { scriptSlug, key: key || "", expires: Date.now() + RAW_NONCE_TTL_MS, used: false });
   return nonce;
 }
-function consumeRawNonce(nonce, scriptSlug, key) {
+function consumeRawNonce(nonce, scriptSlug, key, skipScopeCheck) {
   if (!nonce) return false;
   const n = rawNonces.get(nonce);
   if (!n) return false;
   if (n.used || Date.now() > n.expires) { rawNonces.delete(nonce); return false; }
-  if (n.scriptSlug !== scriptSlug || n.key !== (key || "")) return false;
+  if (!skipScopeCheck && (n.scriptSlug !== scriptSlug || n.key !== (key || ""))) return false;
   n.used = true;
   rawNonces.delete(nonce);
   return true;
@@ -383,6 +383,28 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, v] of rawNonces) if (now > v.expires) rawNonces.delete(k);
 }, 30 * 1000).unref();
+
+// Prepends a tiny preamble that redeems a one-time execution ticket before
+// the real script body runs. If the redeem fails (ticket missing, expired,
+// or already used - i.e. this exact response text was saved and re-run
+// later instead of being reached via the live loadstring(HttpGet()) call),
+// the player is kicked and the real body never executes.
+function wrapExecCheck(source, verifyUrl) {
+  const lines = [
+    "do",
+    '  local __ok = false',
+    '  local __s, __r = pcall(function() return game:HttpGet("' + verifyUrl + '") end)',
+    '  if __s and __r == "1" then __ok = true end',
+    "  if not __ok then",
+    '    local __plr = game:GetService("Players").LocalPlayer',
+    '    if __plr then __plr:Kick("Use this script via loadstring, not directly.") end',
+    "    return",
+    "  end",
+    "end",
+    source,
+  ];
+  return lines.join("\n");
+}
 
 // Tiny server-side bootstrap: grabs the HWID and re-hits the loader with it.
 // Returned on the first keyed hit that has no HWID, so the user's loader
@@ -826,6 +848,19 @@ app.get("/api/me", requireAuth, async (req, res) => {
 });
 
 // ============================================================
+// EXECUTION TICKET REDEEM - called by the wrapExecCheck() preamble
+// embedded in delivered scripts. Single-use, short-lived (see
+// RAW_NONCE_TTL_MS): proves this exact script run is happening live,
+// right after /v1/load generated it - not a saved copy replayed later.
+// ============================================================
+app.get("/v1/verify/:nonce", async (req, res) => {
+  res.type("text/plain");
+  if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("0");
+  const ok = consumeRawNonce(String(req.params.nonce || ""), null, null, true);
+  res.status(200).send(ok ? "1" : "0");
+});
+
+// ============================================================
 // PUBLIC LOADER - with HWID, expiry, and block/allow checks
 // ============================================================
 app.get("/v1/load/:script_slug", async (req, res) => {
@@ -1077,7 +1112,18 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     const __rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug + "?key=" + encodeURIComponent(key || "") + "&px=" + encodeURIComponent(_z9) + "&raw=1&n=" + __rawNonce;
     return res.status(200).send(wrapLoadingGui(__raw, __opts, __rawUrl, __rawNonce));
   }
-  return res.status(200).send(injectWatermark(__raw, null, hwid, ip));
+  // Plain delivery: mint a short-lived, single-use "execution ticket" nonce
+  // and prepend a tiny preamble that must redeem it via /v1/verify within
+  // RAW_NONCE_TTL_MS seconds of THIS load response being generated. A copy
+  // of the delivered script saved and re-run later (outside the normal
+  // loadstring(game:HttpGet(...))() flow) will fail the redeem and kick
+  // the player instead of running.
+  {
+    const __execNonce = issueRawNonce(scriptSlug, key || "");
+    const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce;
+    const __checked = wrapExecCheck(injectWatermark(__raw, null, hwid, ip), __verifyUrl);
+    return res.status(200).send(__checked);
+  }
 });
 
 // ============================================================
