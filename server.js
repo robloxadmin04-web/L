@@ -1750,10 +1750,13 @@ app.get("/v1/load/:script_slug", handleLoadRoute);
 // endpoint the loader snippet has to call out to.
 // ============================================================
 app.get("/v1/bootstrap/:script_slug", async (req, res) => {
-  const pid = String(req.query.px || "").trim();
-  const gp = String(req.query.gp || "").trim();
-  const ip = getClientIp(req);
-  if (pid) req.query.c = issueChallenge(pid, ip, gp);
+  // FIX: no longer self-issues a challenge here. The client (see
+  // /v1/loaders/:file below) must have already fetched a real, single-use
+  // challenge from /v1/handshake and passed it as ?c= - this route just
+  // forwards straight into handleLoadRoute, which validates that challenge
+  // for real via consumeChallenge (see gateLoaderRequest). A request that
+  // skips the handshake step and hits this URL directly with no valid `c`
+  // is rejected there, same as any other forbidden request.
   return handleLoadRoute(req, res);
 });
 
@@ -1809,7 +1812,17 @@ app.get("/v1/loaders/:file", (req, res) => {
     keyLine +
     'local _px = tostring(game:GetService("Players").LocalPlayer.UserId)',
     'local _gp = tostring(game.PlaceId)',
-    'local _s = game:HttpGet("' + bootstrapUrl + '?px=".._px.."&gp=".._gp' + keyQuery + ')',
+    // FIX: actually perform the two-step handshake now. Previously
+    // /v1/bootstrap minted its own challenge server-side and consumed it
+    // in the same request - meaning a plain curl to /v1/bootstrap could
+    // sail through with zero real client-side work. Now the client must
+    // first fetch a genuine single-use challenge from /v1/handshake, then
+    // present it back to /v1/bootstrap. A generic dumper that only knows
+    // about the final /v1/load or /v1/bootstrap URL - as leaked/shared
+    // dumper scripts typically do - no longer works on its own; it would
+    // also need to replicate this two-request exchange exactly.
+    'local _c = game:HttpGet("' + PUBLIC_BASE_URL + '/v1/handshake?px=".._px.."&gp=".._gp)',
+    'local _s = game:HttpGet("' + bootstrapUrl + '?px=".._px.."&gp=".._gp.."&c=".._c' + keyQuery + ')',
     'local _fn,_err = loadstring(_s)',
     'if _fn then _fn() else warn("[Solaries] load failed: "..tostring(_err).." | body: ".._s:sub(1,300)) end',
   ].join("\n");
