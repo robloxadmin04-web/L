@@ -18,6 +18,11 @@ const el = {
   btnDelete: document.getElementById("btnDelete"),
   tWhitelist: document.getElementById("tWhitelist"),
 
+  tIntegrityMode: document.getElementById("tIntegrityMode"),
+  iNonceTtl: document.getElementById("iNonceTtl"),
+  iRateLimit: document.getElementById("iRateLimit"),
+  btnSaveTuning: document.getElementById("btnSaveTuning"),
+
   openWizard: document.getElementById("openWizard"),
   wizardTitle: document.getElementById("wizardTitle"),
   table: document.getElementById("scriptsTable"),
@@ -171,6 +176,9 @@ function renderHeader() {
   el.projStatusWrap.appendChild(pill);
   el.btnPause.textContent = project.status === "paused" ? "Resume" : "Pause";
   el.tWhitelist.checked = !!project.whitelist_only;
+  el.tIntegrityMode.value = ["kick", "log", "off"].includes(project.integrity_mode) ? project.integrity_mode : "kick";
+  el.iNonceTtl.value = Number.isFinite(project.raw_nonce_ttl_sec) ? project.raw_nonce_ttl_sec : 15;
+  el.iRateLimit.value = Number.isFinite(project.load_rate_limit_per_min) ? project.load_rate_limit_per_min : 30;
 }
 
 async function loadScripts() {
@@ -608,6 +616,43 @@ el.tWhitelist.addEventListener("change", async function () {
     if (r.ok) { project = r.project; window.SL.toast("Whitelist mode " + (el.tWhitelist.checked ? "on" : "off"), "ok"); }
     else { el.tWhitelist.checked = !el.tWhitelist.checked; window.SL.toast(r.error || "Could not update", "error"); }
   } catch (e) { el.tWhitelist.checked = !el.tWhitelist.checked; window.SL.toast(e.message, "error"); }
+});
+
+// ------------------------------------------------------------
+// Protection tuning: integrity check mode, exec-ticket TTL, loader
+// rate limit. Clamped client-side to match the server-side clamp
+// (server is the source of truth - this is just to avoid a round
+// trip for obviously-out-of-range values).
+// ------------------------------------------------------------
+el.btnSaveTuning.addEventListener("click", async function () {
+  const mode = el.tIntegrityMode.value;
+  let ttl = parseInt(el.iNonceTtl.value, 10);
+  let rate = parseInt(el.iRateLimit.value, 10);
+  if (!Number.isFinite(ttl)) { window.SL.toast("Ticket TTL must be a number", "error"); return; }
+  if (!Number.isFinite(rate)) { window.SL.toast("Rate limit must be a number", "error"); return; }
+  ttl = Math.min(120, Math.max(5, ttl));
+  rate = Math.min(300, Math.max(5, rate));
+  el.iNonceTtl.value = ttl;
+  el.iRateLimit.value = rate;
+  el.btnSaveTuning.disabled = true;
+  el.btnSaveTuning.textContent = "Saving...";
+  try {
+    const r = await window.SL.api("/api/projects/" + projectId, {
+      method: "PATCH",
+      body: JSON.stringify({
+        integrity_mode: mode,
+        raw_nonce_ttl_sec: ttl,
+        load_rate_limit_per_min: rate,
+      }),
+    });
+    if (r.ok) { project = r.project; window.SL.toast("Protection tuning saved", "ok"); }
+    else { window.SL.toast(r.error || "Could not save tuning", "error"); }
+  } catch (e) {
+    window.SL.toast(e.message, "error");
+  } finally {
+    el.btnSaveTuning.disabled = false;
+    el.btnSaveTuning.textContent = "Save protection tuning";
+  }
 });
 
 el.btnPause.addEventListener("click", async function () {
