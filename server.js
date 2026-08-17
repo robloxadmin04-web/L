@@ -512,6 +512,97 @@ function wrapExecCheck(source, verifyUrl) {
   return lines.join("\n");
 }
 
+// ============================================================
+// ANTI-HOOK / RUNTIME INTEGRITY LAYER
+// ============================================================
+// Canary tripwires: single-use, short-lived tokens like the exec ticket,
+// but hit ONLY when the environment looks tampered with (native funcs
+// hooked, debug library exposed, etc). A real client on a clean executor
+// never calls this URL, so any hit is a strong signal — not proof of
+// intent, but worth flagging separately from generic scrape alerts.
+// ============================================================
+const canaryTokens = new Map(); // token -> { scriptSlug, key, expires }
+const CANARY_TTL_MS = 20 * 1000;
+
+function issueCanaryToken(scriptSlug, key) {
+  const token = crypto.randomBytes(16).toString("hex");
+  canaryTokens.set(token, { scriptSlug, key: key || "", expires: Date.now() + CANARY_TTL_MS });
+  return token;
+}
+function consumeCanaryToken(token) {
+  if (!token) return null;
+  const t = canaryTokens.get(token);
+  canaryTokens.delete(token);
+  if (!t || Date.now() > t.expires) return null;
+  return t;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of canaryTokens) if (now > v.expires) canaryTokens.delete(k);
+}, 30 * 1000).unref();
+
+// Builds the Lua preamble that runs BEFORE the real script body.
+// Checks:
+//   1. iscclosure() on loadstring/HttpGet/require/pcall - these should
+//      always be true C-closures on a stock executor. A hooked function
+//      (hookfunction/replaceclosure over one of these) usually shows up
+//      as false, or throws when iscclosure itself has been shadowed.
+//   2. debug.getupvalue / getrawmetatable exposure - not proof of hooking
+//      by itself, but raises the suspicion score, since these are the
+//      primitives used to build hooks/dumpers in the first place.
+//   3. identifyexecutor() presence - purely informational, sent along
+//      with the canary hit so you can see which executors your leakers
+//      are actually using.
+// Every check is best-effort and individually bypassable by a determined
+// attacker who patches iscclosure itself - the point is to raise cost,
+// not to claim this is unbeatable (see the design note above wrapExecCheck).
+function buildIntegritySnippet(canaryUrl) {
+  return [
+    "local function __sol_report(reason)",
+    '  pcall(function() game:HttpGet("' + canaryUrl + '&r=" .. tostring(reason)) end)',
+    "end",
+    "local __sol_suspect = false",
+    "local __sol_reason = \"unknown\"",
+    "do",
+    "  local __checks = {",
+    '    {"loadstring", loadstring},',
+    '    {"httpget", (game and game.HttpGet)},',
+    '    {"require", require},',
+    '    {"pcall", pcall},',
+    "  }",
+    "  local __iscc = iscclosure or is_cclosure or checkclosure",
+    "  if type(__iscc) == \"function\" then",
+    "    for _, pair in ipairs(__checks) do",
+    "      local __name, __fn = pair[1], pair[2]",
+    "      if type(__fn) == \"function\" then",
+    "        local __ok, __isC = pcall(__iscc, __fn)",
+    "        if __ok and __isC == false then",
+    "          __sol_suspect = true",
+    '          __sol_reason = "hooked:" .. __name',
+    "          break",
+    "        end",
+    "      end",
+    "    end",
+    "  end",
+    "end",
+    "if __sol_suspect then",
+    "  __sol_report(__sol_reason)",
+    '  local __plr = game:GetService("Players").LocalPlayer',
+    '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
+    "  return",
+    "end",
+  ].join("\n");
+}
+
+// Wraps a delivered script body with the integrity preamble. Distinct from
+// wrapExecCheck (which proves "this is a live, un-replayed load") - this
+// proves "this specific runtime hasn't visibly tampered with the functions
+// we're about to rely on". The two stack: integrity check runs first,
+// then the existing exec-ticket check, then the real body.
+function wrapIntegrityCheck(source, canaryUrl) {
+  return buildIntegritySnippet(canaryUrl) + "\n" + source;
+}
+
 // Tiny server-side bootstrap: grabs the HWID and re-hits the loader with it.
 // Returned on the first keyed hit that has no HWID, so the user's loader
 // can stay a short one-liner while HWID binding still works.
@@ -997,6 +1088,41 @@ app.get("/v1/verify/:nonce", async (req, res) => {
 });
 
 // ============================================================
+// CANARY TRIPWIRE - hit only by the integrity-check preamble
+// (see buildIntegritySnippet) when it detects a hooked native
+// function. A clean, un-tampered client never calls this. Any
+// hit here is a stronger signal than the generic rate-limit
+// scrape alert, so it's logged and surfaced separately.
+// ============================================================
+app.get("/v1/canary/:token", async (req, res) => {
+  res.type("text/plain");
+  const info = consumeCanaryToken(String(req.params.token || ""));
+  const ip = getClientIp(req);
+  const hwid = getHwid(req);
+  const reason = sanitizeString(req.query.r, 64) || "unknown";
+  if (info && global.__solScrapeAlert) {
+    supabase.from("scripts")
+      .select("project_id, projects!inner(owner_account_id)")
+      .eq("slug", info.scriptSlug).maybeSingle()
+      .then(({ data }) => {
+        if (data?.projects?.owner_account_id) {
+          global.__solScrapeAlert(data.projects.owner_account_id, "integrity_canary", {
+            scriptSlug: info.scriptSlug, ip, hwid, key: info.key,
+            reason: "runtime integrity check tripped: " + reason,
+          });
+        }
+      }).catch(() => {});
+  }
+  await supabase.from("access_log").insert({
+    event: "blocked",
+    reason: "integrity_canary:" + reason,
+    hwid: hwid || null,
+    ip: ip || null,
+  });
+  res.status(200).send("1");
+});
+
+// ============================================================
 // FIX #NEW: Handshake endpoint. Must be called immediately before
 // every /v1/load hit (see gateLoaderRequest). Returns a plain-text,
 // single-use challenge bound to (px, ip, gp) valid for
@@ -1284,7 +1410,9 @@ async function handleLoadRoute(req, res) {
     // it, so a saved copy fails the redeem and the player gets kicked.
     const __execTicket = issueRawNonce(scriptSlug, key || "");
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
-    const __ticketed = wrapExecCheck(__wm, __verifyUrl);
+    const __canaryToken = issueCanaryToken(scriptSlug, key || "");
+    const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
+    const __ticketed = wrapIntegrityCheck(wrapExecCheck(__wm, __verifyUrl), __canaryUrl);
     const __enc = encryptDelivery(__ticketed, __n);
     return res.status(200).send(__enc);
   }
@@ -1306,7 +1434,9 @@ async function handleLoadRoute(req, res) {
   {
     const __execNonce = issueRawNonce(scriptSlug, key || "");
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce;
-    const __checked = wrapExecCheck(injectWatermark(__raw, null, hwid, ip), __verifyUrl);
+    const __canaryToken = issueCanaryToken(scriptSlug, key || "");
+    const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
+    const __checked = wrapIntegrityCheck(wrapExecCheck(injectWatermark(__raw, null, hwid, ip), __verifyUrl), __canaryUrl);
     return res.status(200).send(__checked);
   }
 }
