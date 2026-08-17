@@ -559,7 +559,7 @@ setInterval(() => {
 function buildIntegritySnippet(canaryUrl) {
   return [
     "local function __sol_report(reason)",
-    '  pcall(function() game:HttpGet("' + canaryUrl + '&r=" .. tostring(reason)) end)',
+    '  pcall(function() game:HttpGet("' + canaryUrl + '?r=" .. tostring(reason)) end)',
     "end",
     "local __sol_suspect = false",
     "local __sol_reason = \"unknown\"",
@@ -1096,6 +1096,7 @@ app.get("/v1/verify/:nonce", async (req, res) => {
 // ============================================================
 app.get("/v1/canary/:token", async (req, res) => {
   res.type("text/plain");
+  if (isRateLimited("canary-ip", getClientIp(req), 15, 15 * 1000)) return res.status(429).send("0");
   const info = consumeCanaryToken(String(req.params.token || ""));
   const ip = getClientIp(req);
   const hwid = getHwid(req);
