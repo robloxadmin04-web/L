@@ -309,11 +309,11 @@ async function gateLoaderRequest(req, res) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
-  if (isRateLimited("load-pid", pid, 8, 10 * 1000)) {
+  if (!req.query.raw && isRateLimited("load-pid", pid, 8, 10 * 1000)) {
     res.status(429).type("text/plain").send("-- too many requests");
     return true;
   }
-  const validPid = await isValidRobloxPlayer(pid);
+  const validPid = req.query.raw ? true : await isValidRobloxPlayer(pid);
   if (!validPid) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
