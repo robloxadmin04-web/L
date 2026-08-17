@@ -132,7 +132,7 @@ function updateSlugPreview() {
     el.sSlugPreview.textContent = "Invalid: must be 3-40 chars, a-z 0-9 dash only";
     el.sSlugPreview.style.color = "#fca5a5";
   } else {
-    el.sSlugPreview.textContent = "URL: /v1/load/" + val;
+    el.sSlugPreview.textContent = "URL: /v1/loaders/" + val + ".lua";
     el.sSlugPreview.style.color = "var(--text-muted)";
   }
 }
