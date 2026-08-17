@@ -233,21 +233,20 @@ function renderScripts() {
 // ------------------------------------------------------------
 // Loader modal
 // ------------------------------------------------------------
-function buildHandshakeLoader(loaderUrl, extraQueryLua) {
+function buildHandshakeLoader(scriptSlug, key) {
   // Mirrors server.js's buildHandshakeLoader exactly, so the website loader
   // and the Discord-bot loader are always byte-for-byte the same shape:
-  // one call to /v1/bootstrap (server does the handshake internally),
-  // no separate handshake round trip visible client-side.
-  const bootstrapUrl = loaderUrl.replace("/v1/load/", "/v1/bootstrap/");
-  return 'loadstring(game:HttpGet("' + bootstrapUrl + '?px="..tostring(game:GetService("Players").LocalPlayer.UserId).."&gp="..tostring(game.PlaceId)' + (extraQueryLua ? '..' + extraQueryLua : '') + '))()';
+  // a clean link to the hosted /v1/loaders/<slug>.lua file, which does all
+  // the UserId/PlaceId/handshake work internally - nothing visible here.
+  const origin = window.location.origin;
+  const url = origin + "/v1/loaders/" + scriptSlug + ".lua" + (key ? "?k=" + encodeURIComponent(key) : "");
+  return 'loadstring(game:HttpGet("' + url + '"))()';
 }
 
 function openLoader(script) {
-  const origin = window.location.origin;
-  const base = origin + "/v1/load/" + script.slug;
   const line = script.key_mode === "keyless"
-    ? buildHandshakeLoader(base, "")
-    : '_G.script_key = "YOUR-KEY-HERE"\n' + buildHandshakeLoader(base, '"&key=".._G.script_key');
+    ? buildHandshakeLoader(script.slug, null)
+    : buildHandshakeLoader(script.slug, "YOUR-KEY-HERE");
   el.loaderCode.textContent = line;
   el.loaderHint.textContent = script.key_mode === "keyless"
     ? "Keyless. Anyone with this loader can run it."
