@@ -295,7 +295,14 @@ async function gateLoaderRequest(req, res) {
     res.status(403).type("text/html").send(getBlockHtml());
     return true;
   }
-  if (!isRobloxClient(req) || isKnownScraperClient(req)) {
+  // Exempt the internal "?raw=1" follow-up from the Roblox-UA check: it's
+  // fetched via the executor's own request function (syn.request /
+  // http.request / request / http_request), which many executors don't
+  // stamp with a "Roblox" User-Agent the way game:HttpGet does. This sub-
+  // request can only succeed with a valid single-use raw-nonce that was
+  // already minted for a client who passed this exact check on the
+  // original request, so skipping it here doesn't weaken security.
+  if (!req.query.raw && (!isRobloxClient(req) || isKnownScraperClient(req))) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
