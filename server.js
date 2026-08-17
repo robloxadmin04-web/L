@@ -160,14 +160,12 @@ function makeKey(prefix) {
 // expression string appended to the query (e.g. for the key param),
 // or "" for none.
 function buildHandshakeLoader(loaderUrl, extraQueryLua) {
-  return [
-    'local _z9 = tostring(game:GetService("Players").LocalPlayer.UserId)',
-    'local _gp = tostring(game.PlaceId)',
-    'local _c = ""',
-    'local _hsOk, _hsBody = pcall(function() return game:HttpGet("' + PUBLIC_BASE_URL + '/v1/handshake?px=".._z9.."&gp=".._gp) end)',
-    'if _hsOk and _hsBody then _c = tostring(_hsBody) end',
-    'loadstring(game:HttpGet("' + loaderUrl + '?px=".._z9.."&gp=".._gp' + (extraQueryLua ? '..' + extraQueryLua : '') + '.."&c=".._c))()',
-  ].join("\n");
+  // loaderUrl passed in by call sites is the old /v1/load/<slug> URL;
+  // swap it for the one-request /v1/bootstrap/<slug> equivalent so the
+  // whole loader collapses to a single loadstring(...) line instead of
+  // a separate visible handshake call.
+  const bootstrapUrl = loaderUrl.replace("/v1/load/", "/v1/bootstrap/");
+  return 'loadstring(game:HttpGet("' + bootstrapUrl + '?px="..tostring(game:GetService("Players").LocalPlayer.UserId).."&gp="..tostring(game.PlaceId)' + (extraQueryLua ? '..' + extraQueryLua : '') + '))()';
 }
 function makeSlug(name) {
   const base = String(name || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
@@ -996,7 +994,7 @@ app.get("/v1/handshake", async (req, res) => {
 // ============================================================
 // PUBLIC LOADER - with HWID, expiry, and block/allow checks
 // ============================================================
-app.get("/v1/load/:script_slug", async (req, res) => {
+async function handleLoadRoute(req, res) {
   // FIX C: block browsers, non-Roblox HTTP clients, and requests without
   // a currently-valid Roblox player id before touching the DB at all.
   if (await gateLoaderRequest(req, res)) return;
@@ -1269,6 +1267,26 @@ app.get("/v1/load/:script_slug", async (req, res) => {
     const __checked = wrapExecCheck(injectWatermark(__raw, null, hwid, ip), __verifyUrl);
     return res.status(200).send(__checked);
   }
+}
+app.get("/v1/load/:script_slug", handleLoadRoute);
+
+// ============================================================
+// SHORT LOADER - same protection as /v1/load, but self-issues and
+// self-consumes the handshake challenge inside this one request
+// instead of requiring a separate /v1/handshake round trip first.
+// This is what lets the client-side loadstring line stay one line:
+// the two-step "prove you're a live Roblox client" check still runs
+// (isRobloxClient/isValidRobloxPlayer/rate limits all still apply
+// below via handleLoadRoute -> gateLoaderRequest), it just happens
+// server-side in one shot instead of exposing a public handshake
+// endpoint the loader snippet has to call out to.
+// ============================================================
+app.get("/v1/bootstrap/:script_slug", async (req, res) => {
+  const pid = String(req.query.px || "").trim();
+  const gp = String(req.query.gp || "").trim();
+  const ip = getClientIp(req);
+  if (pid) req.query.c = issueChallenge(pid, ip, gp);
+  return handleLoadRoute(req, res);
 });
 
 // ============================================================
