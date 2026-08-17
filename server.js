@@ -334,7 +334,7 @@ async function gateLoaderRequest(req, res) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
-  if (!req.query.raw && isRateLimited("load-pid", pid, 8, 10 * 1000)) {
+  if (!req.query.raw && isRateLimited("load-pid", pid, 20, 15 * 1000)) {
     res.status(429).type("text/plain").send("-- too many requests");
     return true;
   }
@@ -1378,7 +1378,7 @@ app.get("/v1/handshake", async (req, res) => {
   if (isRateLimited("handshake-ip", ip, 20, 10 * 1000)) return res.status(429).send("0");
   const pid = String(req.query.px || "").trim();
   if (!pid) return res.status(403).send("0");
-  if (isRateLimited("handshake-pid", pid, 8, 10 * 1000)) return res.status(429).send("0");
+  if (isRateLimited("handshake-pid", pid, 20, 15 * 1000)) return res.status(429).send("0");
   const validPid = await isValidRobloxPlayer(pid);
   if (!validPid) return res.status(403).send("0");
   const gp = String(req.query.gp || "").trim();
@@ -2774,62 +2774,102 @@ async function startDiscordBot() {
   }
 
   // Expose to load endpoint (runs before client is ready, so wrap in ready check)
+  // FIX: this whole function used to build Discord button customIds by
+  // base64-encoding raw hwid/ip/key strings directly. Discord enforces a
+  // hard 100-char limit on customId - a long-enough hwid (very common,
+  // executors emit 40+ char hex/base64 client ids) pushed that over the
+  // limit, discord.js threw a synchronous ExpectedConstraintError, and
+  // because this was awaited with no surrounding try/catch, the exception
+  // was uncaught and crashed the *entire* Node process (visible in Railway
+  // logs as a full container restart on totally normal script runs - not
+  // an actual attack, just a bug in the alerting path itself).
+  // Fix: (a) wrap everything below in try/catch so an alerting failure can
+  // never take the whole server down again, (b) stop encoding raw
+  // attacker-controlled strings into customId at all - use a short, fixed
+  // length reference token instead, resolved server-side from a small
+  // in-memory map when the button is actually clicked.
+  const alertActionRefs = new Map(); // ref -> { kind, value, expires }
+  const ALERT_REF_TTL_MS = 24 * 60 * 60 * 1000; // 24h, buttons on old alerts can still be clicked
+  function makeAlertRef(kind, value) {
+    const ref = crypto.randomBytes(6).toString("hex"); // 12 chars, well under the 100-char limit
+    alertActionRefs.set(ref, { kind, value, expires: Date.now() + ALERT_REF_TTL_MS });
+    return ref;
+  }
+  function resolveAlertRef(ref) {
+    const entry = alertActionRefs.get(ref);
+    if (!entry) return null;
+    if (Date.now() > entry.expires) { alertActionRefs.delete(ref); return null; }
+    return entry;
+  }
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of alertActionRefs) if (now > v.expires) alertActionRefs.delete(k);
+  }, 60 * 60 * 1000).unref();
+  global.__solResolveAlertRef = resolveAlertRef;
+
   global.__solScrapeAlert = async function (accountId, type, details) {
-    if (!client.isReady()) return;
-    const colorMap = { nonce_replay: 0xef4444, rate_limit: 0xf59e0b, raw_no_key: 0xef4444 };
-    const titleMap = {
-      nonce_replay:  "⚠️ Raw Code Replay Attempt",
-      rate_limit:    "🚦 Rate Limit — Possible Scraper",
-      raw_no_key:    "🔑 Raw Endpoint Hit Without Valid Key",
-    };
-    const embed = new EmbedBuilder()
-      .setColor(colorMap[type] || 0xef4444)
-      .setTitle(titleMap[type] || "⚠️ Suspicious Load Attempt")
-      .setTimestamp()
-      .addFields(
-        { name: "Script", value: details.scriptSlug || "-", inline: true },
-        { name: "IP",     value: details.ip          || "-", inline: true },
-        { name: "HWID",   value: details.hwid         || "none", inline: true },
-        { name: "Key",    value: details.key ? (details.key.slice(0, 6) + "..." + details.key.slice(-4)) : "none", inline: true },
-        { name: "Reason", value: details.reason       || type, inline: false },
-      )
-      .setFooter({ text: "Solaries Security Alert" });
+    try {
+      if (!client.isReady()) return;
+      const colorMap = { nonce_replay: 0xef4444, rate_limit: 0xf59e0b, raw_no_key: 0xef4444 };
+      const titleMap = {
+        nonce_replay:  "⚠️ Raw Code Replay Attempt",
+        rate_limit:    "🚦 Rate Limit — Possible Scraper",
+        raw_no_key:    "🔑 Raw Endpoint Hit Without Valid Key",
+      };
+      const embed = new EmbedBuilder()
+        .setColor(colorMap[type] || 0xef4444)
+        .setTitle(titleMap[type] || "⚠️ Suspicious Load Attempt")
+        .setTimestamp()
+        .addFields(
+          { name: "Script", value: details.scriptSlug || "-", inline: true },
+          { name: "IP",     value: details.ip          || "-", inline: true },
+          { name: "HWID",   value: (details.hwid || "none").slice(0, 100), inline: true },
+          { name: "Key",    value: details.key ? (details.key.slice(0, 6) + "..." + details.key.slice(-4)) : "none", inline: true },
+          { name: "Reason", value: (details.reason || type).slice(0, 1000), inline: false },
+        )
+        .setFooter({ text: "Solaries Security Alert" });
 
-    // Build action buttons if we have a key or IP to act on
-    const components = [];
-    const row = new ActionRowBuilder();
-    let hasButtons = false;
+      // Build action buttons if we have a key or IP to act on
+      const components = [];
+      const row = new ActionRowBuilder();
+      let hasButtons = false;
 
-    if (details.key) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId("sol_alertrevoke_" + Buffer.from(details.key).toString("base64"))
-          .setLabel("Revoke Key")
-          .setStyle(ButtonStyle.Danger)
-      );
-      hasButtons = true;
-    }
-    if (details.ip) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId("sol_alertblockip_" + Buffer.from((details.ip + "|" + (details.scriptSlug || ""))).toString("base64"))
-          .setLabel("Block IP")
-          .setStyle(ButtonStyle.Danger)
-      );
-      hasButtons = true;
-    }
-    if (details.hwid) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId("sol_alertblockhwid_" + Buffer.from((details.hwid + "|" + (details.scriptSlug || ""))).toString("base64"))
-          .setLabel("Block HWID")
-          .setStyle(ButtonStyle.Danger)
-      );
-      hasButtons = true;
-    }
-    if (hasButtons) components.push(row);
+      if (details.key) {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId("sol_alertrevoke_" + makeAlertRef("revoke", details.key))
+            .setLabel("Revoke Key")
+            .setStyle(ButtonStyle.Danger)
+        );
+        hasButtons = true;
+      }
+      if (details.ip) {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId("sol_alertblockip_" + makeAlertRef("blockip", details.ip + "|" + (details.scriptSlug || "")))
+            .setLabel("Block IP")
+            .setStyle(ButtonStyle.Danger)
+        );
+        hasButtons = true;
+      }
+      if (details.hwid) {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId("sol_alertblockhwid_" + makeAlertRef("blockhwid", details.hwid + "|" + (details.scriptSlug || "")))
+            .setLabel("Block HWID")
+            .setStyle(ButtonStyle.Danger)
+        );
+        hasButtons = true;
+      }
+      if (hasButtons) components.push(row);
 
-    await sendAlertToLogChannel(accountId, embed, components);
+      await sendAlertToLogChannel(accountId, embed, components);
+    } catch (e) {
+      // Never let a failure here (Discord API hiccup, malformed details,
+      // whatever) escape and crash the whole process - this is a
+      // best-effort notification path, not core delivery logic.
+      console.error("__solScrapeAlert error:", e?.message || e);
+    }
   };
 
   const client = new Client({
@@ -4737,8 +4777,9 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    let keyValue;
-    try { keyValue = Buffer.from(encoded, "base64").toString("utf8"); } catch { return interaction.editReply({ content: "Invalid data." }); }
+    const ref = global.__solResolveAlertRef ? global.__solResolveAlertRef(encoded) : null;
+    if (!ref || ref.kind !== "revoke") return interaction.editReply({ content: "This alert has expired or was already handled." });
+    const keyValue = ref.value;
 
     const { data: keyRow } = await supabase.from("keys")
       .select("id, key, revoked, owner_account_id")
@@ -4767,11 +4808,9 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    let ip, scriptSlug;
-    try {
-      const decoded = Buffer.from(encoded, "base64").toString("utf8");
-      [ip, scriptSlug] = decoded.split("|");
-    } catch { return interaction.editReply({ content: "Invalid data." }); }
+    const ref = global.__solResolveAlertRef ? global.__solResolveAlertRef(encoded) : null;
+    if (!ref || ref.kind !== "blockip") return interaction.editReply({ content: "This alert has expired or was already handled." });
+    const [ip, scriptSlug] = String(ref.value).split("|");
     if (!ip) return interaction.editReply({ content: "No IP in alert data." });
 
     // Find project_id from script slug
@@ -4807,11 +4846,9 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    let hwid, scriptSlug;
-    try {
-      const decoded = Buffer.from(encoded, "base64").toString("utf8");
-      [hwid, scriptSlug] = decoded.split("|");
-    } catch { return interaction.editReply({ content: "Invalid data." }); }
+    const ref = global.__solResolveAlertRef ? global.__solResolveAlertRef(encoded) : null;
+    if (!ref || ref.kind !== "blockhwid") return interaction.editReply({ content: "This alert has expired or was already handled." });
+    const [hwid, scriptSlug] = String(ref.value).split("|");
     if (!hwid) return interaction.editReply({ content: "No HWID in alert data." });
 
     const { data: script } = await supabase.from("scripts")
