@@ -2706,9 +2706,9 @@ async function startDiscordBot() {
       userKey = existingKey.key;
 
       const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-      loader = '_G.script_key = "' + userKey + '"\nlocal _z9=tostring(game:GetService("Players").LocalPlayer.UserId)\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key.."&px=".._z9))()';
+      loader = '_G.script_key = "' + userKey + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key.."&px="..game:GetService"Players".LocalPlayer.UserId))()';
     } else {
-      loader = 'local _z9=tostring(game:GetService("Players").LocalPlayer.UserId)\nloadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '?px=".._z9))()';
+      loader = 'loadstring(game:HttpGet("' + PUBLIC_BASE_URL + "/v1/load/" + script.slug + '?px="..game:GetService"Players".LocalPlayer.UserId))()';
     }
 
     const dmContent = "Loader script for **" + script.name + "**:\n\n```lua\n" + loader + "\n```\n\nKeep this private. Do not share.";
@@ -3372,19 +3372,19 @@ async function startDiscordBot() {
     if (!script) return interaction.editReply({ content: "Script not found." });
 
     const loaderUrl = PUBLIC_BASE_URL + "/v1/load/" + script.slug;
-    const pidLine = 'local _z9=tostring(game:GetService("Players").LocalPlayer.UserId)\n';
+    const px = 'game:GetService"Players".LocalPlayer.UserId';
     let loader;
     if (script.key_mode === "keyless") {
-      loader = pidLine + 'loadstring(game:HttpGet("' + loaderUrl + '?px=".._z9))()';
+      loader = 'loadstring(game:HttpGet("' + loaderUrl + '?px="..' + px + '))()';
     } else {
       const { data: keyRow } = await supabase.from("keys")
         .select("key, revoked").eq("discord_id", discordId)
         .eq("project_id", script.project_id)
         .eq("owner_account_id", script.projects.owner_account_id).maybeSingle();
       if (keyRow && !keyRow.revoked) {
-        loader = '_G.script_key = "' + keyRow.key + '"\n' + pidLine + 'loadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key.."&px=".._z9))()';
+        loader = '_G.script_key = "' + keyRow.key + '"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key.."&px="..' + px + '))()';
       } else {
-        loader = '_G.script_key = "YOUR_KEY_HERE"\n' + pidLine + 'loadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key.."&px=".._z9))()';
+        loader = '_G.script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("' + loaderUrl + '?key=".._G.script_key.."&px="..' + px + '))()';
       }
     }
 
