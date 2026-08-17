@@ -1,7 +1,7 @@
 {
   "name": "solaries",
   "version": "1.0.0",
-  "description": "Solaries - Roblox script protection and key management platform",
+  "description": "Solaries - A modern security and access management platform",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
