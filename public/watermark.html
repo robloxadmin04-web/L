@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watermark Trace</title>
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      .wm-textarea {
+        width: 100%;
+        min-height: 220px;
+        resize: vertical;
+        font-family: ui-monospace, monospace;
+        font-size: 12.5px;
+        line-height: 1.5;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--surface, #15151c);
+        color: var(--text, #e5e5ea);
+      }
+      .wm-actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+      .wm-result { margin-top: 20px; }
+      .wm-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+      .wm-field {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: var(--surface, #15151c);
+      }
+      .wm-field-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-soft); margin-bottom: 4px; }
+      .wm-field-value { font-size: 13px; font-family: ui-monospace, monospace; word-break: break-all; }
+      .wm-empty { text-align:center; color:var(--text-soft); padding:32px; }
+      .wm-hint { font-size: 12.5px; color: var(--text-soft); margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 3h6l-2 8h4l-8 10 3-9H4z"></path></svg></div>
+          <div class="head-actions">
+            <button class="pill-btn" type="button">
+              <span class="pill-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span>
+              <span>Discord</span>
+            </button>
+            <button class="icon-square" id="themeToggle" type="button" aria-label="Toggle theme">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <nav class="nav-group">
+            <p class="nav-title">Workspace</p>
+            <a class="nav-link" href="dashboard.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"></rect><rect x="13" y="3" width="8" height="5" rx="1"></rect><rect x="13" y="10" width="8" height="11" rx="1"></rect><rect x="3" y="13" width="8" height="8" rx="1"></rect></svg></span><span>Overview</span></a>
+            <a class="nav-link" href="projects.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"></path></svg></span><span>Projects</span></a>
+            <a class="nav-link" href="keys.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="8" cy="14" r="3"></circle><path d="M11 14h9"></path><path d="M17 11v6"></path></svg></span><span>Keys</span></a>
+            <a class="nav-link" href="bot.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M6 8h12l1 3v4l-3 3-1-2H9l-1 2-3-3v-4z"></path></svg></span><span>Discord</span></a>
+          </nav>
+
+          <nav class="nav-group">
+            <p class="nav-title">Tools</p>
+            <a class="nav-link" href="analytics.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10"></path><path d="M10 20V4"></path><path d="M16 20v-7"></path><path d="M22 20H2"></path></svg></span><span>Analytics</span></a>
+            <a class="nav-link" href="status.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span><span>Status</span></a>
+            <a class="nav-link is-active" href="watermark.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.5L17.5 20 12 17l-5.5 3 1-6.5L3 9l6-1z"></path></svg></span><span>Watermark Trace</span></a>
+          </nav>
+
+          <nav class="nav-group">
+            <p class="nav-title">Owner</p>
+            <a class="nav-link" href="owner.html"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg></span><span>Accounts</span></a>
+          </nav>
+        </div>
+
+        <div class="sidebar-foot">
+          <div class="user-box">
+            <span class="user-avatar" data-user-avatar>?</span>
+            <div class="user-copy">
+              <p class="user-name" data-user-name>Loading</p>
+              <p class="user-plan" data-user-plan>Free</p>
+            </div>
+          </div>
+          <a class="signout" href="#" data-signout>
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4"></path><path d="M10 8l-4 4 4 4"></path><path d="M6 12h10"></path></svg></span>
+            <span>Sign out</span>
+          </a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="icon-square menu-btn" id="menuToggle" type="button" aria-label="Open menu">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path></svg>
+            </button>
+            <h1 class="page-title">Watermark Trace</h1>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">Found a leaked copy of a script?</p>
+              <h2 class="card-title">Paste it below to trace the source</h2>
+            </div>
+          </div>
+          <p class="wm-hint">
+            Every delivered script is watermarked with a hidden, encoded marker unique to the
+            key/device it was served to. Paste the full leaked text (or just the top of it) and
+            we'll pull out who it was served to, so you can revoke that key.
+          </p>
+          <textarea class="wm-textarea" id="wmInput" placeholder="Paste the leaked script content here..."></textarea>
+          <div class="wm-actions">
+            <button class="primary-btn" type="button" id="wmDecodeBtn">
+              <svg viewBox="0 0 24 24"><path d="M11 4a7 7 0 100 14 7 7 0 000-14z"></path><path d="M21 21l-4.35-4.35"></path></svg>
+              Decode watermark
+            </button>
+            <button class="mini-btn is-danger" type="button" id="wmRevokeBtn" style="display:none;">
+              Revoke this key now
+            </button>
+          </div>
+
+          <div class="wm-result" id="wmResult" style="display:none;">
+            <div class="wm-grid" id="wmGrid"></div>
+          </div>
+          <p class="wm-empty" id="wmEmpty" style="display:none;"></p>
+        </div>
+      </main>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="watermark.js"></script>
+  </body>
+</html>
