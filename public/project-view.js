@@ -233,13 +233,27 @@ function renderScripts() {
 // ------------------------------------------------------------
 // Loader modal
 // ------------------------------------------------------------
+function buildHandshakeLoader(loaderUrl, extraQueryLua) {
+  // Mirrors server.js's buildHandshakeLoader exactly, so the website loader
+  // and the Discord-bot loader are always byte-for-byte the same shape:
+  // handshake first (to get "c"), then load with px/gp/c(/key).
+  const origin = window.location.origin;
+  return [
+    'local _z9 = tostring(game:GetService("Players").LocalPlayer.UserId)',
+    'local _gp = tostring(game.PlaceId)',
+    'local _c = ""',
+    'local _hsOk, _hsBody = pcall(function() return game:HttpGet("' + origin + '/v1/handshake?px=".._z9.."&gp=".._gp) end)',
+    'if _hsOk and _hsBody then _c = tostring(_hsBody) end',
+    'loadstring(game:HttpGet("' + loaderUrl + '?px=".._z9.."&gp=".._gp' + (extraQueryLua ? '..' + extraQueryLua : '') + '.."&c=".._c))()',
+  ].join("\n");
+}
+
 function openLoader(script) {
   const origin = window.location.origin;
   const base = origin + "/v1/load/" + script.slug;
-  const px = 'game:GetService"Players".LocalPlayer.UserId';
   const line = script.key_mode === "keyless"
-    ? 'loadstring(game:HttpGet("' + base + '?px="..' + px + ',true))()'
-    : '_G.script_key = "YOUR-KEY-HERE"\nloadstring(game:HttpGet("' + base + '?key=".._G.script_key.."&px="..' + px + ',true))()';
+    ? buildHandshakeLoader(base, "")
+    : '_G.script_key = "YOUR-KEY-HERE"\n' + buildHandshakeLoader(base, '"&key=".._G.script_key');
   el.loaderCode.textContent = line;
   el.loaderHint.textContent = script.key_mode === "keyless"
     ? "Keyless. Anyone with this loader can run it."
