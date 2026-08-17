@@ -1272,7 +1272,20 @@ async function handleLoadRoute(req, res) {
       return block("missing or expired session token", 401, null, projectId, script.id);
     }
     const __wm = injectWatermark(__raw, key ? (await supabase.from("keys").select("id").eq("key", key).maybeSingle()).data?.id : null, hwid, ip);
-    const __enc = encryptDelivery(__wm, __n);
+    // FIX: embed a fresh, single-use, short-lived "proof of live execution"
+    // ticket INSIDE the decrypted payload itself - not just around the
+    // outer delivery. Without this, someone who manages to obtain the
+    // fully-decrypted plaintext (memory dump, hooked loadstring, mitm on
+    // the executor's own HTTP layer, etc.) could save that plaintext and
+    // paste/run it directly in a different session with nothing to stop
+    // it. This ticket is a *different* nonce from __n (which only gates
+    // getting the encrypted bytes) - it gates actually running the code
+    // inside them, and is consumed the instant the real client executes
+    // it, so a saved copy fails the redeem and the player gets kicked.
+    const __execTicket = issueRawNonce(scriptSlug, key || "");
+    const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
+    const __ticketed = wrapExecCheck(__wm, __verifyUrl);
+    const __enc = encryptDelivery(__ticketed, __n);
     return res.status(200).send(__enc);
   }
   if (script.player_ui === "key_gui" && !key) {
