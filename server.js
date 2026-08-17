@@ -33,6 +33,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
+app.disable("x-powered-by"); // don't advertise "Express" to recon/fingerprinting
 app.use(express.json({ limit: "2mb" }));
 app.set("trust proxy", true);
 
@@ -144,10 +145,18 @@ function requireOwner(req, res, next) {
 // ============================================================
 // Helpers
 // ============================================================
+// SECURITY: uses crypto.randomInt (CSPRNG-backed), not Math.random().
+// Math.random() in V8 is a plain xorshift128+ PRNG with no cryptographic
+// guarantees - its internal state can be reconstructed from a handful of
+// observed outputs (published research on cracking V8's PRNG), after
+// which every future "random" value it produces is predictable. For a
+// license key generator that's the whole ballgame: it would mean keys
+// aren't actually unguessable, just obscure. crypto.randomInt draws from
+// the OS CSPRNG and has no such weakness.
 function randomBlock() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
-  for (let i = 0; i < 4; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < 4; i++) out += chars.charAt(crypto.randomInt(chars.length));
   return out;
 }
 function makeKey(prefix) {
