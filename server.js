@@ -320,11 +320,22 @@ async function gateLoaderRequest(req, res) {
   }
   // FIX #NEW: require a fresh, single-use handshake challenge bound to
   // this exact (pid, ip, placeId) before allowing the actual load.
-  const gp = String(req.query.gp || "").trim();
-  const challenge = String(req.query.c || "").trim();
-  if (!consumeChallenge(challenge, pid, ip, gp)) {
-    res.status(403).type("text/plain").send("-- forbidden");
-    return true;
+  // Exception: the internal "?raw=1" follow-up (fired by the GUI/loading
+  // wrappers to fetch the encrypted script body) is already gated by its
+  // own single-use raw-nonce (see consumeRawNonce in handleLoadRoute) -
+  // requiring a *second*, independent handshake challenge on top of that
+  // is redundant and fragile in practice: it forces two near-simultaneous
+  // requests to land on the exact same (ip) as seen by this server, which
+  // can differ across hops on proxied/hosted infra and silently blocks an
+  // otherwise legitimate load with "-- forbidden" (which then gets fed
+  // into the decryptor as if it were real ciphertext, producing garbage).
+  if (!req.query.raw) {
+    const gp = String(req.query.gp || "").trim();
+    const challenge = String(req.query.c || "").trim();
+    if (!consumeChallenge(challenge, pid, ip, gp)) {
+      res.status(403).type("text/plain").send("-- forbidden");
+      return true;
+    }
   }
   return false;
 }
@@ -665,6 +676,8 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce) {
     'if __rq then',
     '  local __r = __rq({ Url = __u, Method = "GET", Headers = { ["x-hwid"] = (gethwid and gethwid()) or "" } })',
     '  __body = __r.Body or __r.body',
+    '  local __status = __r.StatusCode or __r.Status or __r.status or 200',
+    '  if __status ~= 200 then warn("[Solaries] raw fetch blocked (status "..tostring(__status)..") : "..tostring(__body):sub(1,200)); return end',
     'else',
     '  __body = game:HttpGet(__u)',
     'end',
