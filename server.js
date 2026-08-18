@@ -2376,11 +2376,32 @@ app.get("/v1/loaders/:file", async (req, res) => {
     '    local ok2, r = pcall(iscc, loadstring)',
     '    if ok2 and r == false then return false end',
     '  end',
-    // ENHANCED: also check game.HttpGet — a hooked HttpGet is how
-    // Discord-shared dumpers capture responses without touching loadstring.
-    // If HttpGet is hooked, the attacker can intercept every server
-    // response (handshake token, stage1, stage2, encrypted body) before
-    // our code even runs.
+    // ENHANCED: hookfunction detection — hookfunction makes the
+    // replacement pass iscclosure, but it stores the original
+    // function as an upvalue. A native C-closure (real loadstring)
+    // has 0 upvalues; a hookfunction'd wrapper has at least 1.
+    '  if type(debug) == "table" and type(debug.getupvalue) == "function" then',
+    '    local ok6, uv = pcall(debug.getupvalue, loadstring, 1)',
+    '    if ok6 and uv ~= nil then return false end',
+    '  end',
+    // ENHANCED: getgenv check — if someone replaced loadstring
+    // globally before our code ran, getgenv().loadstring is different
+    // from the reference we'd expect.
+    '  if type(getgenv) == "function" then',
+    '    local ok7, genv = pcall(getgenv)',
+    '    if ok7 and type(genv) == "table" then',
+    '      local ls_ref = loadstring',
+    '      if genv.loadstring and genv.loadstring ~= ls_ref then return false end',
+    '    end',
+    '  end',
+    // ENHANCED: debug.sethook spy detection — catch hooks set before
+    // our code loaded.
+    '  if type(debug) == "table" and type(debug.gethook) == "function" then',
+    '    local ok8, hookFn = pcall(debug.gethook)',
+    '    if ok8 and hookFn ~= nil then return false end',
+    '  end',
+    // Check game.HttpGet — a hooked HttpGet is how Discord-shared
+    // dumpers capture responses without touching loadstring.
     '  if game and game.HttpGet then',
     '    local ok3, r3 = pcall(function()',
     '      if type(iscc) == "function" then',
@@ -2389,6 +2410,11 @@ app.get("/v1/loaders/:file", async (req, res) => {
     '      end',
     '      local ok5, inf = pcall(debug.getinfo, game.HttpGet, "S")',
     '      if ok5 and inf and inf.what ~= "C" then return false end',
+    // HttpGet hookfunction upvalue check too
+    '      if type(debug) == "table" and type(debug.getupvalue) == "function" then',
+    '        local ok9, uv2 = pcall(debug.getupvalue, game.HttpGet, 1)',
+    '        if ok9 and uv2 ~= nil then return false end',
+    '      end',
     '      return true',
     '    end)',
     '    if ok3 and r3 == false then return false end',
