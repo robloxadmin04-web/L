@@ -346,6 +346,43 @@ setInterval(() => {
   for (const [k, v] of loadChallenges) if (now > v.expires) loadChallenges.delete(k);
 }, 15 * 1000).unref();
 
+// ============================================================
+// LOADER SESSION TOKEN - ties the /v1/loaders output to a single
+// execution chain. When /v1/loaders generates a bootstrap Lua
+// snippet, it embeds a short-lived loader_token. The handshake
+// endpoint requires a valid loader_token before issuing a challenge.
+//
+// This closes the "copy bootstrap from Discord" attack vector:
+// if someone copies the RAW OUTPUT of /v1/loaders (the Lua code
+// itself, not just the URL), the embedded token is already consumed
+// or expired by the time someone else tries to run it, so the
+// handshake returns "0" and the entire chain dies at step 1.
+//
+// The URL itself is still shareable (each call gets a fresh token)
+// but the generated Lua is single-use.
+// ============================================================
+const loaderTokens = new Map(); // token -> { ip, expires }
+const LOADER_TOKEN_TTL_MS = 30 * 1000; // 30s - enough for the bootstrap to run
+
+function issueLoaderToken(ip) {
+  const token = crypto.randomBytes(16).toString("hex");
+  loaderTokens.set(token, { ip, expires: Date.now() + LOADER_TOKEN_TTL_MS });
+  return token;
+}
+function consumeLoaderToken(token, ip) {
+  if (!token) return false;
+  const t = loaderTokens.get(token);
+  if (!t) return false;
+  loaderTokens.delete(token); // always delete — single use
+  if (Date.now() > t.expires) return false;
+  if (t.ip !== ip) return false; // must be same IP that got the loader
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of loaderTokens) if (now > v.expires) loaderTokens.delete(k);
+}, 30 * 1000).unref();
+
 // Runs at the top of the loadstring endpoint. Returns true if the
 // request was handled (blocked) and the caller should stop; false
 // if the request may proceed.
@@ -1534,6 +1571,18 @@ app.get("/v1/handshake", async (req, res) => {
   if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("0");
   const ip = getClientIp(req);
   if (isRateLimited("handshake-ip", ip, 20, 10 * 1000)) return res.status(429).send("0");
+  // Loader session token: if an `lt` param is present, validate it.
+  // When the loader is served via /v1/loaders (the normal flow), the
+  // bootstrap Lua always sends lt=. A handshake call WITHOUT lt= is
+  // still allowed for backward compat with wrapHwidBootstrap and the
+  // key GUI's internal re-request (which build their own handshake
+  // call without lt=), but calls WITH an invalid/expired/consumed lt
+  // are rejected — this is what kills the "copy bootstrap from Discord"
+  // attack: the pasted code has lt=EXPIRED_TOKEN, so it fails here.
+  const lt = String(req.query.lt || "").trim();
+  if (lt && !consumeLoaderToken(lt, ip)) {
+    return res.status(403).send("0");
+  }
   const pid = String(req.query.px || "").trim();
   if (!pid) return res.status(403).send("0");
   if (isRateLimited("handshake-pid", pid, 20, 15 * 1000)) return res.status(429).send("0");
@@ -1998,6 +2047,14 @@ app.get("/v1/loaders/:file", async (req, res) => {
   const __cToken = issueCanaryToken(slug, key || "");
   const __cUrl = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
 
+  // Issue a single-use loader session token bound to this IP. The
+  // bootstrap Lua below embeds it in the handshake call. If someone
+  // copies the Lua output from Discord and runs it from a different
+  // IP (or after the 30s TTL), the handshake rejects the stale token
+  // and the whole chain dies — the URL is reusable, but the OUTPUT
+  // (the actual Lua code) is single-use.
+  const __lt = issueLoaderToken(getClientIp(req));
+
   // FIX: this earliest-possible check used to always hard-kick, ignoring
   // the project's integrity_mode setting entirely (unlike the later
   // in-body checks, which did respect it) - so switching a project to
@@ -2032,6 +2089,23 @@ app.get("/v1/loaders/:file", async (req, res) => {
     '  if type(iscc) == "function" then',
     '    local ok2, r = pcall(iscc, loadstring)',
     '    if ok2 and r == false then return false end',
+    '  end',
+    // ENHANCED: also check game.HttpGet — a hooked HttpGet is how
+    // Discord-shared dumpers capture responses without touching loadstring.
+    // If HttpGet is hooked, the attacker can intercept every server
+    // response (handshake token, stage1, stage2, encrypted body) before
+    // our code even runs.
+    '  if game and game.HttpGet then',
+    '    local ok3, r3 = pcall(function()',
+    '      if type(iscc) == "function" then',
+    '        local ok4, isC = pcall(iscc, game.HttpGet)',
+    '        if ok4 and isC == false then return false end',
+    '      end',
+    '      local ok5, inf = pcall(debug.getinfo, game.HttpGet, "S")',
+    '      if ok5 and inf and inf.what ~= "C" then return false end',
+    '      return true',
+    '    end)',
+    '    if ok3 and r3 == false then return false end',
     '  end',
     '  return true',
     'end',
@@ -2071,7 +2145,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
     // about the final /v1/load or /v1/bootstrap URL - as leaked/shared
     // dumper scripts typically do - no longer works on its own; it would
     // also need to replicate this two-request exchange exactly.
-    'local _c = game:HttpGet("' + PUBLIC_BASE_URL + '/v1/handshake?px=".._px.."&gp=".._gp)',
+    'local _c = game:HttpGet("' + PUBLIC_BASE_URL + '/v1/handshake?lt=' + __lt + '&px=".._px.."&gp=".._gp)',
     'local _s = game:HttpGet("' + bootstrapUrl + '?px=".._px.."&gp=".._gp.."&c=".._c' + keyQuery + ')',
     'local _fn,_err = loadstring(_s)',
     'if _fn then _fn() else warn("[Solaries] load failed: "..tostring(_err)) end',
