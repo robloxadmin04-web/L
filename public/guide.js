@@ -340,7 +340,10 @@
       // edge of the screen, flip to sitting below the target instead.
       if (vh - bottomAnchor - cardH < 12) {
         this.card.style.bottom = "auto";
-        this.card.style.top = Math.max(12, r.bottom + gap) + "px";
+        // Clamp to the viewport - for a very tall target (e.g. a full-height
+        // mobile sidebar drawer), r.bottom + gap can land well past the
+        // bottom of the screen, leaving the card invisible off-screen.
+        this.card.style.top = Math.max(12, Math.min(r.bottom + gap, vh - cardH - 12)) + "px";
       } else {
         this.card.style.top = "auto";
         this.card.style.bottom = bottomAnchor + "px";
