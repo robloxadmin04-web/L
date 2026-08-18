@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Accounts - Owner</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       .api-code {
         font-family: Consolas, Monaco, monospace;
@@ -329,5 +330,36 @@
         });
       })();
     </script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "owner",
+        steps: [
+          {
+            target: null,
+            title: "Owner accounts",
+            body: "Manage the accounts that can access this platform, and your Discord invite link.",
+          },
+          {
+            target: "#openCreate",
+            placement: "left",
+            title: "Issue an account",
+            body: "Create a new account and hand out its API key.",
+          },
+          {
+            target: "#discordInvite",
+            placement: "bottom",
+            title: "Discord invite link",
+            body: "Set the invite link shown to users who click Discord across the site.",
+          },
+          {
+            target: "#acctTable",
+            placement: "top",
+            title: "All accounts",
+            body: "Every account on the platform, its plan, and its current standing.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
