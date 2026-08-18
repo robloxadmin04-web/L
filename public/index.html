@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Access</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="guide.css" />
     <script
       src="https://challenges.cloudflare.com/turnstile/v0/api.js"
       async
@@ -303,6 +304,31 @@
           if (e.key === "Escape") close();
         });
       })();
+    </script>
+    <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "index",
+        steps: [
+          {
+            target: null,
+            title: "Welcome",
+            body: "This is the access page. Sign in with an API key to reach your dashboard.",
+          },
+          {
+            target: "#apiKey",
+            placement: "bottom",
+            title: "Your API key",
+            body: "Paste the API key tied to your account here. Get it from an owner if you don't have one yet.",
+          },
+          {
+            target: "#requestAccessBtn",
+            placement: "top",
+            title: "Don't have a key?",
+            body: "Click here to request access through Discord.",
+          },
+        ],
+      });
     </script>
   </body>
 </html>
