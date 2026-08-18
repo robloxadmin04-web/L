@@ -150,12 +150,47 @@
       avatarEl.textContent = initials || "?";
     }
 
-    // Menu toggle
+    // Menu toggle (mobile sidebar) + dim overlay behind it
     const menuBtn = document.getElementById("menuToggle");
     const sidebar = document.getElementById("sidebar");
     if (menuBtn && sidebar) {
+      // Create the overlay once, reused by every page that includes auth.js
+      let overlay = document.querySelector(".sidebar-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "sidebar-overlay";
+        document.body.appendChild(overlay);
+      }
+
+      function openSidebar() {
+        sidebar.classList.add("is-open");
+        overlay.classList.add("is-open");
+      }
+      function closeSidebar() {
+        sidebar.classList.remove("is-open");
+        overlay.classList.remove("is-open");
+      }
+
       menuBtn.addEventListener("click", function () {
-        sidebar.classList.toggle("is-open");
+        if (sidebar.classList.contains("is-open")) {
+          closeSidebar();
+        } else {
+          openSidebar();
+        }
+      });
+
+      // Tap outside (on the dimmed overlay) closes it
+      overlay.addEventListener("click", closeSidebar);
+
+      // Escape key closes it
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") closeSidebar();
+      });
+
+      // Tapping a nav link inside the sidebar should close it too,
+      // otherwise the overlay stays up after navigating on mobile
+      sidebar.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", closeSidebar);
       });
     }
 
