@@ -20,7 +20,7 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: var(--shadow);
   cursor: pointer;
-  z-index: 80;
+  z-index: 150;
   transition: transform 0.15s ease, background 0.15s ease;
 }
 .guide-fab:hover { background: var(--accent-hover); transform: translateY(-2px); }
@@ -53,14 +53,24 @@
   position: fixed;
   inset: 0;
   background: rgba(6, 6, 8, 0.72);
-  backdrop-filter: blur(1px);
   transition: opacity 0.15s ease;
+}
+
+/* When a step is spotlighting a real element, guide-spot's own box-shadow
+   already dims everything outside the target and leaves the target itself
+   perfectly clear. Stacking guide-dim's own darkened layer underneath it
+   made the "highlighted" area look foggy/blurred, so we switch guide-dim
+   to a transparent click-catcher in that case and let guide-spot do all
+   of the dimming. guide-dim only paints when a step has no target
+   (the centered welcome/closing card). */
+.guide-overlay.has-spot .guide-dim {
+  background: transparent;
 }
 
 .guide-spot {
   position: fixed;
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 4px var(--accent-soft), 0 0 0 9999px rgba(6, 6, 8, 0.72);
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 0 0 9999px rgba(6, 6, 8, 0.78);
   border: 1.5px solid var(--accent);
   transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease;
   pointer-events: none;
