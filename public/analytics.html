@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Analytics - Solaries</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       .chart-wrap {
         background: var(--bg);
@@ -314,5 +315,42 @@
 
     <script src="auth.js"></script>
     <script src="analytics.js"></script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "analytics",
+        steps: [
+          {
+            target: null,
+            title: "Analytics",
+            body: "See how your scripts are being used over time and catch problems early.",
+          },
+          {
+            target: "#chartWrap",
+            placement: "bottom",
+            title: "Loads over time",
+            body: "Tracks how many times your scripts were delivered, day by day.",
+          },
+          {
+            target: "#rangeToggle",
+            placement: "bottom",
+            title: "Change the range",
+            body: "Switch the chart between different time windows.",
+          },
+          {
+            target: "#topTable",
+            placement: "top",
+            title: "Top scripts",
+            body: "See which scripts are getting the most use in the last 30 days.",
+          },
+          {
+            target: "#activityList",
+            placement: "top",
+            title: "Recent activity",
+            body: "A live feed of the latest script deliveries and events.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
