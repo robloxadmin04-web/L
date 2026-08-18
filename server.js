@@ -5119,7 +5119,7 @@ async function startDiscordBot() {
     const slug = interaction.options.getString("project");
     const project = await getActiveProject(interaction.user.id, accountId, slug);
     if (!project) {
-      return interaction.editReply({ content: "No active project. Pass `project:<slug>` or set one first with `/myproject`." });
+      return interaction.editReply({ content: "No active project. Pass `project:<slug>` or set one first with `/project select`." });
     }
 
     const since24h = new Date(Date.now() - 86400000).toISOString();
