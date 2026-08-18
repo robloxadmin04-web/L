@@ -102,6 +102,41 @@
           <button class="st-tab" data-view="keys">Keys</button>
         </div>
 
+        <section class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:14px;">
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Active</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+            </div>
+            <p class="stat-value" id="statActive">0</p>
+            <p class="stat-meta">Live right now</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Idle</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg></span>
+            </div>
+            <p class="stat-value" id="statIdle">0</p>
+            <p class="stat-meta">No activity 24h</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Expired</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M12 7v5l3 2"></path><circle cx="12" cy="12" r="9"></circle></svg></span>
+            </div>
+            <p class="stat-value" id="statExpired">0</p>
+            <p class="stat-meta">Needs renewal</p>
+          </article>
+          <article class="stat-card">
+            <div class="stat-head">
+              <p class="stat-label">Revoked</p>
+              <span class="stat-icon"><svg viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg></span>
+            </div>
+            <p class="stat-value" id="statRevoked">0</p>
+            <p class="stat-meta">Blocked / removed</p>
+          </article>
+        </section>
+
         <div class="card" id="scriptsCard">
           <div class="card-head">
             <div>
