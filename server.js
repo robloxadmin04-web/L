@@ -205,7 +205,7 @@ function makeKey(prefix) {
 // the actual key string (or "" / null for keyless), known server-side.
 function buildHandshakeLoader(scriptSlug, key) {
   const url = PUBLIC_BASE_URL + "/v1/loaders/" + scriptSlug + ".lua" + (key ? "?k=" + encodeURIComponent(key) : "");
-  return 'local __b=game:HttpGet("' + url + '");local __f,__e=loadstring(__b);if __f then __f() else warn("[Solaries] load failed: "..tostring(__e)) end';
+  return 'loadstring(game:HttpGet("' + url + '"))()';
 }
 function makeSlug(name) {
   const base = String(name || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
