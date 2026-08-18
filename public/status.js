@@ -11,6 +11,10 @@ const el = {
   keysCard: document.getElementById("keysCard"),
   refreshBtn: document.getElementById("refreshBtn"),
   tabs: document.querySelectorAll(".st-tab"),
+  statActive: document.getElementById("statActive"),
+  statIdle: document.getElementById("statIdle"),
+  statExpired: document.getElementById("statExpired"),
+  statRevoked: document.getElementById("statRevoked"),
 };
 
 function escapeHtml(s) {
@@ -100,12 +104,24 @@ function renderKeys(keys) {
   });
 }
 
+function renderSummary(scripts, keys) {
+  const all = (scripts || []).concat(keys || []);
+  const count = function (status) {
+    return all.filter(function (x) { return x.status === status; }).length;
+  };
+  if (el.statActive) el.statActive.textContent = count("active");
+  if (el.statIdle) el.statIdle.textContent = count("idle");
+  if (el.statExpired) el.statExpired.textContent = count("expired");
+  if (el.statRevoked) el.statRevoked.textContent = count("revoked");
+}
+
 async function load() {
   try {
     const r = await window.SL.api("/api/status");
     if (!r.ok) throw new Error(r.error || "Could not load status");
     renderScripts(r.scripts || []);
     renderKeys(r.keys || []);
+    renderSummary(r.scripts || [], r.keys || []);
   } catch (e) {
     window.SL.toast(e.message, "error");
   }
