@@ -886,3 +886,97 @@ html[data-theme="light"] .modal-card { box-shadow: 0 30px 70px rgba(20, 22, 30, 
   .card { padding: 12px; }
   .stat-card { padding: 11px; }
 }
+
+/* ============================================================
+   MOBILE COMPOSITION PASS (density + rhythm refinement)
+   Undoes unnecessary forced stacking from earlier passes and
+   tightens spacing rhythm. Additive only, cascades after every
+   rule above it. Desktop (>720px) untouched.
+   ============================================================ */
+@media (max-width: 720px) {
+  /* ---- Sidebar: dim + block interaction with the page behind it ---- */
+  body:has(#sidebar.is-open)::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 25; /* below .sidebar (30), above .main content */
+    animation: sidebarDim 0.2s ease;
+  }
+  @keyframes sidebarDim {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  #sidebar.is-open { box-shadow: 0 20px 70px rgba(0, 0, 0, 0.6); }
+
+  /* ---- Topbar: keep title + menu button on one row, actions can wrap under it,
+     but don't force full column/stretch when it's not needed ---- */
+  .topbar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    row-gap: 8px;
+  }
+  .topbar-left { flex: 1 1 auto; min-width: 0; }
+  .header-actions {
+    width: auto;
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .header-actions .ghost-btn,
+  .header-actions .primary-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: nowrap;
+    padding: 0 8px !important;
+  }
+  /* On very narrow screens the primary action (rightmost, e.g. New script)
+     can take a bit more room than the secondary ghost buttons beside it */
+  .header-actions .primary-btn { flex-grow: 1.3; }
+
+  /* ---- Stat cards: compact dashboard tiles, content-driven height ---- */
+  .stats-grid { gap: 8px !important; margin-bottom: 12px; }
+  .stat-card { height: auto; }
+  .stat-head { margin-bottom: 6px !important; }
+  .stat-meta { margin-top: 2px !important; }
+
+  /* ---- Card rhythm: tighten internal spacing, keep related lines close ---- */
+  .card { padding: 12px !important; }
+  .card + .card { margin-top: 8px !important; }
+  .card-head { margin-bottom: 8px !important; }
+
+  /* ---- Toggle rows: label/value pair stays on one row when it fits;
+     only wrap to a second line for the long-description rows that were
+     already explicitly stacked inline ---- */
+  .toggle-row { padding: 9px 12px !important; gap: 10px !important; }
+  .toggle-row + .toggle-row { border-top-color: var(--line-soft); }
+  .toggle-block-title { padding: 10px 12px !important; }
+
+  /* Rows using the inline "flex-direction:column" pattern (protection tuning,
+     long-description toggles) keep their stacked layout, but tighten the
+     internal gap so label/description/control read as one compact group */
+  .toggle-row[style*="column"] { gap: 6px !important; }
+  .toggle-row[style*="column"] .toggle-desc { margin-top: 0 !important; }
+
+  /* ---- Action button clusters (Loader / Discord / Edit / History / Delete):
+     pair up naturally instead of one-per-row ---- */
+  .list-input-row + div,
+  .version-item { margin-bottom: 6px !important; }
+
+  /* ---- Wizard steps / option cards: tighten vertical rhythm ---- */
+  .option-card { padding: 10px 12px !important; }
+  .option-card-title { margin-bottom: 2px !important; }
+  .wizard-steps { padding: 10px !important; gap: 6px !important; }
+
+  /* ---- Table action buttons: two per row instead of stretching full width ---- */
+  .data-table td[data-label="Actions"] .mini-btn {
+    flex: 1 1 calc(50% - 3px);
+  }
+
+  /* ---- Section title / breadcrumb: sit closer to what follows ---- */
+  .breadcrumb { margin-bottom: 4px !important; }
+  .topbar { margin-bottom: 12px !important; }
+}
