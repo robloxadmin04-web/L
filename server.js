@@ -2383,23 +2383,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
     // skip entirely
   } else if (__integrityModeEarly === "kick") {
     __earlyCheckLines.push(
-      // FIX: __sol_early_ok() itself must never be allowed to throw
-      // uncaught. debug.getinfo / iscclosure availability varies wildly
-      // across executors (some expose a partial debug library, or none
-      // at all) - a bare call here previously killed the ENTIRE script
-      // at line 1 on any executor where one of those primitives is
-      // missing, before the real loadstring protection even started.
-      // Wrapping in pcall makes a failed check degrade to "treat as ok"
-      // instead of crashing every load path (keyless/keyed/GUI/no-GUI).
-      // __sol_pcOk = did the check itself run without erroring.
-      // __sol_pcRes = the actual true/false verdict from __sol_early_ok
-      //   (only meaningful when __sol_pcOk is true).
-      // Fail-open: if the check itself threw (missing debug/iscclosure
-      // primitives on this executor), treat as "not suspect" rather than
-      // killing the script - matches the fail-open design of every other
-      // heuristic in this file.
-      'local __sol_pcOk, __sol_pcRes = pcall(__sol_early_ok)',
-      'if __sol_pcOk and __sol_pcRes == false then',
+      'if not __sol_early_ok() then',
       '  pcall(function() game:HttpGet("' + __cUrl + '?r=early_hook") end)',
       '  local __plr = game:GetService("Players").LocalPlayer',
       '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
@@ -2409,8 +2393,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
   } else {
     // log mode: report only, never block the load on this heuristic alone
     __earlyCheckLines.push(
-      'local __sol_pcOk, __sol_pcRes = pcall(__sol_early_ok)',
-      'if __sol_pcOk and __sol_pcRes == false then',
+      'if not __sol_early_ok() then',
       '  pcall(function() game:HttpGet("' + __cUrl + '?r=early_hook") end)',
       'end'
     );
