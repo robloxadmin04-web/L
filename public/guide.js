@@ -67,6 +67,14 @@
     var cx = Math.min(Math.max(r.left + r.width / 2, 0), viewportWidth() - 1);
     var cy = Math.min(Math.max(r.top + r.height / 2, 0), viewportHeight() - 1);
     var topEl = document.elementFromPoint(cx, cy);
+    // The guide's own dim layer sits above every page element while the
+    // tour is open, so it will always be "on top" of the target at this
+    // point - that's expected, not a sign of something actually blocking
+    // it. Only treat this as "covered" when a foreign element (a real
+    // modal, dropdown, etc. outside our own overlay) is on top.
+    if (topEl && topEl.closest && topEl.closest(".guide-overlay")) {
+      return true;
+    }
     if (topEl && topEl !== target && !target.contains(topEl) && !topEl.contains(target)) {
       return false;
     }
