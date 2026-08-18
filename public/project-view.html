@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Project</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       .breadcrumb { display:flex; align-items:center; gap:8px; margin-bottom:8px; color:var(--text-soft); font-size:13px; }
       .breadcrumb a { color:var(--text-muted); }
@@ -542,5 +543,42 @@
 
     <script src="auth.js"></script>
     <script src="project-view.js"></script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "project-view",
+        steps: [
+          {
+            target: null,
+            title: "Inside a project",
+            body: "This is where you manage a single project's scripts, protection settings, and access rules.",
+          },
+          {
+            target: "#openWizard",
+            placement: "left",
+            title: "Add a script",
+            body: "Upload or paste a new script version here to protect and deliver it.",
+          },
+          {
+            target: "#scriptsTable",
+            placement: "top",
+            title: "Delivered payloads",
+            body: "Every script version you've added lives here, with its own status and history.",
+          },
+          {
+            target: "#tWhitelist",
+            placement: "left",
+            title: "Whitelist mode",
+            body: "Turn this on to only allow keys or HWIDs you've explicitly approved.",
+          },
+          {
+            target: "#tIntegrityMode",
+            placement: "top",
+            title: "Protection tuning",
+            body: "Fine-tune anti-tamper checks, nonce lifetime, and rate limits for this project's deliveries.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
