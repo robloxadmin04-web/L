@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Keys - Solaries</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       /* Key card layout (mobile-first) */
       .key-card {
@@ -392,5 +393,36 @@
 
     <script src="auth.js"></script>
     <script src="keys.js"></script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "keys",
+        steps: [
+          {
+            target: null,
+            title: "License keys",
+            body: "Generate, track, and manage the keys your users redeem to run your scripts.",
+          },
+          {
+            target: "#openGenerate",
+            placement: "left",
+            title: "Create a key",
+            body: "Issue a new key, set an expiry, and optionally lock it to one device (HWID).",
+          },
+          {
+            target: "#filterTabs",
+            placement: "bottom",
+            title: "Filter keys",
+            body: "Jump between active, expired, or revoked keys.",
+          },
+          {
+            target: "#searchInput",
+            placement: "bottom",
+            title: "Search",
+            body: "Find a key fast by its label or code.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
