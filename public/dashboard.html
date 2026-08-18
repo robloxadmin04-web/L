@@ -118,7 +118,7 @@
           </div>
           <p style="margin:0 0 16px; color:var(--text-muted);">Welcome, <strong data-user-name style="color:var(--white);">there</strong>. Start by creating a project, adding your first script, and issuing a key.</p>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <a class="primary-btn" href="projects.html">
+            <a class="primary-btn" id="createProjectCta" href="projects.html">
               <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
               Create project
             </a>
@@ -220,7 +220,7 @@
             body: "These cards track your projects, scripts, issued keys, and script deliveries in the last 24 hours.",
           },
           {
-            target: ".primary-btn",
+            target: "#createProjectCta",
             placement: "left",
             title: "Create a project",
             body: "Start here. A project holds your scripts, keys, and access rules together.",
