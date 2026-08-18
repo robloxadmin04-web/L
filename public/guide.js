@@ -244,6 +244,7 @@
       this.spot.style.width = Math.min(r.width + pad * 2, viewportWidth() - 8) + "px";
       this.spot.style.height = r.height + pad * 2 + "px";
       this.card.classList.remove("is-centered");
+      this.overlay.classList.add("has-spot");
     } else {
       // Target missing or still off-canvas - fall back to a centered card
       // instead of spotlighting nothing.
@@ -252,6 +253,7 @@
       this.card.style.top = "";
       this.card.style.left = "";
       this.card.style.bottom = "";
+      this.overlay.classList.remove("has-spot");
     }
 
     this._paintCardContent(step);
