@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Watermark Trace</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       .wm-textarea {
         width: 100%;
@@ -135,5 +136,30 @@
 
     <script src="auth.js"></script>
     <script src="watermark.js"></script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "watermark",
+        steps: [
+          {
+            target: null,
+            title: "Watermark trace",
+            body: "Every script you deliver carries a hidden, per-user marker. If a copy leaks, paste it here to trace who it came from.",
+          },
+          {
+            target: "#wmInput",
+            placement: "top",
+            title: "Paste the leaked copy",
+            body: "Drop the leaked script content here exactly as it was found.",
+          },
+          {
+            target: "#wmDecodeBtn",
+            placement: "top",
+            title: "Decode it",
+            body: "Runs the trace and shows which key or user the copy was originally delivered to.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
