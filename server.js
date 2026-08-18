@@ -805,13 +805,17 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const tbl = r(), dec = r(), i = r(), m = r(), fn = r(), err = r();
 
+  const byteVar = r(); // FIX: was calling r() a second time on the next line,
+  // producing a DIFFERENT random name than the one just declared - string.char()
+  // ended up referencing an undeclared (nil) global, causing "invalid argument
+  // #1 to 'char' (number expected, got nil)" for every player.
   const decoder = [
     `local ${tbl}={${chunks.join(",")}}`,
     `local ${dec}={}`,
     `local ${m}=${mask}`,
     `for ${i}=1,#${tbl} do`,
-    `  local ${r()}=bit32 and bit32.bxor(${tbl}[${i}],(${m}+${i}-1)%256) or (${tbl}[${i}])`,
-    `  ${dec}[${i}]=string.char(${r()})`,
+    `  local ${byteVar}=bit32 and bit32.bxor(${tbl}[${i}],(${m}+${i}-1)%256) or (${tbl}[${i}])`,
+    `  ${dec}[${i}]=string.char(${byteVar})`,
     `end`,
     `local ${fn},${err}=loadstring(table.concat(${dec}))`,
     `if ${fn} then ${fn}() end`,
@@ -833,6 +837,7 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
   }
 
   const tbl2 = r(), dec2 = r(), i2 = r(), m2 = r(), fn2 = r(), delay = r();
+  const byteVar2 = r(); // FIX: same double-r() bug as the decoder block above.
 
   const runtimeRecheck = [
     `pcall(function()`,
@@ -844,8 +849,8 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
     `      local ${dec2}={}`,
     `      local ${m2}=${mask2}`,
     `      for ${i2}=1,#${tbl2} do`,
-    `        local ${r()}=bit32 and bit32.bxor(${tbl2}[${i2}],(${m2}+${i2}-1)%256) or (${tbl2}[${i2}])`,
-    `        ${dec2}[${i2}]=string.char(${r()})`,
+    `        local ${byteVar2}=bit32 and bit32.bxor(${tbl2}[${i2}],(${m2}+${i2}-1)%256) or (${tbl2}[${i2}])`,
+    `        ${dec2}[${i2}]=string.char(${byteVar2})`,
     `      end`,
     `      local ${fn2}=loadstring(table.concat(${dec2}))`,
     `      if ${fn2} then ${fn2}() end`,
@@ -1464,16 +1469,21 @@ function buildTrollJunk() {
     "-- ╚══════════════════════════════════════════════════════╝",
     "",
     "-- [ENCRYPTED PAYLOAD SEGMENTS - DO NOT MODIFY]",
-    "pcall(function()",
-    ...fakeBlocks.map(l => "  " + l),
-    "",
-    ...fakeDecrypt,
-    "",
-    "  -- [DECRYPTION KEY TABLE - ROTATED PER SESSION]",
-    "  local " + rn() + " = {",
-    ...fakeKeys,
-    "  }",
-    "end)",
+    // FIX: this used to be real, live code inside pcall(function() ... end) -
+    // it actually ran for every single player (game:GetService calls, loops,
+    // coroutine.wrap, setmetatable, etc.), not just for someone reading a raw
+    // dump. That's needless risk (and needless bytes/CPU) for zero benefit,
+    // since the only purpose is to LOOK convincing to a human skimming the
+    // file - it never needs to execute. Every line below is now a plain "--"
+    // comment, so it's 100% inert: nothing here can ever throw at runtime.
+    ...fakeBlocks.map(l => "-- " + l),
+    "-- ",
+    ...fakeDecrypt.map(l => "-- " + l),
+    "-- ",
+    "-- [DECRYPTION KEY TABLE - ROTATED PER SESSION]",
+    "-- local " + rn() + " = {",
+    ...fakeKeys.map(l => "-- " + l),
+    "-- }",
     "",
   ].join("\n");
 }
