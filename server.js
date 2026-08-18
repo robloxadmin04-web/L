@@ -1470,20 +1470,23 @@ app.get("/v1/canary/:token", async (req, res) => {
   const ip = getClientIp(req);
   const hwid = getHwid(req);
   const reason = sanitizeString(req.query.r, 64) || "unknown";
-  if (info && global.__solScrapeAlert) {
-    supabase.from("scripts")
+  let __canaryOwnerId = null;
+  if (info) {
+    const { data } = await supabase.from("scripts")
       .select("project_id, projects!inner(owner_account_id)")
-      .eq("slug", info.scriptSlug).maybeSingle()
-      .then(({ data }) => {
-        if (data?.projects?.owner_account_id) {
-          global.__solScrapeAlert(data.projects.owner_account_id, "integrity_canary", {
-            scriptSlug: info.scriptSlug, ip, hwid, key: info.key,
-            reason: "runtime integrity check tripped: " + reason,
-          });
-        }
-      }).catch(() => {});
+      .eq("slug", info.scriptSlug).maybeSingle();
+    if (data?.projects?.owner_account_id) {
+      __canaryOwnerId = data.projects.owner_account_id;
+      if (global.__solScrapeAlert) {
+        global.__solScrapeAlert(__canaryOwnerId, "integrity_canary", {
+          scriptSlug: info.scriptSlug, ip, hwid, key: info.key,
+          reason: "runtime integrity check tripped: " + reason,
+        });
+      }
+    }
   }
   await supabase.from("access_log").insert({
+    owner_account_id: __canaryOwnerId,
     event: "blocked",
     reason: "integrity_canary:" + reason,
     hwid: hwid || null,
@@ -1540,7 +1543,7 @@ async function handleLoadRoute(req, res) {
 
   async function block(reason, code, keyId, projectId, scriptId) {
     await supabase.from("access_log").insert({
-      owner_account_id: null,
+      owner_account_id: script?.projects?.owner_account_id || null,
       key_id: keyId || null,
       project_id: projectId || null,
       script_id: scriptId || null,
@@ -1619,6 +1622,16 @@ async function handleLoadRoute(req, res) {
         reason: __loadRatePerMin + "+ requests in 60s from same IP (" + __clientPicture + ")",
       });
     }
+    await supabase.from("access_log").insert({
+      owner_account_id: script.projects.owner_account_id || null,
+      key_id: null,
+      project_id: projectId,
+      script_id: script.id,
+      event: "blocked",
+      reason: "rate limited",
+      hwid: hwid || null,
+      ip: ip || null,
+    });
     return res.status(429).send("-- rate limited");
   }
 
@@ -4984,10 +4997,15 @@ async function startDiscordBot() {
         .select("id, reason, hwid, ip, created_at, scripts(name, slug), keys(key)")
         .eq("owner_account_id", accountId)
         .eq("event", "blocked")
-        .in("reason", [
-          "missing or expired session token",
-          "rate limited",
-        ])
+        .or([
+          "reason.eq.missing or expired session token",
+          "reason.eq.rate limited",
+          "reason.ilike.integrity_canary:%",
+          "reason.eq.stage2=1 hit with invalid/expired/used token",
+          "reason.ilike.auto-revoked:%",
+          "reason.eq.key auto-revoked for sharing",
+          "reason.eq.revoked via watermark trace on leaked copy",
+        ].join(","))
         .order("created_at", { ascending: false })
         .limit(10);
 
