@@ -894,20 +894,26 @@ html[data-theme="light"] .modal-card { box-shadow: 0 30px 70px rgba(20, 22, 30, 
    rule above it. Desktop (>720px) untouched.
    ============================================================ */
 @media (max-width: 720px) {
-  /* ---- Sidebar: dim + block interaction with the page behind it ---- */
-  body:has(#sidebar.is-open)::after {
-    content: "";
+  /* ---- Sidebar: dim + tappable overlay behind it (element injected by auth.js) ---- */
+  .sidebar-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
-    z-index: 25; /* below .sidebar (30), above .main content */
-    animation: sidebarDim 0.2s ease;
+    z-index: 25; /* below .sidebar (30) and .menu-btn, above .main content */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
   }
-  @keyframes sidebarDim {
-    from { opacity: 0; }
-    to { opacity: 1; }
+  .sidebar-overlay.is-open {
+    opacity: 1;
+    visibility: visible;
   }
   #sidebar.is-open { box-shadow: 0 20px 70px rgba(0, 0, 0, 0.6); }
+  /* Menu button must stay clickable above the overlay so it can re-close it */
+  .menu-btn {
+    position: relative;
+    z-index: 31;
+  }
 
   /* ---- Topbar: keep title + menu button on one row, actions can wrap under it,
      but don't force full column/stretch when it's not needed ---- */
