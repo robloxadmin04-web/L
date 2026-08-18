@@ -2,6 +2,12 @@
    Shared by every workspace page. Reuses app.css design tokens
    (--bg, --surface, --line, --accent, etc.) so it never looks bolted-on. */
 
+:root {
+  --guide-teal: #14b8a6;
+  --guide-teal-hover: #0d9488;
+  --guide-teal-soft: rgba(20, 184, 166, 0.16);
+}
+
 /* ---------------------------------------------------------
    Floating help button (bottom-left entry point)
    NOTE: intentionally bottom-LEFT, not bottom-right. The toast
@@ -10,7 +16,11 @@
    and hide every toast message ("Key copied", "Script created",
    etc). Keeping this on the opposite corner avoids that collision
    entirely instead of trying to juggle z-index/margins.
---------------------------------------------------------- */
+
+   Deliberately NOT the app's purple --accent here - the fab needs
+   to read as "help", not as another primary action competing with
+   the real primary buttons on the page, so it gets its own teal
+   identity instead. */
 .guide-fab {
   position: fixed;
   left: 22px;
@@ -21,17 +31,21 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
-  color: var(--white);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: var(--shadow);
+  background: var(--guide-teal);
+  color: #04211c;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.28), var(--shadow);
   cursor: pointer;
   z-index: 150;
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
-.guide-fab:hover { background: var(--accent-hover); transform: translateY(-2px); }
+.guide-fab:hover {
+  background: var(--guide-teal-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(20, 184, 166, 0.34), var(--shadow);
+}
 .guide-fab:active { transform: translateY(0); }
-.guide-fab svg { width: 22px; height: 22px; stroke: currentColor; }
+.guide-fab svg { width: 21px; height: 21px; stroke: currentColor; stroke-width: 2; }
 
 .guide-fab-badge {
   position: absolute;
@@ -76,8 +90,8 @@
 .guide-spot {
   position: fixed;
   border-radius: var(--radius-md);
-  box-shadow: 0 0 0 4px var(--accent-soft), 0 0 0 9999px rgba(6, 6, 8, 0.78);
-  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--guide-teal-soft, rgba(20, 184, 166, 0.16)), 0 0 0 9999px rgba(6, 6, 8, 0.78);
+  border: 1.5px solid var(--guide-teal, #14b8a6);
   transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease;
   pointer-events: none;
 }
@@ -109,8 +123,8 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--guide-teal);
+  background: var(--guide-teal-soft);
   padding: 3px 8px;
   border-radius: 999px;
 }
@@ -158,7 +172,7 @@
   border-radius: 50%;
   background: var(--line);
 }
-.guide-dot.is-active { background: var(--accent); width: 16px; border-radius: 4px; }
+.guide-dot.is-active { background: var(--guide-teal); width: 16px; border-radius: 4px; }
 
 .guide-actions { display: flex; gap: 8px; }
 
@@ -177,10 +191,10 @@
 }
 .guide-btn-ghost:hover { color: var(--text); background: var(--hover); }
 .guide-btn-primary {
-  background: var(--accent);
-  color: var(--white);
+  background: var(--guide-teal);
+  color: #04211c;
 }
-.guide-btn-primary:hover { background: var(--accent-hover); }
+.guide-btn-primary:hover { background: var(--guide-teal-hover); }
 
 /* Centered welcome/finish card (no target element) */
 .guide-card.is-centered {
