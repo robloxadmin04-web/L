@@ -176,6 +176,21 @@
 }
 
 @media (max-width: 640px) {
-  .guide-fab { right: 16px; bottom: 16px; width: 44px; height: 44px; }
-  .guide-card { width: calc(100vw - 32px); }
+  .guide-fab {
+    right: max(14px, env(safe-area-inset-right));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    width: 46px;
+    height: 46px;
+  }
+  .guide-card {
+    width: calc(100vw - 28px);
+    padding: 14px 14px 12px;
+  }
+  .guide-card.is-centered {
+    width: calc(100vw - 40px);
+  }
+  .guide-card-title { font-size: 14px; }
+  .guide-card-body { font-size: 12.5px; }
+  .guide-step-pill { font-size: 10.5px; }
+  .guide-btn { padding: 8px 12px; font-size: 12px; }
 }
