@@ -1045,6 +1045,17 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     "  if type(__genv4.getconnections) == \"function\" then __genv4.getconnections = function() return {} end end",
     "  if type(__genv4.firesignal) == \"function\" then __genv4.firesignal = function() end end",
     "end)",
+    // Anti-HttpSpy + Anti-rconsole: HttpSpy is the most common tool
+    // for logging all HTTP requests (captures handshake URLs, stage
+    // URLs, nonces). rconsole/rconsolecreate is used to dump captured
+    // code to a separate output window. Kill both.
+    "pcall(function()",
+    "  local __genv5 = type(getgenv) == \"function\" and getgenv() or _G",
+    "  for _, __spn in ipairs({'HttpSpy','httpspy','spy','rconsoleprint','rconsolecreate','rconsole','printconsole','rconsolename','rconsoleinput','rconsoleinfo','rconsolewarn','rconsoleerr','rconsoleclear'}) do",
+    "    if type(__genv5[__spn]) == \"function\" then __genv5[__spn] = function() end end",
+    "    if type(__genv5[__spn]) == \"table\" then __genv5[__spn] = {} end",
+    "  end",
+    "end)",
     // Optional strict getrenv signal, opt-in per project (see strict_genv_check
     // in the dashboard's Protection tuning card). Confirmed to
     // false-positive on some executors even with a clean environment,
