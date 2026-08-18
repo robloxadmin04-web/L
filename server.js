@@ -1243,24 +1243,39 @@ function buildTrollJunk() {
       fakeBlocks.push(`local ${name} = "${rb()}"`);
       fakeBlocks.push(`local ${rn()} = string.rep(string.reverse(${name}), ${ri()})`);
     } else if (style === 1) {
-      fakeBlocks.push(`local ${name} = {${Array.from({length: 4 + crypto.randomInt(6)}, () => `"${rh()}"`).join(",")}}`);
-      fakeBlocks.push(`for ${rn()}=1,#${name} do ${name}[${rn()}] = string.reverse(${name}[${rn()}] or "") end`);
+      const iter = rn();
+      fakeBlocks.push(`local ${name} = {${Array.from({length: 4 + crypto.randomInt(6)}, () => `"${rh()}"`).join(", ")}}`);
+      fakeBlocks.push(`for ${iter}=1,#${name} do ${name}[${iter}] = string.reverse(${name}[${iter}] or "") end`);
     } else if (style === 2) {
-      fakeBlocks.push(`local ${name} = function(${rn()}) return string.char(bit32 and bit32.bxor(string.byte(${rn()},1) or 0, 0x${crypto.randomBytes(1).toString("hex")}) or 0) end`);
+      const arg = rn();
+      fakeBlocks.push(`local ${name} = function(${arg}) return string.char(bit32 and bit32.bxor(string.byte(${arg}, 1) or 0, 0x${crypto.randomBytes(1).toString("hex")}) or 0) end`);
     } else if (style === 3) {
       fakeBlocks.push(`local ${name} = game:GetService("${["HttpService","RunService","ReplicatedStorage","TeleportService","Players","Lighting"][crypto.randomInt(6)]}")`);
       fakeBlocks.push(`local ${rn()} = tostring(${name}) .. "${rh()}"`);
     } else if (style === 4) {
-      fakeBlocks.push(`local ${name} = coroutine.wrap(function() for ${rn()}=1,${ri()} do coroutine.yield("${rh()}") end end)`);
+      const iter = rn();
+      fakeBlocks.push(`local ${name} = coroutine.wrap(function() for ${iter}=1,${ri()} do coroutine.yield("${rh()}") end end)`);
     } else {
-      fakeBlocks.push(`local ${name} = setmetatable({["${rh()}"]=true}, {__index=function() return "${rb()}" end})`);
+      fakeBlocks.push(`local ${name} = setmetatable({["${rh().slice(0,8)}"]=true}, {__index=function() return "${rb()}" end})`);
     }
   }
 
-  // Fake "decryption key" table
+  // Fake "decryption key" table — note the trailing commas for valid Lua
   const fakeKeys = Array.from({length: 3 + crypto.randomInt(3)}, () =>
-    `  ["${rh().slice(0,8)}"] = "${rb()}"`
+    `    ["${rh().slice(0,8)}"] = "${rb()}",`
   );
+
+  // Fake "decryption" function — uses consistent variable names
+  const fnName = rn(), fnArg = rn(), fnKey = rn(), fnOut = rn(), fnI = rn();
+  const fakeDecrypt = [
+    `  local function ${fnName}(${fnArg}, ${fnKey})`,
+    `    local ${fnOut} = {}`,
+    `    for ${fnI} = 1, #${fnArg} do`,
+    `      ${fnOut}[${fnI}] = string.char(bit32 and bit32.bxor(string.byte(${fnArg}, ${fnI}), string.byte(${fnKey}, (${fnI} - 1) % #${fnKey} + 1)) or string.byte(${fnArg}, ${fnI}))`,
+    `    end`,
+    `    return table.concat(${fnOut})`,
+    `  end`,
+  ];
 
   return [
     ...trollFaces,
@@ -1277,6 +1292,8 @@ function buildTrollJunk() {
     "-- [ENCRYPTED PAYLOAD SEGMENTS - DO NOT MODIFY]",
     "pcall(function()",
     ...fakeBlocks.map(l => "  " + l),
+    "",
+    ...fakeDecrypt,
     "",
     "  -- [DECRYPTION KEY TABLE - ROTATED PER SESSION]",
     "  local " + rn() + " = {",
