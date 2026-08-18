@@ -617,6 +617,29 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
   }
   .data-table td[data-label="Script"]::before { display: none; }
 
+  /* Long unbroken values (HWIDs, license keys, hashes) can't wrap inside
+     a space-between flex row - they just push past the card edge and
+     drag the whole row into horizontal scroll, cutting off the label
+     text on the left. Stack these like the Script column instead, and
+     let the value itself break onto multiple lines within the card. */
+  .data-table td[data-label="Value"] {
+    display: block;
+    text-align: left;
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line-soft) !important;
+  }
+  .data-table td[data-label="Value"]::before {
+    display: block;
+    margin-bottom: 4px;
+  }
+  .data-table td[data-label="Value"] span {
+    display: block;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+    white-space: normal !important;
+  }
+
   .data-table td[data-label="Actions"] {
     display: flex;
     flex-wrap: wrap;
