@@ -649,105 +649,127 @@ setInterval(() => {
 // attacker who patches iscclosure itself - the point is to raise cost,
 // not to claim this is unbeatable (see the design note above wrapExecCheck).
 function buildIntegritySnippet(canaryUrl, kickOnFail) {
-  const failAction = kickOnFail === false
-    ? [
-        "if __sol_suspect then",
-        "  __sol_report(__sol_reason)",
-        "end",
-      ]
+  const r = () => "_" + crypto.randomBytes(3).toString("hex");
+  const kick = kickOnFail !== false;
+  const serverTs = Date.now();
+
+  // Pre-generate ALL variable names — no inline r() calls anywhere.
+  // Every response has completely unique identifiers so static
+  // analysis ("find __sol_suspect") is impossible.
+  const rpt=r(), sus=r(), rsn=r(), lss=r(), isc=r();
+  const fns=r(), nms=r(), i=r(), ok1=r(), rv1=r();
+  const ok2=r(), uv=r(), ok3=r(), gv=r();
+  const ok4=r(), hk=r(), ok5=r(), mt=r(), mts=r();
+  const ok6=r(), nc=r(), ok7=r(), rv7=r();
+  const ok8=r(), ix=r(), ok9=r(), rv9=r();
+  const ge=r(), df=r(), n=r(), ts=r(), td=r();
+  const g2=r(), g3=r(), g4=r(), w=r();
+  const plr=r(), rptA=r();
+
+  const failLines = !kick
+    ? [`if ${sus} then ${rpt}(${rsn}) end`]
     : [
-        "if __sol_suspect then",
-        "  __sol_report(__sol_reason)",
-        '  local __plr = game:GetService("Players").LocalPlayer',
-        '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
-        "  return",
-        "end",
+        `if ${sus} then`,
+        `  ${rpt}(${rsn})`,
+        `  local ${plr}=game:GetService("Players").LocalPlayer`,
+        `  if ${plr} then ${plr}:Kick("Execution environment failed integrity check.") end`,
+        `  return`,
+        `end`,
       ];
-  return [
-    "local function __sol_report(reason)",
-    '  pcall(function() game:HttpGet("' + canaryUrl + '?r=" .. tostring(reason)) end)',
-    "end",
-    "local __sol_suspect = false",
-    "local __sol_reason = \"unknown\"",
-    "do",
-    "  local __ls_snap = loadstring",
-    "  local __checks = {",
-    '    {"loadstring", loadstring},',
-    '    {"httpget", (game and game.HttpGet)},',
-    '    {"require", require},',
-    '    {"pcall", pcall},',
-    "  }",
-    "  local __iscc = iscclosure or is_cclosure or checkclosure",
-    "  if type(__iscc) == \"function\" then",
-    "    for _, pair in ipairs(__checks) do",
-    "      local __name, __fn = pair[1], pair[2]",
-    "      if type(__fn) == \"function\" then",
-    "        local __ok, __isC = pcall(__iscc, __fn)",
-    "        if __ok and __isC == false then",
-    "          __sol_suspect = true",
-    '          __sol_reason = "hooked:" .. __name',
-    "          break",
-    "        end",
-    "      end",
-    "    end",
-    "  end",
-    // ENHANCED: upvalue check on loadstring
-    "  if not __sol_suspect and type(debug) == \"table\" and type(debug.getupvalue) == \"function\" then",
-    "    local ok, uv = pcall(debug.getupvalue, __ls_snap, 1)",
-    "    if ok and uv ~= nil then",
-    '      __sol_suspect, __sol_reason = true, "ls_upvalue"',
-    "    end",
-    "  end",
-    // ENHANCED: getgenv().loadstring replacement check
-    "  if not __sol_suspect and type(getgenv) == \"function\" then",
-    "    local ok, genv = pcall(getgenv)",
-    "    if ok and type(genv) == \"table\" and genv.loadstring and genv.loadstring ~= __ls_snap then",
-    '      __sol_suspect, __sol_reason = true, "genv_ls_replaced"',
-    "    end",
-    "  end",
-    // debug.sethook spy detection — log-only in non-kick mode (high FP risk)
-    "  if not __sol_suspect and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
-    "    local ok, hookFn = pcall(debug.gethook)",
-    "    if ok and hookFn ~= nil then",
-    ...(kickOnFail !== false
-      ? ['      __sol_suspect, __sol_reason = true, "debug_hook_active"']
-      : ['      __sol_report("debug_hook_active")']),
-    "    end",
-    "  end",
-    // game metatable hook detection — log-only in non-kick mode (high FP risk)
-    "  if not __sol_suspect then",
-    "    local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
-    "    if ok and mt then",
-    "      local __mt_sig = nil",
-    "      local ok2, nc = pcall(rawget, mt, \"__namecall\")",
-    "      if ok2 and type(nc) == \"function\" and type(__iscc) == \"function\" then",
-    "        local ok3, isC = pcall(__iscc, nc)",
-    '        if ok3 and isC == false then __mt_sig = "mt_namecall_hook" end',
-    "      end",
-    "      if not __mt_sig then",
-    "        local ok4, ix = pcall(rawget, mt, \"__index\")",
-    "        if ok4 and type(ix) == \"function\" and type(__iscc) == \"function\" then",
-    "          local ok5, isC = pcall(__iscc, ix)",
-    '          if ok5 and isC == false then __mt_sig = "mt_index_hook" end',
-    "        end",
-    "      end",
-    "      if __mt_sig then",
-    ...(kickOnFail !== false
-      ? ["        __sol_suspect, __sol_reason = true, __mt_sig"]
-      : ["        __sol_report(__mt_sig)"]),
-    "      end",
-    "    end",
-    "  end",
-    // Neutralize dump tools — ONLY in kick mode to avoid breaking user's other scripts
-    ...(kickOnFail !== false ? [
-      "  pcall(function()",
-      "    local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
-      "    local __ge = type(getgenv) == \"function\" and getgenv() or _G",
-      "    for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
-      "  end)",
+
+  const lines = [
+    `local function ${rpt}(${rptA}) pcall(function() game:HttpGet("${canaryUrl}?r="..tostring(${rptA})) end) end`,
+    `local ${sus}=false`,
+    `local ${rsn}=""`,
+    `do`,
+    `local ${lss}=loadstring`,
+    // LAYER 1: iscclosure on loadstring/HttpGet/require/pcall
+    `local ${isc}=iscclosure or is_cclosure or checkclosure`,
+    `if type(${isc})=="function" then`,
+    `  local ${fns}={loadstring,(game and game.HttpGet),require,pcall}`,
+    `  local ${nms}={"ls","hg","rq","pc"}`,
+    `  for ${i}=1,4 do`,
+    `    if type(${fns}[${i}])=="function" then`,
+    `      local ${ok1},${rv1}=pcall(${isc},${fns}[${i}])`,
+    `      if ${ok1} and ${rv1}==false then ${sus},${rsn}=true,"h:"..${nms}[${i}] break end`,
+    `    end`,
+    `  end`,
+    `end`,
+    // LAYER 2: hookfunction upvalue detection
+    `if not ${sus} and type(debug)=="table" and type(debug.getupvalue)=="function" then`,
+    `  local ${ok2},${uv}=pcall(debug.getupvalue,${lss},1)`,
+    `  if ${ok2} and ${uv}~=nil then ${sus},${rsn}=true,"uv" end`,
+    `end`,
+    // LAYER 3: getgenv().loadstring replacement check
+    `if not ${sus} and type(getgenv)=="function" then`,
+    `  local ${ok3},${gv}=pcall(getgenv)`,
+    `  if ${ok3} and type(${gv})=="table" and ${gv}.loadstring and ${gv}.loadstring~=${lss} then ${sus},${rsn}=true,"gv" end`,
+    `end`,
+    // LAYER 4: debug.sethook spy detection
+    `if not ${sus} and type(debug)=="table" and type(debug.gethook)=="function" then`,
+    `  local ${ok4},${hk}=pcall(debug.gethook)`,
+    `  if ${ok4} and ${hk}~=nil then`,
+    ...(kick ? [`    ${sus},${rsn}=true,"dh"`] : [`    ${rpt}("dh")`]),
+    `  end`,
+    `end`,
+    // LAYER 5: game metatable __namecall/__index hook
+    `if not ${sus} then`,
+    `  local ${ok5},${mt}=pcall(getrawmetatable or rawgetmetatable or function() return nil end,game)`,
+    `  if ${ok5} and ${mt} then`,
+    `    local ${mts}=nil`,
+    `    local ${ok6},${nc}=pcall(rawget,${mt},"__namecall")`,
+    `    if type(${nc})=="function" and type(${isc})=="function" then`,
+    `      local ${ok7},${rv7}=pcall(${isc},${nc})`,
+    `      if ${ok7} and ${rv7}==false then ${mts}="mn" end`,
+    `    end`,
+    `    if not ${mts} then`,
+    `      local ${ok8},${ix}=pcall(rawget,${mt},"__index")`,
+    `      if type(${ix})=="function" and type(${isc})=="function" then`,
+    `        local ${ok9},${rv9}=pcall(${isc},${ix})`,
+    `        if ${ok9} and ${rv9}==false then ${mts}="mi" end`,
+    `      end`,
+    `    end`,
+    `    if ${mts} then`,
+    ...(kick ? [`      ${sus},${rsn}=true,${mts}`] : [`      ${rpt}(${mts})`]),
+    `    end`,
+    `  end`,
+    `end`,
+    // LAYER 6: Anti-getgc — neutralize GC memory scanners
+    `pcall(function() local ${g2}=type(getgenv)=="function" and getgenv() or _G`,
+    `  if type(${g2}.getgc)=="function" then ${g2}.getgc=function() return {} end end`,
+    `  if type(${g2}.getgcinfo)=="function" then ${g2}.getgcinfo=function() return 0 end end`,
+    `end)`,
+    // LAYER 7: Timestamp validation — reject if >30s since server generated this response
+    `local ${ts}=${serverTs}`,
+    `if not ${sus} and type(os)=="table" and type(os.time)=="function" then`,
+    `  local ${td}=os.time()*1000`,
+    `  if ${td}-${ts}>30000 then ${sus},${rsn}=true,"ts" end`,
+    `end`,
+    // LAYER 8: Anti-writefile/setclipboard (kick only)
+    ...(kick ? [
+      `pcall(function() local ${g3}=type(getgenv)=="function" and getgenv() or _G`,
+      `  for _,${w} in ipairs({"writefile","appendfile","setclipboard","syn_io_write"}) do`,
+      `    if type(${g3}[${w}])=="function" then ${g3}[${w}]=function() end end`,
+      `  end end)`,
     ] : []),
-    "end",
-  ].concat(failAction).join("\n");
+    // LAYER 9: Dump tool neutralization (expanded list, kick only)
+    ...(kick ? [
+      `pcall(function() local ${ge}=type(getgenv)=="function" and getgenv() or _G`,
+      `  for _,${n} in ipairs({"decompile","getscriptbytecode","saveinstance","getscripts","getrunningscripts","getloadedmodules","dumpstring","getprotos","getconstants","getupvalues"}) do`,
+      `    if type(${ge}[${n}])=="function" then ${ge}[${n}]=function() return "" end end`,
+      `  end end)`,
+    ] : []),
+    // LAYER 10: Anti-getconnections/firesignal
+    `pcall(function() local ${g4}=type(getgenv)=="function" and getgenv() or _G`,
+    `  if type(${g4}.getconnections)=="function" then ${g4}.getconnections=function() return {} end end`,
+    `  if type(${g4}.firesignal)=="function" then ${g4}.firesignal=function() end end`,
+    `end)`,
+    // LAYER 11: Force-clear debug.sethook before decrypt proceeds
+    `pcall(function() if type(debug)=="table" and type(debug.sethook)=="function" then debug.sethook(nil) end end)`,
+    `end`,
+  ];
+
+  return lines.concat(failLines).join("\n");
 }
 
 // Wraps a delivered script body with the integrity preamble. Distinct from
