@@ -341,14 +341,14 @@ async function gateLoaderRequest(req, res) {
     res.status(403).type("text/html").send(getBlockHtml());
     return true;
   }
-  // Exempt the internal "?raw=1" follow-up from the Roblox-UA check: it's
-  // fetched via the executor's own request function (syn.request /
-  // http.request / request / http_request), which many executors don't
-  // stamp with a "Roblox" User-Agent the way game:HttpGet does. This sub-
-  // request can only succeed with a valid single-use raw-nonce that was
-  // already minted for a client who passed this exact check on the
-  // original request, so skipping it here doesn't weaken security.
-  if (!req.query.raw && (!isRobloxClient(req) || isKnownScraperClient(req))) {
+  // Exempt internal follow-ups (?raw=1 and ?stage2=1) from the Roblox-UA
+  // and handshake checks: both are fetched via the executor's own request
+  // function and are already gated by their own single-use nonces (raw-
+  // nonce for raw=1, s2 token for stage2), so requiring the handshake on
+  // top is redundant and breaks delivery for non-Loading-GUI modes (key_gui
+  // and no_gui) whose stage2 URLs don't carry px/gp/c params.
+  const isInternalFollowup = !!req.query.raw || !!req.query.stage2;
+  if (!isInternalFollowup && (!isRobloxClient(req) || isKnownScraperClient(req))) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
@@ -358,31 +358,26 @@ async function gateLoaderRequest(req, res) {
     return true;
   }
   const pid = String(req.query.px || "").trim();
-  if (!pid) {
+  if (!pid && !isInternalFollowup) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
-  if (!req.query.raw && isRateLimited("load-pid", pid, 20, 15 * 1000)) {
+  if (!isInternalFollowup && isRateLimited("load-pid", pid, 20, 15 * 1000)) {
     res.status(429).type("text/plain").send("-- too many requests");
     return true;
   }
-  const validPid = req.query.raw ? true : await isValidRobloxPlayer(pid);
+  const validPid = isInternalFollowup ? true : await isValidRobloxPlayer(pid);
   if (!validPid) {
     res.status(403).type("text/plain").send("-- forbidden");
     return true;
   }
   // FIX #NEW: require a fresh, single-use handshake challenge bound to
   // this exact (pid, ip, placeId) before allowing the actual load.
-  // Exception: the internal "?raw=1" follow-up (fired by the GUI/loading
-  // wrappers to fetch the encrypted script body) is already gated by its
-  // own single-use raw-nonce (see consumeRawNonce in handleLoadRoute) -
-  // requiring a *second*, independent handshake challenge on top of that
-  // is redundant and fragile in practice: it forces two near-simultaneous
-  // requests to land on the exact same (ip) as seen by this server, which
-  // can differ across hops on proxied/hosted infra and silently blocks an
-  // otherwise legitimate load with "-- forbidden" (which then gets fed
-  // into the decryptor as if it were real ciphertext, producing garbage).
-  if (!req.query.raw) {
+  // Exception: internal follow-ups (raw=1 and stage2=1) are already gated
+  // by their own single-use nonces (raw-nonce / s2 token) - requiring an
+  // additional handshake challenge on top is redundant and breaks delivery
+  // for key_gui / no_gui modes whose stage2 URLs don't carry px/gp/c.
+  if (!isInternalFollowup) {
     const gp = String(req.query.gp || "").trim();
     const challenge = String(req.query.c || "").trim();
     if (!consumeChallenge(challenge, pid, ip, gp)) {
