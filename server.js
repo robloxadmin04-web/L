@@ -771,7 +771,8 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
   return lines;
 }
 
-function buildStage1Stub(stage2Url, canaryUrl, strictGenv) {
+function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
+  integrityMode = ["kick", "log", "off"].includes(integrityMode) ? integrityMode : "log";
   return [
     "local function __sol_report(reason)",
     '  pcall(function() game:HttpGet("' + canaryUrl + '?r=" .. tostring(reason)) end)',
@@ -795,30 +796,42 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv) {
     "end",
     "",
     "local __suspect, __reason = false, nil",
-    "for _, pair in ipairs({{\"loadstring\", __ls}, {\"httpget\", __hg}, {\"require\", __rq}, {\"pcall\", __pc}}) do",
-    "  if type(pair[2]) == \"function\" and not __sol_is_native(pair[2]) then",
-    "    __suspect, __reason = true, \"hooked:\" .. pair[1]",
-    "    break",
-    "  end",
-    "end",
-    "",
-    // Optional strict signal, opt-in per project - see comment on the
-    // same check in hookGuardLuaLines above for why it's not on by
-    // default.
-    ...(strictGenv ? [
-      "if not __suspect and type(getrenv) == \"function\" then",
-      "  local ok, renv = pcall(getrenv)",
-      "  if ok and type(renv) == \"table\" and renv.loadstring and renv.loadstring ~= __ls then",
-      "    __suspect, __reason = true, \"genv_mismatch:loadstring\"",
+    // integrity_mode = "off": skip the detection loop entirely, same as
+    // hookGuardLuaLines does - no point computing __suspect if nothing
+    // will act on it.
+    ...(integrityMode === "off" ? [] : [
+      "for _, pair in ipairs({{\"loadstring\", __ls}, {\"httpget\", __hg}, {\"require\", __rq}, {\"pcall\", __pc}}) do",
+      "  if type(pair[2]) == \"function\" and not __sol_is_native(pair[2]) then",
+      "    __suspect, __reason = true, \"hooked:\" .. pair[1]",
+      "    break",
       "  end",
       "end",
       "",
-    ] : []),
+      // Optional strict signal, opt-in per project - see comment on the
+      // same check in hookGuardLuaLines above for why it's not on by
+      // default.
+      ...(strictGenv ? [
+        "if not __suspect and type(getrenv) == \"function\" then",
+        "  local ok, renv = pcall(getrenv)",
+        "  if ok and type(renv) == \"table\" and renv.loadstring and renv.loadstring ~= __ls then",
+        "    __suspect, __reason = true, \"genv_mismatch:loadstring\"",
+        "  end",
+        "end",
+        "",
+      ] : []),
+    ]),
     "if __suspect then",
     "  __sol_report(__reason)",
-    '  local __plr = game:GetService("Players").LocalPlayer',
-    '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
-    "  return",
+    ...(integrityMode === "kick" ? [
+      '  local __plr = game:GetService("Players").LocalPlayer',
+      '  if __plr then __plr:Kick("Execution environment failed integrity check.") end',
+      "  return",
+    ] : [
+      // "log" mode: report the signal via canary but let the load
+      // continue - matches hookGuardLuaLines' log behavior, so a
+      // project owner can watch canary hit volume before opting into
+      // hard "kick" mode.
+    ]),
     "end",
     "",
     "-- Clean so far: fetch and run the real payload. This is the ONLY",
@@ -1859,7 +1872,7 @@ async function handleLoadRoute(req, res) {
     const __stage2Url = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
       + "?key=" + encodeURIComponent(key || "")
       + "&stage2=1&s2=" + encodeURIComponent(__s2Token);
-    return res.status(200).send(buildStage1Stub(__stage2Url, __canaryUrl, __strictGenvCheck));
+    return res.status(200).send(buildStage1Stub(__stage2Url, __canaryUrl, __strictGenvCheck, __integrityMode));
   }
 }
 app.get("/v1/load/:script_slug", handleLoadRoute);
