@@ -1,0 +1,181 @@
+/* guide.css - Solaries onboarding tour + help button
+   Shared by every workspace page. Reuses app.css design tokens
+   (--bg, --surface, --line, --accent, etc.) so it never looks bolted-on. */
+
+/* ---------------------------------------------------------
+   Floating help button (bottom-right entry point)
+--------------------------------------------------------- */
+.guide-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--white);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  z-index: 80;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.guide-fab:hover { background: var(--accent-hover); transform: translateY(-2px); }
+.guide-fab:active { transform: translateY(0); }
+.guide-fab svg { width: 22px; height: 22px; stroke: currentColor; }
+
+.guide-fab-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--good);
+  border: 2px solid var(--bg);
+}
+
+/* ---------------------------------------------------------
+   Spotlight overlay
+--------------------------------------------------------- */
+.guide-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: none;
+}
+.guide-overlay.is-open { display: block; }
+
+.guide-dim {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 6, 8, 0.72);
+  backdrop-filter: blur(1px);
+  transition: opacity 0.15s ease;
+}
+
+.guide-spot {
+  position: fixed;
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 0 0 9999px rgba(6, 6, 8, 0.72);
+  border: 1.5px solid var(--accent);
+  transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------
+   Tooltip card
+--------------------------------------------------------- */
+.guide-card {
+  position: fixed;
+  z-index: 201;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 16px 16px 14px;
+  transition: top 0.2s ease, left 0.2s ease;
+}
+
+.guide-card-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.guide-step-pill {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.guide-close {
+  background: none;
+  border: 0;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  border-radius: 6px;
+}
+.guide-close:hover { color: var(--text); background: var(--hover); }
+.guide-close svg { width: 16px; height: 16px; stroke: currentColor; }
+
+.guide-card-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--white);
+}
+
+.guide-card-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.guide-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.guide-dots {
+  display: flex;
+  gap: 5px;
+}
+.guide-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.guide-dot.is-active { background: var(--accent); width: 16px; border-radius: 4px; }
+
+.guide-actions { display: flex; gap: 8px; }
+
+.guide-btn {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.guide-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--line);
+}
+.guide-btn-ghost:hover { color: var(--text); background: var(--hover); }
+.guide-btn-primary {
+  background: var(--accent);
+  color: var(--white);
+}
+.guide-btn-primary:hover { background: var(--accent-hover); }
+
+/* Centered welcome/finish card (no target element) */
+.guide-card.is-centered {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 340px;
+}
+
+@media (max-width: 640px) {
+  .guide-fab { right: 16px; bottom: 16px; width: 44px; height: 44px; }
+  .guide-card { width: calc(100vw - 32px); }
+}
