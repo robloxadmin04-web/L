@@ -230,7 +230,7 @@
         <div class="card">
           <div class="card-head">
             <div>
-              <p class="card-kicker">Anti-scrape</p>
+              <p class="card-kicker">Anti-scrape &amp; Anti-dump</p>
               <h2 class="card-title">Protection tuning</h2>
             </div>
           </div>
@@ -238,32 +238,44 @@
             <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
               <div class="toggle-copy">
                 <p class="toggle-name">Integrity check mode</p>
-                <p class="toggle-desc">What happens when a delivered script detects a hooked loadstring/HttpGet/require/pcall. Start on "Log only" for a few days to confirm no false positives on your userbase's executors, then switch to "Kick".</p>
+                <p class="toggle-desc">What happens when tampering is detected. Checks include: loadstring/HttpGet/require/pcall hook detection, upvalue analysis, getgenv() replacement, debug.sethook spy, and game metatable interception. <strong>Log only</strong> = reports to canary, does not block (safe default). <strong>Kick</strong> = blocks the load and kicks the player. <strong>Off</strong> = all checks disabled.</p>
               </div>
               <select id="tIntegrityMode" class="select-field" style="max-width:260px;">
-                <option value="kick">Kick (block + report)</option>
+                <option value="kick">Kick (block + report + neutralize dump tools)</option>
                 <option value="log">Log only (report, don't block)</option>
                 <option value="off">Off (disabled)</option>
               </select>
             </div>
+
+            <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:4px;">
+              <div class="toggle-copy">
+                <p class="toggle-name" style="font-size:12px; color:var(--text-muted); font-weight:400;">What each mode does:</p>
+                <p class="toggle-desc" style="line-height:1.7;">
+                  <strong style="color:var(--white);">Always active (all modes):</strong> Loader session tokens, handshake challenge, encrypted delivery, execution tickets, watermarking, memory wipe, randomized decoy, randomized delay.<br>
+                  <strong style="color:var(--white);">Log &amp; Kick:</strong> Hook detection (iscclosure, debug.info, upvalue, getgenv replacement), HttpGet hook check, debug.sethook spy detection (report only in Log), game metatable hook detection (report only in Log).<br>
+                  <strong style="color:var(--white);">Kick only:</strong> Player kick on detection, decompile/getscriptbytecode/saveinstance/getscripts neutralization.
+                </p>
+              </div>
+            </div>
+
             <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
               <div class="toggle-copy">
                 <p class="toggle-name">Execution ticket TTL (seconds)</p>
-                <p class="toggle-desc">How long a delivered script has to redeem its single-use execution ticket. Raise this if legit players on slow connections are getting "expired session token" errors. Range: 5-120s.</p>
+                <p class="toggle-desc">How long a delivered script has to redeem its single-use execution ticket. Raise this if legit players on slow connections get "expired session token" errors. Range: 5–120s.</p>
               </div>
               <input id="iNonceTtl" type="number" class="text-field" min="5" max="120" step="1" style="max-width:120px;" />
             </div>
             <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
               <div class="toggle-copy">
                 <p class="toggle-name">Loader rate limit (requests/min per IP)</p>
-                <p class="toggle-desc">Raise this if players sharing a public IP (school/office/carrier NAT) are getting rate-limited together. Lower it to clamp down harder on scraping. Range: 5-300.</p>
+                <p class="toggle-desc">Raise if players sharing a public IP (school/office/carrier NAT) are getting rate-limited together. Lower to clamp down harder on scraping. Range: 5–300.</p>
               </div>
               <input id="iRateLimit" type="number" class="text-field" min="5" max="300" step="1" style="max-width:120px;" />
             </div>
             <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
               <div class="toggle-copy">
                 <p class="toggle-name">Strict environment check</p>
-                <p class="toggle-desc">Adds one extra signal (getrenv() vs loadstring comparison) on top of the integrity check above. Catches a narrower class of hook, but confirmed to false-positive on some executors even with nothing wrong - off by default. Only turn this on if you've seen a specific hook get past the standard check.</p>
+                <p class="toggle-desc">Extra signal: compares getrenv() vs loadstring. Catches a narrower class of hook but can false-positive on some executors. Off by default — only enable after confirming no false positives on your userbase.</p>
               </div>
               <label class="switch"><input type="checkbox" id="tStrictGenv"><span class="track"></span><span class="thumb"></span></label>
             </div>
@@ -396,7 +408,7 @@
               </div>
               <div class="option-card" style="cursor:default;">
                 <p class="option-card-title">3 &middot; Player interface</p>
-                <p class="option-card-desc">Pick what the user sees in Roblox before the script runs: No GUI, a loading screen, or a key entry box.</p>
+                <p class="option-card-desc">Pick what the player sees in Roblox: No GUI, a loading screen, or a key entry box. All modes share the same protection stack — no weak path.</p>
               </div>
               <div class="option-card" style="cursor:default;">
                 <p class="option-card-title">4 &middot; Source</p>
@@ -436,7 +448,7 @@
             <div class="toggle-block">
               <p class="toggle-block-title">Delivery</p>
               <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Syntax check</p><p class="toggle-desc">Validate before save.</p></div><label class="switch"><input type="checkbox" id="tSyntax" checked><span class="track"></span><span class="thumb"></span></label></div>
-              <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Fast mode</p><p class="toggle-desc">Fewer runtime checks.</p></div><label class="switch"><input type="checkbox" id="tFast"><span class="track"></span><span class="thumb"></span></label></div>
+              <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Fast mode</p><p class="toggle-desc">Shorter loading GUI animation. Does not affect security delays (randomized 5–12s anti-dump wait always applies).</p></div><label class="switch"><input type="checkbox" id="tFast"><span class="track"></span><span class="thumb"></span></label></div>
               <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Same device</p><p class="toggle-desc">Tie sessions to device and IP.</p></div><label class="switch"><input type="checkbox" id="tSame" checked><span class="track"></span><span class="thumb"></span></label></div>
               <div class="toggle-row"><div class="toggle-copy"><p class="toggle-name">Silent mode</p><p class="toggle-desc">Suppress auth and debug console output.</p></div><label class="switch"><input type="checkbox" id="tSilent" checked><span class="track"></span><span class="thumb"></span></label></div>
             </div>
@@ -447,13 +459,13 @@
           </div>
 
           <div class="wizard-panel" data-panel="3">
-            <div class="toggle-block-title" style="border:none; padding:0 0 10px;">Key entry and loading</div>
-            <p style="margin:0 0 12px; color:var(--text-soft); font-size:12px;">Nothing extra before start.</p>
+            <div class="toggle-block-title" style="border:none; padding:0 0 10px;">Player interface</div>
+            <p style="margin:0 0 12px; color:var(--text-soft); font-size:12px;">What the player sees before the script runs. All modes have the same protection level — encrypted delivery, integrity checks, anti-dump, and watermarking apply equally.</p>
             <div class="ui-grid">
-              <div class="option-card is-selected" data-ui="no_gui"><p class="option-card-title">No GUI</p><p class="option-card-desc">Start immediately.</p></div>
-              <div class="option-card" data-ui="loading"><p class="option-card-title">Loading screen</p><p class="option-card-desc">Progress while starting.</p></div>
-              <div class="option-card" data-ui="key_gui"><p class="option-card-title">Key system GUI</p><p class="option-card-desc">Ask for a key first.</p></div>
-              <div class="option-card" data-ui="custom"><p class="option-card-title">Custom Lua GUI <span class="option-badge">Creator+</span></p><p class="option-card-desc">Your UI and Solaries SDK.</p></div>
+              <div class="option-card is-selected" data-ui="no_gui"><p class="option-card-title">No GUI</p><p class="option-card-desc">Script starts silently. Best for background scripts or when you handle your own UI. Full protection via stage-split delivery.</p></div>
+              <div class="option-card" data-ui="loading"><p class="option-card-title">Loading screen</p><p class="option-card-desc">Shows a branded loading bar while the script loads. Recommended — gives visual feedback and uses the encrypted delivery pipeline.</p></div>
+              <div class="option-card" data-ui="key_gui"><p class="option-card-title">Key system GUI</p><p class="option-card-desc">In-game key input box. Player enters their key before the script loads. Requires the script to be set to "Keyed" access.</p></div>
+              <div class="option-card" data-ui="custom"><p class="option-card-title">Custom Lua GUI <span class="option-badge">Creator+</span></p><p class="option-card-desc">Build your own UI using the Solaries SDK. For advanced users who want full control.</p></div>
             </div>
           </div>
 
@@ -581,61 +593,61 @@
           {
             target: null,
             title: "Inside a project",
-            body: "This is where you manage a single project's scripts, protection settings, and access rules.",
+            body: "This is where you manage a single project's scripts, protection settings, and access rules. All delivery modes (No GUI, Loading, Key GUI) share the same multi-layered protection: encrypted delivery, integrity checks, anti-dump tools, execution tickets, watermarking, and more.",
           },
           {
             target: "#openWizard",
             placement: "left",
             title: "Add a script",
-            body: "Upload or paste a new script version here to protect and deliver it.",
+            body: "Upload or paste a new script version here. Choose the player interface (No GUI, Loading screen, or Key GUI), access mode (keyed/keyless), and delivery options. All modes have equal protection.",
           },
           {
             target: "#scriptsTable",
             placement: "top",
             title: "Delivered payloads",
-            body: "Every script version you've added lives here, with its own status and history.",
+            body: "Every script version you've added lives here. Each has its own loader URL, status, version history, and player UI setting. You can edit, enable/disable, or roll back to any version.",
           },
           {
             target: "#tWhitelist",
             placement: "auto",
             title: "Whitelist-only mode",
-            body: "When on, only devices already in your allowlist can load this project's scripts - everyone else is blocked even with a valid key. Leave off for normal key-based access; turn on once you know exactly which devices should have access.",
+            body: "When on, only devices already in your allowlist can load this project's scripts — everyone else is blocked even with a valid key. Leave off for normal key-based access; turn on once you know exactly which devices should have access.",
           },
           {
             target: "#tIntegrityMode",
             placement: "auto",
             title: "Integrity check mode",
-            body: "Controls what happens when a delivered script detects a hooked loadstring, HttpGet, require, or pcall on the client. Kick blocks and reports it, Log only reports without blocking, Off disables the check. Start on Log only for a few days to rule out false positives on your users' executors, then switch to Kick.",
+            body: "Controls what happens when tampering is detected. Checks include: loadstring/HttpGet hook detection, upvalue analysis, getgenv() replacement, debug.sethook spy detection, and game metatable interception. In Log mode, high-risk checks (sethook, metatable) report only without blocking — safe for all executors. In Kick mode, all checks block and dump tools (decompile, getscriptbytecode, saveinstance) are neutralized. Start on Log, switch to Kick after confirming no false positives.",
           },
           {
             target: "#iNonceTtl",
             placement: "auto",
             title: "Execution ticket TTL",
-            body: "How many seconds a delivered script has to redeem its single-use execution ticket, 5 to 120. If legitimate users on slow connections start seeing an expired session token error, raise this value.",
+            body: "How many seconds a delivered script has to redeem its single-use execution ticket (5–120s). The delivery uses randomized delays (5–12s) internally, so keep this above 15s for reliable delivery. Raise if legitimate users on slow connections get 'expired session token' errors.",
           },
           {
             target: "#iRateLimit",
             placement: "auto",
             title: "Loader rate limit",
-            body: "Requests per minute allowed per IP address, 5 to 300. Raise this if users sharing one public IP (school, office, carrier NAT) are getting rate-limited together. Lower it to clamp down harder on scraping attempts.",
+            body: "Requests per minute allowed per IP address (5–300). Raise if users sharing one public IP (school, office, carrier NAT) are getting rate-limited together. Lower to clamp down harder on scraping attempts.",
           },
           {
             target: "#tStrictGenv",
             placement: "auto",
             title: "Strict environment check",
-            body: "An extra signal on top of the integrity check above (compares getrenv() against loadstring). Catches a narrower class of hook, but can false-positive on some executors. Off by default - only enable this if you've confirmed a specific hook is slipping past the standard check.",
+            body: "Extra signal: compares getrenv() vs loadstring. Catches a narrower class of hook but can false-positive on some executors. Off by default — only enable after confirming no false positives on your userbase.",
           },
           {
             target: "#btnSaveTuning",
             placement: "auto",
             title: "Save your changes",
-            body: "None of the protection settings above take effect until you save. Test with Log only mode first before switching to Kick on a live project.",
+            body: "None of the protection settings above take effect until you save. Recommended: start on Log only for a few days, watch the canary alerts in your Discord log channel, then switch to Kick once confirmed clean.",
           },
           {
             target: "#blockTable",
             placement: "auto",
             title: "Blocklist",
-            body: "Devices, IPs, or keys you've explicitly banned from this project show up here, regardless of the whitelist setting above.",
+            body: "Devices, IPs, or keys you've explicitly banned from this project show up here. You can also auto-block from Discord scrape alerts using the Block IP/HWID buttons.",
           },
         ],
       });
