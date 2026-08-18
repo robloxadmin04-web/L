@@ -3425,6 +3425,11 @@ async function startDiscordBot() {
         .addStringOption((o) => o.setName("value").setDescription("IP or HWID to unblock").setRequired(true))
         .addStringOption((o) => o.setName("script").setDescription("Script slug").setRequired(true)))
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName("showsecuritypanel")
+      .setDescription("Snapshot of your protection tuning and live security activity (Owner only)")
+      .addStringOption((o) => o.setName("project").setDescription("Project slug (default: active)").setRequired(false))
+      .toJSON(),
   ];
 
   client.once(Events.ClientReady, async (c) => {
@@ -3499,6 +3504,7 @@ async function startDiscordBot() {
         else if (cmd === "setstatus") await handleSetStatus(interaction);
         else if (cmd === "clearstatus") await handleClearStatus(interaction);
         else if (cmd === "security") await handleSecurity(interaction, sub);
+        else if (cmd === "showsecuritypanel") await handleShowSecurityPanel(interaction);
       } else if (interaction.isButton()) {
         // Custom IDs: "sol_<action>_<scriptId>"
         const parts = interaction.customId.split("_");
@@ -5077,6 +5083,100 @@ async function startDiscordBot() {
         return interaction.editReply({ content: `No block found for \`${value}\` on \`${scriptSlug}\`.` });
       return interaction.editReply({ content: `✅ Unblocked \`${value}\` from \`${scriptSlug}\`.` });
     }
+  }
+
+  // ============================================================
+  // /showsecuritypanel
+  // One-glance dashboard: current protection tuning for the active
+  // project, plus what's actually happened in the last 24h (loads,
+  // blocked attempts, top reasons, blocklist size). Read-only - use
+  // /security alerts|blockip|blockhwid|unblock to act on anything.
+  // ============================================================
+  async function handleShowSecurityPanel(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const accountId = await requireLogin(interaction);
+    if (!accountId) return;
+    if (!await isManagerAllowed(interaction, accountId)) return interaction.editReply({ content: "You lack permission." });
+
+    const slug = interaction.options.getString("project");
+    const project = await getActiveProject(interaction.user.id, accountId, slug);
+    if (!project) {
+      return interaction.editReply({ content: "No active project. Pass `project:<slug>` or set one first with `/myproject`." });
+    }
+
+    const since24h = new Date(Date.now() - 86400000).toISOString();
+
+    const [loads24h, blocked24h, blockedIps, blockedHwids, recentReasons] = await Promise.all([
+      supabase.from("access_log").select("id", { count: "exact", head: true })
+        .eq("project_id", project.id).eq("event", "load").gte("created_at", since24h),
+      supabase.from("access_log").select("id", { count: "exact", head: true })
+        .eq("project_id", project.id).eq("event", "blocked").gte("created_at", since24h),
+      supabase.from("blocklist").select("id", { count: "exact", head: true })
+        .eq("project_id", project.id).eq("entry_type", "ip"),
+      supabase.from("blocklist").select("id", { count: "exact", head: true })
+        .eq("project_id", project.id).eq("entry_type", "hwid"),
+      supabase.from("access_log").select("reason")
+        .eq("project_id", project.id).eq("event", "blocked").gte("created_at", since24h).limit(200),
+    ]);
+
+    // Tally the top block reasons client-side (small sample, cheap to do here
+    // rather than pulling in a DB-side group-by for a read-only dashboard).
+    const reasonCounts = new Map();
+    for (const row of recentReasons.data || []) {
+      const r = (row.reason || "unknown").split(":")[0].trim();
+      reasonCounts.set(r, (reasonCounts.get(r) || 0) + 1);
+    }
+    const topReasons = [...reasonCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([reason, count]) => `\`${count}×\` ${reason}`);
+
+    const integrityMode = project.integrity_mode || "log";
+    const strictGenv = project.strict_genv_check === true;
+    const ticketTtl = (Number.isFinite(project.raw_nonce_ttl_sec) && project.raw_nonce_ttl_sec > 0) ? project.raw_nonce_ttl_sec : 15;
+    const rateLimit = (Number.isFinite(project.load_rate_limit_per_min) && project.load_rate_limit_per_min > 0) ? project.load_rate_limit_per_min : 30;
+    const whitelistOnly = project.whitelist_only === true;
+    const blockedCount = blocked24h.count || 0;
+
+    const modeDisplay = integrityMode === "kick" ? "🟢 Kick (block + report)"
+      : integrityMode === "log" ? "🟡 Log only"
+      : "🔴 Off";
+
+    let color, headline;
+    if (integrityMode === "off") {
+      color = 0xef4444;
+      headline = "🔴 Runtime integrity checks are **off** — hooked executors won't be caught, only logged loader-level abuse.";
+    } else if (blockedCount > 20) {
+      color = 0xf59e0b;
+      headline = `🟡 Elevated activity — **${blockedCount}** blocked attempts in the last 24h.`;
+    } else {
+      color = 0x22c55e;
+      headline = `🟢 Protection active — ${blockedCount ? `${blockedCount} blocked attempt(s)` : "nothing unusual"} in the last 24h.`;
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(color)
+      .setTitle("🛡️ Security Panel — " + project.name)
+      .setDescription(headline)
+      .addFields(
+        { name: "Integrity check mode", value: modeDisplay, inline: true },
+        { name: "Execution ticket TTL", value: `${ticketTtl}s`, inline: true },
+        { name: "Loader rate limit", value: `${rateLimit}/min per IP`, inline: true },
+        { name: "Strict env check", value: strictGenv ? "✅ On" : "➖ Off", inline: true },
+        { name: "Whitelist-only", value: whitelistOnly ? "🔒 On" : "➖ Off", inline: true },
+        { name: "Project status", value: project.status === "active" ? "🟢 Active" : "⏸️ " + project.status, inline: true },
+        { name: "Loads (24h)", value: String(loads24h.count || 0), inline: true },
+        { name: "Blocked attempts (24h)", value: String(blockedCount), inline: true },
+        { name: "Blocklist", value: `${blockedIps.count || 0} IP · ${blockedHwids.count || 0} HWID`, inline: true },
+      );
+
+    if (topReasons.length) {
+      embed.addFields({ name: "Top block reasons (24h)", value: topReasons.join("\n"), inline: false });
+    }
+
+    embed.setFooter({ text: "/security alerts for details · /security blockip|blockhwid to act" }).setTimestamp();
+
+    return interaction.editReply({ embeds: [embed] });
   }
 
   // ============================================================
