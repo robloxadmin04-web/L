@@ -705,37 +705,47 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
     '      __sol_suspect, __sol_reason = true, "genv_ls_replaced"',
     "    end",
     "  end",
-    // debug.sethook spy detection
+    // debug.sethook spy detection — log-only in non-kick mode (high FP risk)
     "  if not __sol_suspect and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
     "    local ok, hookFn = pcall(debug.gethook)",
     "    if ok and hookFn ~= nil then",
-    '      __sol_suspect, __sol_reason = true, "debug_hook_active"',
+    ...(kickOnFail !== false
+      ? ['      __sol_suspect, __sol_reason = true, "debug_hook_active"']
+      : ['      __sol_report("debug_hook_active")']),
     "    end",
     "  end",
-    // game metatable hook detection
+    // game metatable hook detection — log-only in non-kick mode (high FP risk)
     "  if not __sol_suspect then",
     "    local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
     "    if ok and mt then",
+    "      local __mt_sig = nil",
     "      local ok2, nc = pcall(rawget, mt, \"__namecall\")",
     "      if ok2 and type(nc) == \"function\" and type(__iscc) == \"function\" then",
     "        local ok3, isC = pcall(__iscc, nc)",
-    '        if ok3 and isC == false then __sol_suspect, __sol_reason = true, "mt_namecall_hook" end',
+    '        if ok3 and isC == false then __mt_sig = "mt_namecall_hook" end',
     "      end",
-    "      if not __sol_suspect then",
+    "      if not __mt_sig then",
     "        local ok4, ix = pcall(rawget, mt, \"__index\")",
     "        if ok4 and type(ix) == \"function\" and type(__iscc) == \"function\" then",
     "          local ok5, isC = pcall(__iscc, ix)",
-    '          if ok5 and isC == false then __sol_suspect, __sol_reason = true, "mt_index_hook" end',
+    '          if ok5 and isC == false then __mt_sig = "mt_index_hook" end',
     "        end",
+    "      end",
+    "      if __mt_sig then",
+    ...(kickOnFail !== false
+      ? ["        __sol_suspect, __sol_reason = true, __mt_sig"]
+      : ["        __sol_report(__mt_sig)"]),
     "      end",
     "    end",
     "  end",
-    // Neutralize dump tools
-    "  pcall(function()",
-    "    local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
-    "    local __ge = type(getgenv) == \"function\" and getgenv() or _G",
-    "    for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
-    "  end)",
+    // Neutralize dump tools — ONLY in kick mode to avoid breaking user's other scripts
+    ...(kickOnFail !== false ? [
+      "  pcall(function()",
+      "    local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+      "    local __ge = type(getgenv) == \"function\" and getgenv() or _G",
+      "    for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
+      "  end)",
+    ] : []),
     "end",
   ].concat(failAction).join("\n");
 }
@@ -854,71 +864,73 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     "  end",
     "end",
     // ---------------------------------------------------------------
-    // ATTACK #1: debug.sethook — an attacker sets a call/line hook
-    // that monitors every function call without touching any specific
-    // function. It can capture arguments passed to loadstring (the
-    // source code) silently. Detect if a hook is currently active.
+    // ATTACK #1: debug.sethook — monitors all function calls silently.
+    // HIGH FALSE-POSITIVE RISK: some executors use debug hooks internally
+    // for error handling. Only treated as a block signal in "kick" mode;
+    // in "log" mode it reports but does NOT set __sol_hookclean = false
+    // (the signal is informational, not a conviction).
     // ---------------------------------------------------------------
     "if __sol_hookclean and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
     "  local ok, hookFn = pcall(debug.gethook)",
     "  if ok and hookFn ~= nil then",
-    "    __sol_hookclean, __sol_reason_g = false, \"debug_hook_active\"",
+    ...(mode === "kick"
+      ? ["    __sol_hookclean, __sol_reason_g = false, \"debug_hook_active\""]
+      : (canaryUrl
+        ? ['    pcall(function() game:HttpGet("' + canaryUrl + '?r=debug_hook_active") end)']
+        : [])),
     "  end",
     "end",
     // ---------------------------------------------------------------
-    // ATTACK #2: game metatable interception — instead of hooking
-    // game.HttpGet directly (which iscclosure detects), an attacker
-    // sets __namecall or __index on the game object's metatable to
-    // intercept ALL method calls on game, including HttpGet. The
-    // function itself stays native, but the call is rerouted through
-    // the metatable. Detect by checking if the game's metatable is
-    // locked (Roblox locks it by default; if it's been unlocked and
-    // modified, that's suspicious).
+    // ATTACK #2: game metatable __namecall/__index interception.
+    // HIGH FALSE-POSITIVE RISK: many executors (Synapse, Fluxus, etc.)
+    // hook __namecall on game as part of their NORMAL HTTP routing.
+    // A non-native __namecall is standard executor behavior, not proof
+    // of dumping. Only blocks in "kick" mode; "log" mode just reports.
     // ---------------------------------------------------------------
     "if __sol_hookclean then",
     "  local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
     "  if ok and mt then",
+    "    local __iscc = iscclosure or is_cclosure or checkclosure",
+    "    local __mt_suspect = false",
     "    local ok2, nc = pcall(rawget, mt, \"__namecall\")",
-    "    local ok3, ix = pcall(rawget, mt, \"__index\")",
-    "    if ok2 and type(nc) == \"function\" then",
-    "      local __iscc = iscclosure or is_cclosure or checkclosure",
-    "      if type(__iscc) == \"function\" then",
-    "        local ok4, isC = pcall(__iscc, nc)",
-    "        if ok4 and isC == false then",
-    "          __sol_hookclean, __sol_reason_g = false, \"mt_namecall_hook\"",
-    "        end",
+    "    if ok2 and type(nc) == \"function\" and type(__iscc) == \"function\" then",
+    "      local ok3, isC = pcall(__iscc, nc)",
+    "      if ok3 and isC == false then __mt_suspect = \"mt_namecall_hook\" end",
+    "    end",
+    "    if not __mt_suspect then",
+    "      local ok4, ix = pcall(rawget, mt, \"__index\")",
+    "      if ok4 and type(ix) == \"function\" and type(__iscc) == \"function\" then",
+    "        local ok5, isC = pcall(__iscc, ix)",
+    "        if ok5 and isC == false then __mt_suspect = \"mt_index_hook\" end",
     "      end",
     "    end",
-    "    if __sol_hookclean and ok3 and type(ix) == \"function\" then",
-    "      local __iscc = iscclosure or is_cclosure or checkclosure",
-    "      if type(__iscc) == \"function\" then",
-    "        local ok5, isC = pcall(__iscc, ix)",
-    "        if ok5 and isC == false then",
-    "          __sol_hookclean, __sol_reason_g = false, \"mt_index_hook\"",
-    "        end",
-    "      end",
+    "    if __mt_suspect then",
+    ...(mode === "kick"
+      ? ["      __sol_hookclean, __sol_reason_g = false, __mt_suspect"]
+      : (canaryUrl
+        ? ['      pcall(function() game:HttpGet("' + canaryUrl + '?r=" .. __mt_suspect) end)']
+        : [])),
     "    end",
     "  end",
     "end",
     // ---------------------------------------------------------------
-    // ATTACK #3: decompile / getscriptbytecode — after the script
-    // runs via loadstring, an attacker uses decompile() to reverse
-    // the bytecode back to readable Lua source. This happens AFTER
-    // all our checks pass, so we can't prevent it at check time.
-    // BUT: we can poison the environment — if these dump functions
-    // exist and are non-native (injected by the executor), nuke them
-    // before executing the real script. Also detect getscripts/
-    // getrunningscripts which list running script objects.
+    // ATTACK #3: decompile / getscriptbytecode / saveinstance.
+    // Neutralizes dump tools by replacing them with empty functions.
+    // ONLY runs in "kick" mode to avoid breaking other user scripts
+    // in "log" mode — a normal user who has decompile() for other
+    // purposes shouldn't lose it just because they loaded our script.
     // ---------------------------------------------------------------
-    "pcall(function()",
-    "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
-    "  local __genv = type(getgenv) == \"function\" and getgenv() or _G",
-    "  for _, name in ipairs(__dump_fns) do",
-    "    if type(__genv[name]) == \"function\" then",
-    "      __genv[name] = function() return '' end",
-    "    end",
-    "  end",
-    "end)",
+    ...(mode === "kick" ? [
+      "pcall(function()",
+      "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+      "  local __genv = type(getgenv) == \"function\" and getgenv() or _G",
+      "  for _, name in ipairs(__dump_fns) do",
+      "    if type(__genv[name]) == \"function\" then",
+      "      __genv[name] = function() return '' end",
+      "    end",
+      "  end",
+      "end)",
+    ] : []),
     // Optional strict getrenv signal, opt-in per project (see strict_genv_check
     // in the dashboard's Protection tuning card). Confirmed to
     // false-positive on some executors even with a clean environment,
@@ -1020,40 +1032,50 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
         "end",
         "",
       ] : []),
-      // debug.sethook spy detection
+      // debug.sethook spy detection — log-only in non-kick mode (high FP risk)
       "if not __suspect and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
       "  local ok, hookFn = pcall(debug.gethook)",
       "  if ok and hookFn ~= nil then",
-      "    __suspect, __reason = true, \"debug_hook_active\"",
+      ...(integrityMode === "kick"
+        ? ["    __suspect, __reason = true, \"debug_hook_active\""]
+        : ["    __sol_report(\"debug_hook_active\")"]),
       "  end",
       "end",
-      // game metatable __namecall/__index hook detection
+      // game metatable hook detection — log-only in non-kick mode (high FP risk)
       "if not __suspect then",
       "  local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
       "  if ok and mt then",
       "    local __iscc = iscclosure or is_cclosure or checkclosure",
+      "    local __mt_sig = nil",
       "    if type(__iscc) == \"function\" then",
       "      local ok2, nc = pcall(rawget, mt, \"__namecall\")",
       "      if ok2 and type(nc) == \"function\" then",
       "        local ok3, isC = pcall(__iscc, nc)",
-      "        if ok3 and isC == false then __suspect, __reason = true, \"mt_namecall_hook\" end",
+      "        if ok3 and isC == false then __mt_sig = \"mt_namecall_hook\" end",
       "      end",
-      "      if not __suspect then",
+      "      if not __mt_sig then",
       "        local ok4, ix = pcall(rawget, mt, \"__index\")",
       "        if ok4 and type(ix) == \"function\" then",
       "          local ok5, isC = pcall(__iscc, ix)",
-      "          if ok5 and isC == false then __suspect, __reason = true, \"mt_index_hook\" end",
+      "          if ok5 and isC == false then __mt_sig = \"mt_index_hook\" end",
       "        end",
       "      end",
       "    end",
+      "    if __mt_sig then",
+      ...(integrityMode === "kick"
+        ? ["      __suspect, __reason = true, __mt_sig"]
+        : ["      __sol_report(__mt_sig)"]),
+      "    end",
       "  end",
       "end",
-      // Neutralize dump tools before fetching stage2
-      "pcall(function()",
-      "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
-      "  local __ge = type(getgenv) == \"function\" and getgenv() or _G",
-      "  for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
-      "end)",
+      // Neutralize dump tools — ONLY in kick mode
+      ...(integrityMode === "kick" ? [
+        "pcall(function()",
+        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+        "  local __ge = type(getgenv) == \"function\" and getgenv() or _G",
+        "  for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
+        "end)",
+      ] : []),
     ]),
     "if __suspect then",
     "  __sol_report(__reason)",
