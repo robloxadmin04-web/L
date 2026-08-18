@@ -1210,27 +1210,62 @@ function buildTrollJunk() {
   const ri = () => crypto.randomInt(1000);
 
   const trollFaces = [
-    "-- ⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣤⣤⣤⣤⣀⡀",
-    "-- ⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⡿⠋⠉⠙⢿⣿⣿⣷⡄",
-    "-- ⠀⠀⠀⠀⣰⣿⣿⡿⠋⠁⠀⠀⠀⠀⠈⠙⢿⣿⣿⣆",
-    "-- ⠀⠀⠀⣸⣿⣿⠏⠀⢀⣤⣤⠀⢀⣤⣤⡀⠀⠹⣿⣿⡆",
-    "-- ⠀⠀⢰⣿⣿⠇⠀⢠⣿⡟⠁⠀⠈⢻⣿⡄⠀⠸⣿⣿⡇",
-    "-- ⠀⠀⣿⣿⡟⠀⠀⠀⠉⠀⠀⠀⠀⠀⠉⠀⠀⠀⢻⣿⣿",
-    "-- ⠀⠀⣿⣿⡇⠀⠀⠀⠀⠀⣶⣶⠀⠀⠀⠀⠀⠀⢸⣿⣿",
-    "-- ⠀⠀⢿⣿⣇⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⣸⣿⡿",
-    "-- ⠀⠀⠘⣿⣿⣆⠀⠀⠈⠛⠛⠛⠛⠃⠀⠀⢀⣾⣿⡿",
-    "-- ⠀⠀⠀⠈⢿⣿⣷⣄⡀⠀⠀⠀⠀⠀⢀⣠⣾⣿⡿⠁",
-    "-- ⠀⠀⠀⠀⠀⠙⢿⣿⣿⣶⣤⣤⣤⣶⣿⣿⡿⠋",
-    "-- ⠀⠀⠀⠀⠀⠀⠀⠈⠙⠛⠛⠛⠛⠛⠋⠁",
-    "-- ",
+    [
+      "-- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣿⣿⣿⣿⣿⣷⣦⡀⠀⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⢸⣿⡟⠉⠀⠀⠉⣿⣿⣿⣿⣿⣿⣿⠉⠀⠀⠉⢻⣿⣿⡇⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⢸⣿⡇⢀⣶⣦⠀⣿⣿⣿⣿⣿⣿⣿⠀⣴⣶⡀⢸⣿⣿⡇⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠘⣿⣇⠈⠻⠟⢀⣿⣿⣿⣿⣿⣿⣿⡀⠻⠟⠁⣸⣿⣿⠃⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⢻⣿⣆⠀⠀⣾⣿⣿⣿⣿⣿⣿⣿⣷⡀⠀⣰⣿⣿⠏⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⠀⠻⣿⣷⣤⣿⡟⠉⠉⠉⠉⠉⠉⣿⣿⣤⣿⡿⠋⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⠻⣿⣷⣶⣶⣶⣶⣶⣶⣿⡿⠟⠉⠀⠀⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠙⠛⠛⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+      "-- ",
+      "-- ⠀⠀⠀⠀⠀⠀⠀😂  N I C E  T R Y  😂",
+      "-- ",
+    ],
+    [
+      "-- ⠀⠀⠀⠀⠀⠀⠀⢀⣠⣤⣤⣤⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⠀⠀⠀",
+      "-- ⠀⠀⠀⣿⣿⣿⣿⡿⠋⠁⠀⠀⠀⠈⠙⢿⣿⣿⣿⣿⠀⠀⠀",
+      "-- ⠀⠀⢸⣿⣿⡏⠀⢰⣶⣶⡄⠀⣴⣶⣶⠀⠹⣿⣿⣿⡇⠀⠀",
+      "-- ⠀⠀⢸⣿⣿⡇⠀⠈⠛⠛⠁⠀⠙⠛⠋⠀⢸⣿⣿⣿⡇⠀⠀",
+      "-- ⠀⠀⠘⣿⣿⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⠃⠀⠀",
+      "-- ⠀⠀⠀⢻⣿⣿⣿⣦⡀⠀⣀⣀⠀⢀⣴⣿⣿⣿⣿⠏⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⠁⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⠈⠛⠿⣿⣿⣿⣿⡿⠿⠛⠁⠀⠀⠀⠀⠀⠀",
+      "-- ",
+      "-- ⠀⠀⠀⠀⠀😭  W A S T E D  😭",
+      "-- ",
+    ],
+    [
+      "-- ⠀⠀⠀⠀⠀⠀⠀⣀⣤⣴⣶⣶⣶⣶⣤⣄⠀⠀⠀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⣰⣿⣿⣿⡿⠿⠛⠛⠛⠛⠿⢿⣿⣿⣿⣿⣆⠀⠀⠀",
+      "-- ⠀⠀⢰⣿⣿⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⣿⣿⣿⡄⠀⠀",
+      "-- ⠀⠀⣿⣿⡇⠀⠀❌⠀⠀⠀⠀⠀❌⠀⠀⢸⣿⣿⣿⠀⠀",
+      "-- ⠀⠀⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⠀⠀",
+      "-- ⠀⠀⢿⣿⣿⣆⠀⠀⠀⣿⣿⣿⡇⠀⠀⠀⣰⣿⣿⣿⡟⠀⠀",
+      "-- ⠀⠀⠈⢿⣿⣿⣷⣤⣀⡀⠉⠉⢀⣀⣤⣾⣿⣿⣿⡿⠁⠀⠀",
+      "-- ⠀⠀⠀⠀⠙⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋⠀⠀⠀⠀",
+      "-- ⠀⠀⠀⠀⠀⠀⠀⠈⠉⠛⠛⠛⠛⠋⠉⠁⠀⠀⠀⠀⠀⠀⠀",
+      "-- ",
+      "-- ⠀⠀⠀⠀⠀🤡  B U S T E D  🤡",
+      "-- ",
+    ],
   ];
+  const face = trollFaces[crypto.randomInt(trollFaces.length)];
 
   const trollMessages = [
-    ["-- 😂😂😂 NICE TRY 😂😂😂", "-- You thought you'd find the source here?", "-- This is just the lobby. The game hasn't started yet."],
-    ["-- 🤡🤡🤡 CLOWN DETECTED 🤡🤡🤡", "-- Dumping this won't give you anything.", "-- Every token here is already dead."],
-    ["-- 💀💀💀 GG NO RE 💀💀💀", "-- This file is a decoy. Always has been.", "-- The real script never touches this layer."],
-    ["-- 🫡 Salamat sa pagbisita! 🫡", "-- Pero wala kang makukuha dito kaibigan.", "-- Lahat ng token dito expired na. Sige lang try mo pa."],
-    ["-- 😴😴😴 STILL HERE? 😴😴😴", "-- You've been staring at junk code for nothing.", "-- Go touch grass instead."],
+    ["-- You thought you'd find the source here?", "-- This is just the lobby. The game hasn't started yet.", "-- All tokens below are expired. Have fun. 😂"],
+    ["-- Dumping this won't give you anything.", "-- Every token here is already dead on arrival.", "-- Better luck next lifetime. 💀"],
+    ["-- Wala kang makukuha dito kaibigan.", "-- Lahat ng token dito expired na.", "-- Sige lang, try mo pa. 🫡"],
+    ["-- You've been staring at junk code for nothing.", "-- The real script is somewhere you'll never reach.", "-- Go outside. Touch grass. 🌿"],
+    ["-- This file is a decoy. Always has been.", "-- The real code never touches this layer.", "-- GG no re. 😴"],
   ];
   const msg = trollMessages[crypto.randomInt(trollMessages.length)];
 
@@ -1278,7 +1313,7 @@ function buildTrollJunk() {
   ];
 
   return [
-    ...trollFaces,
+    ...face,
     ...msg,
     "-- ",
     "-- Greetings from Solaries 🫡",
