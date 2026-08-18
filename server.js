@@ -943,8 +943,9 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     // purposes shouldn't lose it just because they loaded our script.
     // ---------------------------------------------------------------
     ...(mode === "kick" ? [
+      // LAYER: Dump tool neutralization (expanded)
       "pcall(function()",
-      "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+      "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues'}",
       "  local __genv = type(getgenv) == \"function\" and getgenv() or _G",
       "  for _, name in ipairs(__dump_fns) do",
       "    if type(__genv[name]) == \"function\" then",
@@ -952,7 +953,26 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
       "    end",
       "  end",
       "end)",
+      // LAYER: Anti-writefile/setclipboard
+      "pcall(function()",
+      "  local __genv2 = type(getgenv) == \"function\" and getgenv() or _G",
+      "  for _, wn in ipairs({'writefile','appendfile','setclipboard','syn_io_write'}) do",
+      "    if type(__genv2[wn]) == \"function\" then __genv2[wn] = function() end end",
+      "  end",
+      "end)",
     ] : []),
+    // LAYER: Anti-getgc (all modes — doesn't break user scripts)
+    "pcall(function()",
+    "  local __genv3 = type(getgenv) == \"function\" and getgenv() or _G",
+    "  if type(__genv3.getgc) == \"function\" then __genv3.getgc = function() return {} end end",
+    "  if type(__genv3.getgcinfo) == \"function\" then __genv3.getgcinfo = function() return 0 end end",
+    "end)",
+    // LAYER: Anti-getconnections/firesignal (all modes)
+    "pcall(function()",
+    "  local __genv4 = type(getgenv) == \"function\" and getgenv() or _G",
+    "  if type(__genv4.getconnections) == \"function\" then __genv4.getconnections = function() return {} end end",
+    "  if type(__genv4.firesignal) == \"function\" then __genv4.firesignal = function() end end",
+    "end)",
     // Optional strict getrenv signal, opt-in per project (see strict_genv_check
     // in the dashboard's Protection tuning card). Confirmed to
     // false-positive on some executors even with a clean environment,
@@ -1090,14 +1110,28 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
       "    end",
       "  end",
       "end",
-      // Neutralize dump tools — ONLY in kick mode
+      // Neutralize dump tools + extraction functions — ONLY in kick mode
       ...(integrityMode === "kick" ? [
         "pcall(function()",
-        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues'}",
         "  local __ge = type(getgenv) == \"function\" and getgenv() or _G",
         "  for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
         "end)",
+        "pcall(function()",
+        "  local __ge2 = type(getgenv) == \"function\" and getgenv() or _G",
+        "  for _, wn in ipairs({'writefile','appendfile','setclipboard','syn_io_write'}) do",
+        "    if type(__ge2[wn]) == \"function\" then __ge2[wn] = function() end end",
+        "  end",
+        "end)",
       ] : []),
+      // Anti-getgc + anti-getconnections (all modes — safe, no FP)
+      "pcall(function()",
+      "  local __ge3 = type(getgenv) == \"function\" and getgenv() or _G",
+      "  if type(__ge3.getgc) == \"function\" then __ge3.getgc = function() return {} end end",
+      "  if type(__ge3.getgcinfo) == \"function\" then __ge3.getgcinfo = function() return 0 end end",
+      "  if type(__ge3.getconnections) == \"function\" then __ge3.getconnections = function() return {} end end",
+      "  if type(__ge3.firesignal) == \"function\" then __ge3.firesignal = function() end end",
+      "end)",
     ]),
     "if __suspect then",
     "  __sol_report(__reason)",
