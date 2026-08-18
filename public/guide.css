@@ -3,11 +3,17 @@
    (--bg, --surface, --line, --accent, etc.) so it never looks bolted-on. */
 
 /* ---------------------------------------------------------
-   Floating help button (bottom-right entry point)
+   Floating help button (bottom-left entry point)
+   NOTE: intentionally bottom-LEFT, not bottom-right. The toast
+   notification in app.css (.toast) lives at bottom-right with a
+   lower z-index, so a right-aligned fab here would sit on top of
+   and hide every toast message ("Key copied", "Script created",
+   etc). Keeping this on the opposite corner avoids that collision
+   entirely instead of trying to juggle z-index/margins.
 --------------------------------------------------------- */
 .guide-fab {
   position: fixed;
-  right: 22px;
+  left: 22px;
   bottom: 22px;
   width: 48px;
   height: 48px;
@@ -185,22 +191,26 @@
   width: 340px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .guide-fab {
-    right: max(14px, env(safe-area-inset-right));
+    left: max(14px, env(safe-area-inset-left));
     bottom: max(14px, env(safe-area-inset-bottom));
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
   }
+  .guide-fab svg { width: 20px; height: 20px; }
   .guide-card {
-    width: calc(100vw - 28px);
-    padding: 14px 14px 12px;
+    width: calc(100vw - 24px);
+    padding: 12px 12px 10px;
+    border-radius: 14px;
   }
   .guide-card.is-centered {
-    width: calc(100vw - 40px);
+    width: calc(100vw - 36px);
   }
-  .guide-card-title { font-size: 14px; }
-  .guide-card-body { font-size: 12.5px; }
-  .guide-step-pill { font-size: 10.5px; }
-  .guide-btn { padding: 8px 12px; font-size: 12px; }
+  .guide-card-eyebrow { margin-bottom: 6px; }
+  .guide-card-title { font-size: 14px; margin-bottom: 4px; }
+  .guide-card-body { font-size: 12.5px; line-height: 1.5; }
+  .guide-card-foot { margin-top: 10px; }
+  .guide-step-pill { font-size: 10.5px; padding: 2px 7px; }
+  .guide-btn { padding: 7px 11px; font-size: 12px; }
 }
