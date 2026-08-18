@@ -9,6 +9,21 @@
 }
 
 /* ---------------------------------------------------------
+   Reserve room for the fixed HELP button
+   The fab is fixed bottom-left on every page and never scrolls
+   away. Pages with content that runs close to the bottom-left
+   corner (e.g. a toggle row) would otherwise end up hidden
+   underneath it once the user scrolls to the end. */
+.main {
+  padding-bottom: calc(40px + 56px + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 720px) {
+  .main {
+    padding-bottom: calc(28px + 52px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ---------------------------------------------------------
    Floating help button (bottom-left entry point)
    NOTE: intentionally bottom-LEFT, not bottom-right. The toast
    notification in app.css (.toast) lives at bottom-right with a
