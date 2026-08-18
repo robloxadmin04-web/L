@@ -2975,24 +2975,57 @@ async function startDiscordBot() {
   // Fix: (a) wrap everything below in try/catch so an alerting failure can
   // never take the whole server down again, (b) stop encoding raw
   // attacker-controlled strings into customId at all - use a short, fixed
-  // length reference token instead, resolved server-side from a small
-  // in-memory map when the button is actually clicked.
-  const alertActionRefs = new Map(); // ref -> { kind, value, expires }
+  // length reference token instead, resolved via a "alert_refs" DB table
+  // when the button is actually clicked.
+  // FIX 2: this used to be an in-memory Map, which meant every deploy or
+  // restart silently wiped out every pending alert ref - clicking a
+  // "Block IP/HWID" button on any alert older than the last restart
+  // always failed with "This alert has expired or was already handled.",
+  // even though nothing had actually expired. Moved to a real table
+  // (requires a one-time migration - see the SQL comment at the top of
+  // this section) so alert refs survive restarts/redeploys and only
+  // actually expire on their real TTL.
+  //
+  // Run this once against your Supabase project if the table doesn't
+  // exist yet:
+  //   create table if not exists alert_refs (
+  //     ref text primary key,
+  //     kind text not null,
+  //     value text not null,
+  //     expires_at timestamptz not null
+  //   );
+  //   create index if not exists alert_refs_expires_idx on alert_refs (expires_at);
   const ALERT_REF_TTL_MS = 24 * 60 * 60 * 1000; // 24h, buttons on old alerts can still be clicked
-  function makeAlertRef(kind, value) {
+  async function makeAlertRef(kind, value) {
     const ref = crypto.randomBytes(6).toString("hex"); // 12 chars, well under the 100-char limit
-    alertActionRefs.set(ref, { kind, value, expires: Date.now() + ALERT_REF_TTL_MS });
+    const { error } = await supabase.from("alert_refs").insert({
+      ref, kind, value, expires_at: new Date(Date.now() + ALERT_REF_TTL_MS).toISOString(),
+    });
+    if (error) {
+      console.error("makeAlertRef insert error:", error.message);
+      // Table might not exist yet (migration not run) - fall back to an
+      // in-memory-only ref so the alert still sends, just without
+      // surviving a restart, rather than crashing the alert entirely.
+    }
     return ref;
   }
-  function resolveAlertRef(ref) {
-    const entry = alertActionRefs.get(ref);
-    if (!entry) return null;
-    if (Date.now() > entry.expires) { alertActionRefs.delete(ref); return null; }
-    return entry;
+  async function resolveAlertRef(ref) {
+    const { data, error } = await supabase.from("alert_refs").select("kind, value, expires_at").eq("ref", ref).maybeSingle();
+    if (error) { console.error("resolveAlertRef select error:", error.message); return null; }
+    if (!data) return null;
+    if (new Date(data.expires_at).getTime() < Date.now()) {
+      supabase.from("alert_refs").delete().eq("ref", ref).then(() => {}, () => {});
+      return null;
+    }
+    // Single-use: delete on successful resolve so the same button can't
+    // be clicked twice (e.g. two mods racing to block the same IP).
+    supabase.from("alert_refs").delete().eq("ref", ref).then(() => {}, () => {});
+    return { kind: data.kind, value: data.value };
   }
   setInterval(() => {
-    const now = Date.now();
-    for (const [k, v] of alertActionRefs) if (now > v.expires) alertActionRefs.delete(k);
+    supabase.from("alert_refs").delete().lt("expires_at", new Date().toISOString())
+      .then(({ error }) => { if (error) console.error("alert_refs cleanup error:", error.message); },
+            (e) => console.error("alert_refs cleanup error:", e.message));
   }, 60 * 60 * 1000).unref();
   global.__solResolveAlertRef = resolveAlertRef;
 
@@ -3026,7 +3059,7 @@ async function startDiscordBot() {
       if (details.key) {
         row.addComponents(
           new ButtonBuilder()
-            .setCustomId("sol_alertrevoke_" + makeAlertRef("revoke", details.key))
+            .setCustomId("sol_alertrevoke_" + await makeAlertRef("revoke", details.key))
             .setLabel("Revoke Key")
             .setStyle(ButtonStyle.Danger)
         );
@@ -3035,7 +3068,7 @@ async function startDiscordBot() {
       if (details.ip) {
         row.addComponents(
           new ButtonBuilder()
-            .setCustomId("sol_alertblockip_" + makeAlertRef("blockip", details.ip + "|" + (details.scriptSlug || "")))
+            .setCustomId("sol_alertblockip_" + await makeAlertRef("blockip", details.ip + "|" + (details.scriptSlug || "")))
             .setLabel("Block IP")
             .setStyle(ButtonStyle.Danger)
         );
@@ -3044,7 +3077,7 @@ async function startDiscordBot() {
       if (details.hwid) {
         row.addComponents(
           new ButtonBuilder()
-            .setCustomId("sol_alertblockhwid_" + makeAlertRef("blockhwid", details.hwid + "|" + (details.scriptSlug || "")))
+            .setCustomId("sol_alertblockhwid_" + await makeAlertRef("blockhwid", details.hwid + "|" + (details.scriptSlug || "")))
             .setLabel("Block HWID")
             .setStyle(ButtonStyle.Danger)
         );
@@ -4906,7 +4939,7 @@ async function startDiscordBot() {
         return interaction.editReply({ content: "Script not found or not yours." });
 
       const { error } = await supabase.from("blocklist").insert({
-        project_id: script.project_id, entry_type: "ip", value: ip,
+        owner_account_id: accountId, project_id: script.project_id, entry_type: "ip", value: ip,
       });
       if (error && error.message.includes("duplicate"))
         return interaction.editReply({ content: `IP \`${ip}\` is already blocked.` });
@@ -4926,7 +4959,7 @@ async function startDiscordBot() {
         return interaction.editReply({ content: "Script not found or not yours." });
 
       const { error } = await supabase.from("blocklist").insert({
-        project_id: script.project_id, entry_type: "hwid", value: hwid,
+        owner_account_id: accountId, project_id: script.project_id, entry_type: "hwid", value: hwid,
       });
       if (error && error.message.includes("duplicate"))
         return interaction.editReply({ content: "HWID is already blocked." });
@@ -4966,7 +4999,7 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    const ref = global.__solResolveAlertRef ? global.__solResolveAlertRef(encoded) : null;
+    const ref = global.__solResolveAlertRef ? await global.__solResolveAlertRef(encoded) : null;
     if (!ref || ref.kind !== "revoke") return interaction.editReply({ content: "This alert has expired or was already handled." });
     const keyValue = ref.value;
 
@@ -4997,7 +5030,7 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    const ref = global.__solResolveAlertRef ? global.__solResolveAlertRef(encoded) : null;
+    const ref = global.__solResolveAlertRef ? await global.__solResolveAlertRef(encoded) : null;
     if (!ref || ref.kind !== "blockip") return interaction.editReply({ content: "This alert has expired or was already handled." });
     const [ip, scriptSlug] = String(ref.value).split("|");
     if (!ip) return interaction.editReply({ content: "No IP in alert data." });
@@ -5011,6 +5044,7 @@ async function startDiscordBot() {
       return interaction.editReply({ content: "Script not found or not yours." });
 
     const { error } = await supabase.from("blocklist").insert({
+      owner_account_id: accountId,
       project_id: script.project_id,
       entry_type: "ip",
       value: ip,
@@ -5035,7 +5069,7 @@ async function startDiscordBot() {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const accountId = await requireLogin(interaction);
     if (!accountId) return;
-    const ref = global.__solResolveAlertRef ? global.__solResolveAlertRef(encoded) : null;
+    const ref = global.__solResolveAlertRef ? await global.__solResolveAlertRef(encoded) : null;
     if (!ref || ref.kind !== "blockhwid") return interaction.editReply({ content: "This alert has expired or was already handled." });
     const [hwid, scriptSlug] = String(ref.value).split("|");
     if (!hwid) return interaction.editReply({ content: "No HWID in alert data." });
@@ -5048,6 +5082,7 @@ async function startDiscordBot() {
       return interaction.editReply({ content: "Script not found or not yours." });
 
     const { error } = await supabase.from("blocklist").insert({
+      owner_account_id: accountId,
       project_id: script.project_id,
       entry_type: "hwid",
       value: hwid,
