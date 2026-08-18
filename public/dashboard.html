@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashboard</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
   </head>
   <body>
     <div class="app">
@@ -134,5 +135,42 @@
 <script src="eHplcm8.js"></script>
     <script src="auth.js"></script>
     <script src="dashboard.js"></script>
+    <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "dashboard",
+        steps: [
+          {
+            target: null,
+            title: "Welcome to Solaries",
+            body: "Quick tour of your workspace overview. Use Next to walk through the main pieces, or close this anytime.",
+          },
+          {
+            target: ".sidebar",
+            placement: "right",
+            title: "Workspace navigation",
+            body: "Projects, Keys and Discord live under Workspace. Analytics, Watermark Trace and Status are your monitoring tools.",
+          },
+          {
+            target: ".stats-grid",
+            placement: "bottom",
+            title: "Live overview",
+            body: "These cards track your projects, scripts, issued keys, and script deliveries in the last 24 hours.",
+          },
+          {
+            target: ".primary-btn",
+            placement: "left",
+            title: "Create a project",
+            body: "Start here. A project holds your scripts, keys, and access rules together.",
+          },
+          {
+            target: ".guide-fab",
+            placement: "left",
+            title: "Need this again?",
+            body: "Click this button anytime on any page to replay its guide.",
+          },
+        ],
+      });
+    </script>
   </body>
 </html>
