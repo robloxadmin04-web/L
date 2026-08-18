@@ -441,66 +441,6 @@ function decodeWatermark(token) {
   }
 }
 
-// Simple string-literal obfuscation, applied at delivery time (DB copy of
-// script.source stays plain/readable in the dashboard). This does NOT
-// stop a determined dumper - it's a speed bump, not a VM. What it does:
-// every simple double-quoted string literal (no backslash escapes, to
-// avoid misparsing) gets pulled out into an XOR-encoded byte table with
-// a random per-request key, and replaced in the code with a call to a
-// tiny decoder. A raw memory/console dump of the delivered body shows
-// scrambled byte tables and __sol_ds(n) calls instead of readable
-// strings - someone has to actually read and run the decoder logic to
-// recover them, instead of just eyeballing a text dump.
-// Deliberately conservative: skips strings containing backslashes,
-// long-bracket strings [[...]], and anything that looks like a comment
-// line, rather than risk corrupting the script. For real protection
-// against a motivated attacker, pair this with a proper VM-based
-// obfuscator (Luraph, Prometheus, etc.) - this is a cheap first layer,
-// not a replacement for one.
-function obfuscateStrings(src) {
-  if (typeof src !== "string" || !src.trim()) return src;
-  const key = 20 + Math.floor(Math.random() * 200);
-  const byteTables = [];
-  const lines = src.split("\n");
-  const obfLines = lines.map((line) => {
-    const trimmed = line.trimStart();
-    if (trimmed.startsWith("--")) return line; // don't touch comment lines
-    return line.replace(/"((?:[^"\\\n])*)"/g, (match, inner) => {
-      if (inner.length === 0) return match;
-      const bytes = [];
-      for (let i = 0; i < inner.length; i++) bytes.push(inner.charCodeAt(i) ^ key);
-      byteTables.push(bytes);
-      return "__sol_ds(" + (byteTables.length - 1) + ")";
-    });
-  });
-  if (byteTables.length === 0) return src; // nothing eligible, skip decoder overhead entirely
-
-  const tableLua = byteTables.map((bytes) => "{" + bytes.join(",") + "}").join(",");
-  const decoder = [
-    "local __sol_dk = " + key,
-    "local __sol_dt = {" + tableLua + "}",
-    "local function __sol_dxor(a, b)",
-    "  if bit32 and bit32.bxor then return bit32.bxor(a, b) end",
-    "  if bit and bit.bxor then return bit.bxor(a, b) end",
-    "  local r, bitv = 0, 1",
-    "  while a > 0 or b > 0 do",
-    "    local ba, bb = a % 2, b % 2",
-    "    if ba ~= bb then r = r + bitv end",
-    "    a, b, bitv = (a - ba) / 2, (b - bb) / 2, bitv * 2",
-    "  end",
-    "  return r",
-    "end",
-    "local function __sol_ds(i)",
-    "  local t = __sol_dt[i + 1]",
-    "  local out = {}",
-    "  for j = 1, #t do out[j] = string.char(__sol_dxor(t[j], __sol_dk)) end",
-    "  return table.concat(out)",
-    "end",
-  ].join("\n");
-
-  return decoder + "\n" + obfLines.join("\n");
-}
-
 function injectWatermark(source, keyId, hwid, ip) {
   const token = makeWatermark(keyId, hwid, ip);
   // Placed as a harmless comment; invisible to normal script behavior,
@@ -1685,7 +1625,7 @@ async function handleLoadRoute(req, res) {
       if (script.player_ui === "key_gui") {
         const __cToken = issueCanaryToken(scriptSlug, "");
         const __cUrl = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
-        return res.status(200).send(wrapKeyGui(obfuscateStrings(script.source || "-- empty script"), scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck));
+        return res.status(200).send(wrapKeyGui(script.source || "-- empty script", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck));
       }
       return block("missing key", 401, null, projectId, script.id);
     }
@@ -1813,7 +1753,7 @@ async function handleLoadRoute(req, res) {
     }
   }
 
-  const __raw = obfuscateStrings(script.source || "-- empty script");
+  const __raw = script.source || "-- empty script";
   const __opts = { silent: script.silent_mode, fast: script.fast_mode };
   // Raw passthrough: the GUI wrappers re-fetch the script with ?raw=1 so we
   // never embed the source inside loadstring([==[...]==]) (which can break on
