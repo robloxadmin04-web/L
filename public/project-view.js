@@ -19,6 +19,7 @@ const el = {
   tWhitelist: document.getElementById("tWhitelist"),
 
   tIntegrityMode: document.getElementById("tIntegrityMode"),
+  tStrictGenv: document.getElementById("tStrictGenv"),
   iNonceTtl: document.getElementById("iNonceTtl"),
   iRateLimit: document.getElementById("iRateLimit"),
   btnSaveTuning: document.getElementById("btnSaveTuning"),
@@ -177,6 +178,7 @@ function renderHeader() {
   el.btnPause.textContent = project.status === "paused" ? "Resume" : "Pause";
   el.tWhitelist.checked = !!project.whitelist_only;
   el.tIntegrityMode.value = ["kick", "log", "off"].includes(project.integrity_mode) ? project.integrity_mode : "kick";
+  el.tStrictGenv.checked = !!project.strict_genv_check;
   el.iNonceTtl.value = Number.isFinite(project.raw_nonce_ttl_sec) ? project.raw_nonce_ttl_sec : 15;
   el.iRateLimit.value = Number.isFinite(project.load_rate_limit_per_min) ? project.load_rate_limit_per_min : 30;
 }
@@ -641,6 +643,7 @@ el.btnSaveTuning.addEventListener("click", async function () {
       method: "PATCH",
       body: JSON.stringify({
         integrity_mode: mode,
+        strict_genv_check: el.tStrictGenv.checked,
         raw_nonce_ttl_sec: ttl,
         load_rate_limit_per_min: rate,
       }),
