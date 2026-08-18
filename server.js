@@ -705,6 +705,37 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
     '      __sol_suspect, __sol_reason = true, "genv_ls_replaced"',
     "    end",
     "  end",
+    // debug.sethook spy detection
+    "  if not __sol_suspect and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
+    "    local ok, hookFn = pcall(debug.gethook)",
+    "    if ok and hookFn ~= nil then",
+    '      __sol_suspect, __sol_reason = true, "debug_hook_active"',
+    "    end",
+    "  end",
+    // game metatable hook detection
+    "  if not __sol_suspect then",
+    "    local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
+    "    if ok and mt then",
+    "      local ok2, nc = pcall(rawget, mt, \"__namecall\")",
+    "      if ok2 and type(nc) == \"function\" and type(__iscc) == \"function\" then",
+    "        local ok3, isC = pcall(__iscc, nc)",
+    '        if ok3 and isC == false then __sol_suspect, __sol_reason = true, "mt_namecall_hook" end',
+    "      end",
+    "      if not __sol_suspect then",
+    "        local ok4, ix = pcall(rawget, mt, \"__index\")",
+    "        if ok4 and type(ix) == \"function\" and type(__iscc) == \"function\" then",
+    "          local ok5, isC = pcall(__iscc, ix)",
+    '          if ok5 and isC == false then __sol_suspect, __sol_reason = true, "mt_index_hook" end',
+    "        end",
+    "      end",
+    "    end",
+    "  end",
+    // Neutralize dump tools
+    "  pcall(function()",
+    "    local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+    "    local __ge = type(getgenv) == \"function\" and getgenv() or _G",
+    "    for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
+    "  end)",
     "end",
   ].concat(failAction).join("\n");
 }
@@ -822,6 +853,72 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     "    end",
     "  end",
     "end",
+    // ---------------------------------------------------------------
+    // ATTACK #1: debug.sethook — an attacker sets a call/line hook
+    // that monitors every function call without touching any specific
+    // function. It can capture arguments passed to loadstring (the
+    // source code) silently. Detect if a hook is currently active.
+    // ---------------------------------------------------------------
+    "if __sol_hookclean and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
+    "  local ok, hookFn = pcall(debug.gethook)",
+    "  if ok and hookFn ~= nil then",
+    "    __sol_hookclean, __sol_reason_g = false, \"debug_hook_active\"",
+    "  end",
+    "end",
+    // ---------------------------------------------------------------
+    // ATTACK #2: game metatable interception — instead of hooking
+    // game.HttpGet directly (which iscclosure detects), an attacker
+    // sets __namecall or __index on the game object's metatable to
+    // intercept ALL method calls on game, including HttpGet. The
+    // function itself stays native, but the call is rerouted through
+    // the metatable. Detect by checking if the game's metatable is
+    // locked (Roblox locks it by default; if it's been unlocked and
+    // modified, that's suspicious).
+    // ---------------------------------------------------------------
+    "if __sol_hookclean then",
+    "  local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
+    "  if ok and mt then",
+    "    local ok2, nc = pcall(rawget, mt, \"__namecall\")",
+    "    local ok3, ix = pcall(rawget, mt, \"__index\")",
+    "    if ok2 and type(nc) == \"function\" then",
+    "      local __iscc = iscclosure or is_cclosure or checkclosure",
+    "      if type(__iscc) == \"function\" then",
+    "        local ok4, isC = pcall(__iscc, nc)",
+    "        if ok4 and isC == false then",
+    "          __sol_hookclean, __sol_reason_g = false, \"mt_namecall_hook\"",
+    "        end",
+    "      end",
+    "    end",
+    "    if __sol_hookclean and ok3 and type(ix) == \"function\" then",
+    "      local __iscc = iscclosure or is_cclosure or checkclosure",
+    "      if type(__iscc) == \"function\" then",
+    "        local ok5, isC = pcall(__iscc, ix)",
+    "        if ok5 and isC == false then",
+    "          __sol_hookclean, __sol_reason_g = false, \"mt_index_hook\"",
+    "        end",
+    "      end",
+    "    end",
+    "  end",
+    "end",
+    // ---------------------------------------------------------------
+    // ATTACK #3: decompile / getscriptbytecode — after the script
+    // runs via loadstring, an attacker uses decompile() to reverse
+    // the bytecode back to readable Lua source. This happens AFTER
+    // all our checks pass, so we can't prevent it at check time.
+    // BUT: we can poison the environment — if these dump functions
+    // exist and are non-native (injected by the executor), nuke them
+    // before executing the real script. Also detect getscripts/
+    // getrunningscripts which list running script objects.
+    // ---------------------------------------------------------------
+    "pcall(function()",
+    "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+    "  local __genv = type(getgenv) == \"function\" and getgenv() or _G",
+    "  for _, name in ipairs(__dump_fns) do",
+    "    if type(__genv[name]) == \"function\" then",
+    "      __genv[name] = function() return '' end",
+    "    end",
+    "  end",
+    "end)",
     // Optional strict getrenv signal, opt-in per project (see strict_genv_check
     // in the dashboard's Protection tuning card). Confirmed to
     // false-positive on some executors even with a clean environment,
@@ -923,6 +1020,40 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
         "end",
         "",
       ] : []),
+      // debug.sethook spy detection
+      "if not __suspect and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
+      "  local ok, hookFn = pcall(debug.gethook)",
+      "  if ok and hookFn ~= nil then",
+      "    __suspect, __reason = true, \"debug_hook_active\"",
+      "  end",
+      "end",
+      // game metatable __namecall/__index hook detection
+      "if not __suspect then",
+      "  local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
+      "  if ok and mt then",
+      "    local __iscc = iscclosure or is_cclosure or checkclosure",
+      "    if type(__iscc) == \"function\" then",
+      "      local ok2, nc = pcall(rawget, mt, \"__namecall\")",
+      "      if ok2 and type(nc) == \"function\" then",
+      "        local ok3, isC = pcall(__iscc, nc)",
+      "        if ok3 and isC == false then __suspect, __reason = true, \"mt_namecall_hook\" end",
+      "      end",
+      "      if not __suspect then",
+      "        local ok4, ix = pcall(rawget, mt, \"__index\")",
+      "        if ok4 and type(ix) == \"function\" then",
+      "          local ok5, isC = pcall(__iscc, ix)",
+      "          if ok5 and isC == false then __suspect, __reason = true, \"mt_index_hook\" end",
+      "        end",
+      "      end",
+      "    end",
+      "  end",
+      "end",
+      // Neutralize dump tools before fetching stage2
+      "pcall(function()",
+      "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring'}",
+      "  local __ge = type(getgenv) == \"function\" and getgenv() or _G",
+      "  for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
+      "end)",
     ]),
     "if __suspect then",
     "  __sol_report(__reason)",
@@ -1140,7 +1271,22 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
     '  local __decoyFn = loadstring([==[' + buildDecoyChunk() + ']==])',
     '  if __decoyFn then __decoyFn() end',
     'end)',
-    'if task and task.wait then task.wait(8) else wait(8) end',
+    '-- Randomized delay: defeats timing-based memory scanners that',
+    '-- know to scan at exactly T+8s after loadstring. The wait is',
+    '-- between 5-12s, unpredictable per execution.',
+    'do',
+    '  local __dMin, __dMax = 5, 12',
+    '  local __delay = __dMin + (__dMax - __dMin) * (math.random())',
+    '  if task and task.wait then task.wait(__delay) else wait(__delay) end',
+    'end',
+    '-- Defense against debug.getlocal stack reading: if an attacker',
+    '-- set debug.sethook to read locals at specific call depths,',
+    '-- clear the hook right before we touch decrypted content.',
+    'pcall(function()',
+    '  if type(debug) == "table" and type(debug.sethook) == "function" then',
+    '    debug.sethook(nil)',
+    '  end',
+    'end)',
     ...hookGuardLuaLines(canaryUrl, integrityMode, strictGenv),
     'local __sol_fn, __sol_load_err',
     'if __sol_hookclean then',
@@ -1266,7 +1412,7 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  gui:Destroy()',
     'end)',
     'if not __sol_ok then warn("[Solaries] loading GUI error: "..tostring(__sol_err)) end',
-    ...buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode),
+    ...buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv),
     ''
   ].join("\n");
 }
@@ -1409,7 +1555,16 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
     '      local __decoyFn = loadstring([==[' + buildDecoyChunk() + ']==])',
     '      if __decoyFn then __decoyFn() end',
     '    end)',
-    '    if task and task.wait then task.wait(8) else wait(8) end',
+    '    do',
+    '      local __dMin, __dMax = 5, 12',
+    '      local __delay = __dMin + (__dMax - __dMin) * (math.random())',
+    '      if task and task.wait then task.wait(__delay) else wait(__delay) end',
+    '    end',
+    '    pcall(function()',
+    '      if type(debug) == "table" and type(debug.sethook) == "function" then',
+    '        debug.sethook(nil)',
+    '      end',
+    '    end)',
     ...hookGuardLuaLines(canaryUrl, integrityMode, strictGenv).map((l) => "    " + l),
     '    local fn, lerr',
     '    if __sol_hookclean then fn, lerr = loadstring(body) end',
