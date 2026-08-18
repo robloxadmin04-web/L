@@ -51,7 +51,7 @@
   // An element counts as "not really visible" if it has no box, or its box
   // sits entirely off the left/right edge of the screen - which is exactly
   // how the off-canvas sidebar hides itself on narrow layouts.
-  function isEffectivelyVisible(target) {
+  function isEffectivelyVisible(target, overlayEl) {
     var r = target.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return false;
     if (r.right <= 0 || r.left >= viewportWidth()) return false;
@@ -66,15 +66,16 @@
     // point before trusting its box.
     var cx = Math.min(Math.max(r.left + r.width / 2, 0), viewportWidth() - 1);
     var cy = Math.min(Math.max(r.top + r.height / 2, 0), viewportHeight() - 1);
+    // The guide's own overlay sits above every page element (including a
+    // real app modal) while the tour is open, so elementFromPoint would
+    // always return a piece of our own overlay first - never revealing
+    // whether something real (a modal, a dropdown) is stacked on top of
+    // the target underneath it. Hide the overlay from hit-testing for the
+    // instant of this check so we see what's actually on top of the target.
+    var prevPointerEvents = overlayEl ? overlayEl.style.pointerEvents : null;
+    if (overlayEl) overlayEl.style.pointerEvents = "none";
     var topEl = document.elementFromPoint(cx, cy);
-    // The guide's own dim layer sits above every page element while the
-    // tour is open, so it will always be "on top" of the target at this
-    // point - that's expected, not a sign of something actually blocking
-    // it. Only treat this as "covered" when a foreign element (a real
-    // modal, dropdown, etc. outside our own overlay) is on top.
-    if (topEl && topEl.closest && topEl.closest(".guide-overlay")) {
-      return true;
-    }
+    if (overlayEl) overlayEl.style.pointerEvents = prevPointerEvents || "";
     if (topEl && topEl !== target && !target.contains(topEl) && !topEl.contains(target)) {
       return false;
     }
@@ -212,7 +213,7 @@
     var menuToggle = document.getElementById("menuToggle");
     var sidebar = document.getElementById("sidebar");
 
-    if (insideSidebar && !isEffectivelyVisible(targetEl)) {
+    if (insideSidebar && !isEffectivelyVisible(targetEl, this.overlay)) {
       if (menuToggle) {
         menuToggle.click();
         this._sidebarOpenedByGuide = true;
@@ -266,7 +267,7 @@
 
   Guide.prototype._paint = function (step, targetEl) {
     var pad = 8;
-    var visible = targetEl && isEffectivelyVisible(targetEl);
+    var visible = targetEl && isEffectivelyVisible(targetEl, this.overlay);
 
     if (visible) {
       var r = targetEl.getBoundingClientRect();
