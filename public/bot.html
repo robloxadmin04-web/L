@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Discord - Solaries</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       .page-sub { color:var(--text-soft); font-size:13px; margin:4px 0 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
       .page-sub .sep { color:var(--text-muted); }
@@ -194,5 +195,36 @@
 
     <script src="auth.js"></script>
     <script src="bot.js"></script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "bot",
+        steps: [
+          {
+            target: null,
+            title: "Discord bot",
+            body: "Connect your Discord server so you and your team can manage keys and projects right from chat.",
+          },
+          {
+            target: "#btnInvite",
+            placement: "bottom",
+            title: "Invite the bot",
+            body: "Add the bot to your Discord server to get started.",
+          },
+          {
+            target: "#chipLinked",
+            placement: "bottom",
+            title: "Link status",
+            body: "Shows whether your account is currently linked to a Discord server.",
+          },
+          {
+            target: "#tools",
+            placement: "top",
+            title: "Panels and tools",
+            body: "Post interactive panels in your server so users can grab their own keys.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
