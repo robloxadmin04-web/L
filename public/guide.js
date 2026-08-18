@@ -210,7 +210,18 @@
   Guide.prototype._closeGuideSidebar = function () {
     if (!this._sidebarOpenedByGuide) return;
     var sidebar = document.getElementById("sidebar");
-    if (sidebar) sidebar.classList.remove("is-open");
+    var menuToggle = document.getElementById("menuToggle");
+    // Prefer re-clicking the real toggle so it runs the same close path as
+    // a manual tap (removes the dim overlay, restores the hamburger).
+    // Only fall back to a raw class removal if that button is missing.
+    if (sidebar && sidebar.classList.contains("is-open") && menuToggle) {
+      menuToggle.click();
+    } else if (sidebar) {
+      sidebar.classList.remove("is-open");
+      var overlay = document.querySelector(".sidebar-overlay");
+      if (overlay) overlay.classList.remove("is-open");
+      if (menuToggle) menuToggle.style.visibility = "";
+    }
     this._sidebarOpenedByGuide = false;
   };
 
