@@ -1524,11 +1524,30 @@ async function handleLoadRoute(req, res) {
     return res.status(code).send("-- " + reason);
   }
 
-  const { data: script } = await supabase
+  let { data: script, error: __scriptErr } = await supabase
     .from("scripts")
     .select("id, project_id, source, key_mode, enabled, player_ui, same_device, silent_mode, fast_mode, game_id, projects!inner(id, status, whitelist_only, owner_account_id, integrity_mode, strict_genv_check, raw_nonce_ttl_sec, load_rate_limit_per_min)")
     .eq("slug", scriptSlug)
     .maybeSingle();
+
+  // Defensive fallback: if strict_genv_check (or any other newly-added
+  // tuning column) doesn't exist yet in this DB - e.g. the migration
+  // hasn't been run - Postgres errors the WHOLE select above, `data`
+  // comes back null, and every single script delivery would 404 with
+  // "script not found" until the migration runs. That's a delivery
+  // outage for every player, not just a dashboard glitch, caused by a
+  // backend change shipping ahead of its own migration. Retry once
+  // without the newer column so delivery keeps working either way;
+  // strict_genv_check just defaults to off until the migration lands.
+  if (!script && __scriptErr) {
+    console.error("[FALLBACK] scripts select failed, retrying without strict_genv_check:", __scriptErr.message);
+    const retry = await supabase
+      .from("scripts")
+      .select("id, project_id, source, key_mode, enabled, player_ui, same_device, silent_mode, fast_mode, game_id, projects!inner(id, status, whitelist_only, owner_account_id, integrity_mode, raw_nonce_ttl_sec, load_rate_limit_per_min)")
+      .eq("slug", scriptSlug)
+      .maybeSingle();
+    if (retry.data) script = { ...retry.data, projects: { ...retry.data.projects, strict_genv_check: false } };
+  }
 
   if (!script) return res.status(404).send("-- script not found");
   if (!script.enabled) return block("script disabled", 403, null, script.project_id, script.id);
@@ -2239,9 +2258,21 @@ app.delete("/api/analytics/logs", requireAuth, async (req, res) => {
 // PROJECTS
 // ============================================================
 app.get("/api/projects", requireAuth, async (req, res) => {
-  const { data, error } = await supabase.from("projects")
+  let { data, error } = await supabase.from("projects")
     .select("id, name, slug, note, status, whitelist_only, created_at, integrity_mode, strict_genv_check, raw_nonce_ttl_sec, load_rate_limit_per_min")
     .eq("owner_account_id", req.session.account_id).order("created_at", { ascending: false });
+  // Same defensive fallback as the /v1/load delivery route: don't let a
+  // not-yet-migrated strict_genv_check column blank out the whole
+  // Projects list (previously showed correct top-level stats from
+  // /api/stats but an empty list here, since this query 500'd silently).
+  if (error) {
+    console.error("[FALLBACK] projects select failed, retrying without strict_genv_check:", error.message);
+    const retry = await supabase.from("projects")
+      .select("id, name, slug, note, status, whitelist_only, created_at, integrity_mode, raw_nonce_ttl_sec, load_rate_limit_per_min")
+      .eq("owner_account_id", req.session.account_id).order("created_at", { ascending: false });
+    data = (retry.data || []).map((p) => ({ ...p, strict_genv_check: false }));
+    error = retry.error;
+  }
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   const withCounts = await Promise.all((data || []).map(async (p) => {
     const [scr, kys] = await Promise.all([
