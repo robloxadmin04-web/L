@@ -21,6 +21,13 @@
   --radius-md: 16px;
   --radius-sm: 12px;
   --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+
+  /* Shared tokens so guide.css matches the app.css theme on this page too */
+  --surface-2: var(--card);
+  --accent: #7c3aed;
+  --accent-hover: #8b47f0;
+  --accent-soft: rgba(124, 58, 237, 0.14);
+  --good: #22c55e;
 }
 
 * {
