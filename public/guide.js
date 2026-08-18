@@ -57,6 +57,19 @@
     if (r.right <= 0 || r.left >= viewportWidth()) return false;
     var style = window.getComputedStyle(target);
     if (style.visibility === "hidden" || style.display === "none") return false;
+    // An element can pass every check above and still be sitting behind an
+    // open modal, a dialog, or some other overlay that's stacked on top of
+    // it. In that case its coordinates are stale - visually correct for the
+    // element itself, but the spotlight would land on whatever the overlay
+    // is actually showing at that spot instead. Confirm the target (or the
+    // thing on top of it) is really what's on screen at its own center
+    // point before trusting its box.
+    var cx = Math.min(Math.max(r.left + r.width / 2, 0), viewportWidth() - 1);
+    var cy = Math.min(Math.max(r.top + r.height / 2, 0), viewportHeight() - 1);
+    var topEl = document.elementFromPoint(cx, cy);
+    if (topEl && topEl !== target && !target.contains(topEl) && !topEl.contains(target)) {
+      return false;
+    }
     return true;
   }
 
