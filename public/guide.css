@@ -25,32 +25,56 @@
   position: fixed;
   left: 22px;
   bottom: 22px;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--guide-teal);
+  background: linear-gradient(180deg, var(--guide-teal) 0%, var(--guide-teal-hover) 100%);
   color: #04211c;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.28), var(--shadow);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25), var(--shadow);
   cursor: pointer;
   z-index: 150;
-  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  animation: guide-fab-pulse 2.8s ease-in-out infinite;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 .guide-fab:hover {
-  background: var(--guide-teal-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 14px 28px rgba(20, 184, 166, 0.34), var(--shadow);
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 30px rgba(20, 184, 166, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3), var(--shadow);
+  animation-play-state: paused;
 }
-.guide-fab:active { transform: translateY(0); }
-.guide-fab svg { width: 21px; height: 21px; stroke: currentColor; stroke-width: 2; }
+.guide-fab:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 6px 14px rgba(20, 184, 166, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.guide-fab-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+@keyframes guide-fab-pulse {
+  0%, 100% {
+    box-shadow: 0 10px 24px rgba(20, 184, 166, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 0 rgba(20, 184, 166, 0.45), var(--shadow);
+  }
+  50% {
+    box-shadow: 0 10px 24px rgba(20, 184, 166, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 7px rgba(20, 184, 166, 0), var(--shadow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-fab { animation: none; }
+}
 
 .guide-fab-badge {
   position: absolute;
-  top: -3px;
-  right: -3px;
+  top: -4px;
+  right: -4px;
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -209,10 +233,10 @@
   .guide-fab {
     left: max(14px, env(safe-area-inset-left));
     bottom: max(14px, env(safe-area-inset-bottom));
-    width: 44px;
-    height: 44px;
+    height: 38px;
+    padding: 0 15px;
   }
-  .guide-fab svg { width: 20px; height: 20px; }
+  .guide-fab-label { font-size: 12px; }
   .guide-card {
     width: calc(100vw - 24px);
     padding: 12px 12px 10px;
