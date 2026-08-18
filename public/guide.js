@@ -112,7 +112,7 @@
 
   Guide.prototype._buildFab = function () {
     var self = this;
-    var fab = el("button", "guide-fab", iconHelp());
+    var fab = el("button", "guide-fab", '<span class="guide-fab-label">Help</span>');
     fab.type = "button";
     fab.setAttribute("aria-label", "Open page guide");
     fab.title = "Guide me around this page";
