@@ -165,10 +165,15 @@
       function openSidebar() {
         sidebar.classList.add("is-open");
         overlay.classList.add("is-open");
+        // Hide the hamburger while the sidebar is open — it sits at the same
+        // top-left spot as the sidebar's own logo and visually overlaps it.
+        // Closing happens via the overlay tap, Escape, or a nav link instead.
+        menuBtn.style.visibility = "hidden";
       }
       function closeSidebar() {
         sidebar.classList.remove("is-open");
         overlay.classList.remove("is-open");
+        menuBtn.style.visibility = "";
       }
 
       menuBtn.addEventListener("click", function () {
