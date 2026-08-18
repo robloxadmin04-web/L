@@ -103,6 +103,34 @@ setInterval(() => {
 }, 60 * 1000).unref();
 
 // ============================================================
+// Distinct-client tracker (per IP): tells the difference between "one
+// device hammering the loader" (a bug/retry loop - not worth alerting
+// the owner about) and "many different devices/keys behind the same
+// IP" (a shared network like school wifi, OR an actual scraping farm -
+// the two look identical from IP alone, but a real scraper doesn't
+// usually get a fresh, valid HWID/key for every hit; a shared network
+// full of real players does). Used alongside the plain per-IP rate
+// limit to make the "Possible Scraper" alert reason more informative,
+// so an owner can tell at a glance which case they're looking at
+// instead of guessing from a raw request count.
+// ============================================================
+const distinctClientBuckets = new Map(); // ip -> { ids: Set, resetAt }
+function trackDistinctClients(ip, clientId, windowMs) {
+  const now = Date.now();
+  let b = distinctClientBuckets.get(ip);
+  if (!b || now > b.resetAt) {
+    b = { ids: new Set(), resetAt: now + windowMs };
+    distinctClientBuckets.set(ip, b);
+  }
+  b.ids.add(clientId || "unknown");
+  return b.ids.size;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of distinctClientBuckets) if (now > b.resetAt) distinctClientBuckets.delete(k);
+}, 60 * 1000).unref();
+
+// ============================================================
 // Sessions
 // ============================================================
 const sessions = new Map();
@@ -1572,11 +1600,23 @@ async function handleLoadRoute(req, res) {
   // runs after the script/project lookup so the tuned value can be used,
   // instead of the old hardcoded 30/60s applied before the project was
   // even known.
+  // Track distinct devices/keys per IP on every hit (not just when the
+  // limit trips) so the count reflects the whole window, not just this
+  // one request.
+  const __distinctCount = trackDistinctClients(ip, hwid || key || "unknown", 60 * 1000);
   if (!rateLimit("load:" + ip, __loadRatePerMin, 60 * 1000)) {
-    // Alert owner — repeated rapid hits from same IP is a scraping signal
+    // Distinguish "one device hammering the endpoint" (retry loop/bug,
+    // low signal) from "many distinct devices/keys behind one IP"
+    // (shared network OR real scraping - the reason string tells the
+    // owner which they're looking at instead of leaving them to guess
+    // from a bare request count).
+    const __clientPicture = __distinctCount <= 1
+      ? "all from 1 device/key - likely a retry loop, not a scraper"
+      : __distinctCount + " distinct devices/keys - shared network or possible scraping";
     if (global.__solScrapeAlert && script.projects.owner_account_id) {
       global.__solScrapeAlert(script.projects.owner_account_id, "rate_limit", {
-        scriptSlug, ip, hwid, key, reason: __loadRatePerMin + "+ requests in 60s from same IP",
+        scriptSlug, ip, hwid, key,
+        reason: __loadRatePerMin + "+ requests in 60s from same IP (" + __clientPicture + ")",
       });
     }
     return res.status(429).send("-- rate limited");
