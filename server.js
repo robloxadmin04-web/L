@@ -782,7 +782,79 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
 // while you confirm the check has no false positives on your userbase's
 // mix of executors (see the tuning card in the dashboard).
 function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
-  return buildIntegritySnippet(canaryUrl, kickOnFail) + "\n" + source;
+  const snippet = buildIntegritySnippet(canaryUrl, kickOnFail);
+
+  // ENHANCEMENT: Obfuscate the integrity snippet so it's not readable
+  // even after XOR decryption. The snippet is encoded as a string.char
+  // array with a per-request XOR mask, then loadstring'd at runtime.
+  // Attacker sees: loadstring(string.char(182,94,201,...))() — no
+  // readable variable names, no greppable check patterns.
+  const mask = crypto.randomInt(1, 255);
+  const encoded = Buffer.from(snippet, "utf-8");
+  const charCodes = [];
+  for (let i = 0; i < encoded.length; i++) {
+    charCodes.push((encoded[i] ^ ((mask + i) % 256)));
+  }
+
+  // Split into chunks of 80 to avoid super-long lines
+  const chunks = [];
+  for (let i = 0; i < charCodes.length; i += 80) {
+    chunks.push(charCodes.slice(i, i + 80).join(","));
+  }
+
+  const r = () => "_" + crypto.randomBytes(3).toString("hex");
+  const tbl = r(), dec = r(), i = r(), m = r(), fn = r(), err = r();
+
+  const decoder = [
+    `local ${tbl}={${chunks.join(",")}}`,
+    `local ${dec}={}`,
+    `local ${m}=${mask}`,
+    `for ${i}=1,#${tbl} do`,
+    `  local ${r()}=bit32 and bit32.bxor(${tbl}[${i}],(${m}+${i}-1)%256) or (${tbl}[${i}])`,
+    `  ${dec}[${i}]=string.char(${r()})`,
+    `end`,
+    `local ${fn},${err}=loadstring(table.concat(${dec}))`,
+    `if ${fn} then ${fn}() end`,
+  ];
+
+  // ENHANCEMENT: Runtime re-check via task.spawn — fires 10-20s AFTER
+  // the script starts running. Even if the attacker bypasses the initial
+  // check, this delayed check catches hooks set AFTER the script loaded.
+  const recheck = buildIntegritySnippet(canaryUrl, kickOnFail);
+  const mask2 = crypto.randomInt(1, 255);
+  const encoded2 = Buffer.from(recheck, "utf-8");
+  const charCodes2 = [];
+  for (let i = 0; i < encoded2.length; i++) {
+    charCodes2.push((encoded2[i] ^ ((mask2 + i) % 256)));
+  }
+  const chunks2 = [];
+  for (let i = 0; i < charCodes2.length; i += 80) {
+    chunks2.push(charCodes2.slice(i, i + 80).join(","));
+  }
+
+  const tbl2 = r(), dec2 = r(), i2 = r(), m2 = r(), fn2 = r(), delay = r();
+
+  const runtimeRecheck = [
+    `pcall(function()`,
+    `  if task and task.spawn then`,
+    `    task.spawn(function()`,
+    `      local ${delay}=${10 + crypto.randomInt(10)}`,
+    `      if task and task.wait then task.wait(${delay}) else wait(${delay}) end`,
+    `      local ${tbl2}={${chunks2.join(",")}}`,
+    `      local ${dec2}={}`,
+    `      local ${m2}=${mask2}`,
+    `      for ${i2}=1,#${tbl2} do`,
+    `        local ${r()}=bit32 and bit32.bxor(${tbl2}[${i2}],(${m2}+${i2}-1)%256) or (${tbl2}[${i2}])`,
+    `        ${dec2}[${i2}]=string.char(${r()})`,
+    `      end`,
+    `      local ${fn2}=loadstring(table.concat(${dec2}))`,
+    `      if ${fn2} then ${fn2}() end`,
+    `    end)`,
+    `  end`,
+    `end)`,
+  ];
+
+  return decoder.join("\n") + "\n" + runtimeRecheck.join("\n") + "\n" + source;
 }
 
 // ============================================================
