@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Status</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       .status-badge { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
       .status-badge .dot { width:7px; height:7px; border-radius:50%; }
@@ -141,5 +142,30 @@
 
     <script src="auth.js"></script>
     <script src="status.js"></script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "status",
+        steps: [
+          {
+            target: null,
+            title: "Live status",
+            body: "A real-time view of which scripts and keys are active, idle, or expired.",
+          },
+          {
+            target: "#refreshBtn",
+            placement: "left",
+            title: "Refresh",
+            body: "Pull the latest status at any time.",
+          },
+          {
+            target: "#scriptsCard",
+            placement: "top",
+            title: "Script status",
+            body: "See at a glance whether each script is currently being used.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
