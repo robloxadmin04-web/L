@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Projects - Solaries</title>
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide.css" />
     <style>
       /* Project card layout (mobile-first, works on desktop too) */
       .proj-card {
@@ -318,5 +319,36 @@
 
     <script src="auth.js"></script>
     <script src="projects.js"></script>
-  </body>
+      <script src="guide.js"></script>
+    <script>
+      SolariesGuide.init({
+        page: "projects",
+        steps: [
+          {
+            target: null,
+            title: "Your projects",
+            body: "Each project groups a set of scripts, keys, and access rules together. Here's a quick look around.",
+          },
+          {
+            target: "#openCreate",
+            placement: "left",
+            title: "Create a project",
+            body: "Start a new project here. Give it a name and note so it's easy to tell apart later.",
+          },
+          {
+            target: "#filterTabs",
+            placement: "bottom",
+            title: "Filter your list",
+            body: "Switch between all projects, active ones, or paused ones.",
+          },
+          {
+            target: "#searchInput",
+            placement: "bottom",
+            title: "Search",
+            body: "Quickly find a project or script by name.",
+          },
+        ],
+      });
+    </script>
+</body>
 </html>
