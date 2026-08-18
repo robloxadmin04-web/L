@@ -229,6 +229,13 @@
               </div>
               <input id="iRateLimit" type="number" class="text-field" min="5" max="300" step="1" style="max-width:120px;" />
             </div>
+            <div class="toggle-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+              <div class="toggle-copy">
+                <p class="toggle-name">Strict environment check</p>
+                <p class="toggle-desc">Adds one extra signal (getrenv() vs loadstring comparison) on top of the integrity check above. Catches a narrower class of hook, but confirmed to false-positive on some executors even with nothing wrong - off by default. Only turn this on if you've seen a specific hook get past the standard check.</p>
+              </div>
+              <label class="switch"><input type="checkbox" id="tStrictGenv"><span class="track"></span><span class="thumb"></span></label>
+            </div>
             <div class="toggle-row">
               <button class="primary-btn" type="button" id="btnSaveTuning">Save protection tuning</button>
             </div>
