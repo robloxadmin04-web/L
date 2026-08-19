@@ -778,11 +778,24 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
   const okV = r(), resV = r(), iV = r(), urlV = r();
 
   lines.push(`local ${assembledVar} = ""`);
+  // FIX: /v1/chunk/:nonce returns the chunk still AES-256-GCM encrypted
+  // (base64) — Luau has no native AES, so each chunk must be round-tripped
+  // through the server's /v1/decrypt/:nonce endpoint (same nonce, used only
+  // for key derivation) BEFORE being appended. Previously the raw ciphertext
+  // was concatenated straight into assembledVar and handed to loadstring(),
+  // which is why loadstring always failed with "Incomplete statement" —
+  // it was parsing encrypted bytes, not Lua source.
+  const rqV = r();
+  lines.push(`local ${rqV} = (syn and syn.request) or (http and http.request) or request or http_request`);
 
   for (let i = 0; i < chunks.length; i++) {
     const pv = partVars[i];
-    const chunkUrl = baseUrl + "/v1/chunk/" + chunks[i].nonce;
+    const nonce = chunks[i].nonce;
+    const chunkUrl = baseUrl + "/v1/chunk/" + nonce;
+    const decryptUrl = baseUrl + "/v1/decrypt/" + nonce;
+    const cipherV = r();
     lines.push(
+      // 1) fetch the encrypted chunk
       `local ${okV}${i}, ${resV}${i} = pcall(function()`,
       `  return game:HttpGet("${chunkUrl}")`,
       `end)`,
@@ -790,7 +803,22 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
       `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_fail_${i}") end)`,
       `  return`,
       `end`,
-      `local ${pv} = ${resV}${i}`,
+      `local ${cipherV} = ${resV}${i}`,
+      // 2) decrypt it server-side via POST /v1/decrypt/:nonce
+      `local ${okV}d${i}, ${resV}d${i} = pcall(function()`,
+      `  if ${rqV} then`,
+      `    local __r = ${rqV}({ Url = "${decryptUrl}", Method = "POST",`,
+      `      Headers = { ["Content-Type"] = "application/octet-stream" },`,
+      `      Body = ${cipherV} })`,
+      `    return __r.Body or __r.body`,
+      `  end`,
+      `  return nil`,
+      `end)`,
+      `if not ${okV}d${i} or not ${resV}d${i} or ${resV}d${i} == "" then`,
+      `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_decrypt_fail_${i}") end)`,
+      `  return`,
+      `end`,
+      `local ${pv} = ${resV}d${i}`,
       `${assembledVar} = ${assembledVar} .. ${pv}`,
     );
   }
