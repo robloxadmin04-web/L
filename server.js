@@ -751,14 +751,14 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
     // LAYER 8: Anti-writefile/setclipboard (kick only)
     ...(kick ? [
       `pcall(function() local ${g3}=type(getgenv)=="function" and getgenv() or _G`,
-      `  for _,${w} in ipairs({"writefile","appendfile","setclipboard","syn_io_write"}) do`,
+      `  for _,${w} in ipairs({"writefile","appendfile","setclipboard","syn_io_write","writefileop"}) do`,
       `    if type(${g3}[${w}])=="function" then ${g3}[${w}]=function() end end`,
       `  end end)`,
     ] : []),
-    // LAYER 9: Dump tool neutralization (expanded list, kick only)
+    // LAYER 9: Dump tool neutralization (kick only)
     ...(kick ? [
       `pcall(function() local ${ge}=type(getgenv)=="function" and getgenv() or _G`,
-      `  for _,${n} in ipairs({"decompile","getscriptbytecode","saveinstance","getscripts","getrunningscripts","getloadedmodules","dumpstring","getprotos","getconstants","getupvalues"}) do`,
+      `  for _,${n} in ipairs({"decompile","getscriptbytecode","saveinstance","getscripts","getrunningscripts","getloadedmodules","dumpstring","getprotos","getconstants","getupvalues","getscriptclosure","getscripthash","cloneref","getthreadidentity","setthreadidentity","newcclosure","clonefunction"}) do`,
       `    if type(${ge}[${n}])=="function" then ${ge}[${n}]=function() return "" end end`,
       `  end end)`,
     ] : []),
@@ -769,6 +769,14 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
     `end)`,
     // LAYER 11: Force-clear debug.sethook before decrypt proceeds
     `pcall(function() if type(debug)=="table" and type(debug.sethook)=="function" then debug.sethook(nil) end end)`,
+    // LAYER 12: Debug library neutralization
+    `pcall(function()`,
+    `  if type(debug)~="table" then return end`,
+    `  local ${df}={"setupvalue","setconstant","setlocal","getlocal","getregistry","getinfo"}`,
+    `  for _,${n} in ipairs(${df}) do`,
+    `    if type(debug[${n}])=="function" then debug[${n}]=function() return nil end end`,
+    `  end`,
+    `end)`,
     `end`,
   ];
 
@@ -1020,7 +1028,7 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     ...(mode === "kick" ? [
       // LAYER: Dump tool neutralization (expanded)
       "pcall(function()",
-      "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues'}",
+      "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash','cloneref','getthreadidentity','setthreadidentity','newcclosure','clonefunction'}",
       "  local __genv = type(getgenv) == \"function\" and getgenv() or _G",
       "  for _, name in ipairs(__dump_fns) do",
       "    if type(__genv[name]) == \"function\" then",
@@ -1031,8 +1039,15 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
       // LAYER: Anti-writefile/setclipboard
       "pcall(function()",
       "  local __genv2 = type(getgenv) == \"function\" and getgenv() or _G",
-      "  for _, wn in ipairs({'writefile','appendfile','setclipboard','syn_io_write'}) do",
+      "  for _, wn in ipairs({'writefile','appendfile','setclipboard','syn_io_write','writefileop'}) do",
       "    if type(__genv2[wn]) == \"function\" then __genv2[wn] = function() end end",
+      "  end",
+      "end)",
+      // LAYER: Debug library neutralization
+      "pcall(function()",
+      "  if type(debug) ~= \"table\" then return end",
+      "  for _, dn in ipairs({'setupvalue','setconstant','setlocal','getlocal','getregistry','getinfo'}) do",
+      "    if type(debug[dn]) == \"function\" then debug[dn] = function() return nil end end",
       "  end",
       "end)",
     ] : []),
@@ -1199,14 +1214,20 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
       // Neutralize dump tools + extraction functions — ONLY in kick mode
       ...(integrityMode === "kick" ? [
         "pcall(function()",
-        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues'}",
+        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash','cloneref','getthreadidentity','setthreadidentity','newcclosure','clonefunction'}",
         "  local __ge = type(getgenv) == \"function\" and getgenv() or _G",
         "  for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
         "end)",
         "pcall(function()",
         "  local __ge2 = type(getgenv) == \"function\" and getgenv() or _G",
-        "  for _, wn in ipairs({'writefile','appendfile','setclipboard','syn_io_write'}) do",
+        "  for _, wn in ipairs({'writefile','appendfile','setclipboard','syn_io_write','writefileop'}) do",
         "    if type(__ge2[wn]) == \"function\" then __ge2[wn] = function() end end",
+        "  end",
+        "end)",
+        "pcall(function()",
+        "  if type(debug) ~= \"table\" then return end",
+        "  for _, dn in ipairs({'setupvalue','setconstant','setlocal','getlocal','getregistry','getinfo'}) do",
+        "    if type(debug[dn]) == \"function\" then debug[dn] = function() return nil end end",
         "  end",
         "end)",
       ] : []),
