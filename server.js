@@ -1233,7 +1233,19 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
       // Neutralize dump tools + extraction functions — ONLY in kick mode
       ...(integrityMode === "kick" ? [
         "pcall(function()",
-        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash','cloneref','getthreadidentity','setthreadidentity','newcclosure','clonefunction'}",
+        // NOTE: cloneref/newcclosure/clonefunction/getthreadidentity/
+        // setthreadidentity were previously in this list and got
+        // neutered too. Those are NOT dump/extraction tools - they're
+        // general-purpose executor utilities that lots of legitimate
+        // UI and networking libraries rely on for normal operation
+        // (e.g. cloneref-wrapped Instances, newcclosure-wrapped
+        // callbacks around RemoteEvent:FireServer). Blanking them to
+        // return '' meant any such library got a string back where it
+        // expected an Instance/function, producing exactly this class
+        // of error: 'attempt to call missing method FindFirstChild of
+        // string' / 'attempt to index nil with FireServer'. Only true
+        // dump/extraction primitives stay in this list.
+        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash'}",
         "  local __ge = type(getgenv) == \"function\" and getgenv() or _G",
         "  for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
         "end)",
