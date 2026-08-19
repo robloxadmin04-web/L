@@ -782,6 +782,9 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
     `pcall(function() local ${g4}=type(getgenv)=="function" and getgenv() or _G`,
     `  if type(${g4}.getconnections)=="function" then ${g4}.getconnections=function() return {} end end`,
     `  if type(${g4}.firesignal)=="function" then ${g4}.firesignal=function() end end`,
+    `  for _,${n} in ipairs({"HttpSpy","httpspy","spy","rconsoleprint","rconsolecreate","rconsole","rconsolename","rconsoleinput","rconsoleinfo","rconsolewarn","rconsoleerr","rconsoleclear"}) do`,
+    `    if type(${g4}[${n}])=="function" then ${g4}[${n}]=function() end end`,
+    `  end`,
     `end)`,
     // LAYER 11: Force-clear debug.sethook before decrypt proceeds
     `pcall(function() if type(debug)=="table" and type(debug.sethook)=="function" then debug.sethook(nil) end end)`,
@@ -1247,13 +1250,16 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
         "  end",
         "end)",
       ] : []),
-      // Anti-getgc + anti-getconnections (all modes — safe, no FP)
+      // Anti-getgc + anti-getconnections + anti-HttpSpy/rconsole (all modes)
       "pcall(function()",
       "  local __ge3 = type(getgenv) == \"function\" and getgenv() or _G",
       "  if type(__ge3.getgc) == \"function\" then __ge3.getgc = function() return {} end end",
       "  if type(__ge3.getgcinfo) == \"function\" then __ge3.getgcinfo = function() return 0 end end",
       "  if type(__ge3.getconnections) == \"function\" then __ge3.getconnections = function() return {} end end",
       "  if type(__ge3.firesignal) == \"function\" then __ge3.firesignal = function() end end",
+      "  for _, __spn in ipairs({'HttpSpy','httpspy','spy','rconsoleprint','rconsolecreate','rconsole','rconsolename','rconsoleinput','rconsoleinfo','rconsolewarn','rconsoleerr','rconsoleclear'}) do",
+      "    if type(__ge3[__spn]) == \"function\" then __ge3[__spn] = function() end end",
+      "  end",
       "end)",
     ]),
     "if __suspect then",
