@@ -591,7 +591,11 @@ setInterval(() => {
 // later instead of being reached via the live loadstring(HttpGet()) call),
 // the player is kicked and the real body never executes.
 function wrapExecCheck(source, verifyUrl) {
-  const lines = [
+  const runtimeKey = crypto.randomBytes(16).toString("hex");
+  let keyHash = 0;
+  for (let i = 0; i < runtimeKey.length; i++) keyHash += runtimeKey.charCodeAt(i);
+
+  const wrapped = [
     "do",
     '  local __ok = false',
     '  local __s, __r = pcall(function() return game:HttpGet("' + verifyUrl + '") end)',
@@ -602,9 +606,21 @@ function wrapExecCheck(source, verifyUrl) {
     "    return",
     "  end",
     "end",
+    // RUNTIME EXECUTION LOCK — source is wrapped in a function that
+    // requires a 32-char token with a specific hash. Dumped code
+    // returns a function, not executable code. Without the token
+    // (which lives in the obfuscated loader, not the source), the
+    // function returns nil and nothing runs.
+    'return function(__rt)',
+    '  if type(__rt) ~= "string" or #__rt ~= 32 then return end',
+    '  local __h = 0',
+    '  for __i = 1, #__rt do __h = __h + string.byte(__rt, __i) end',
+    '  if __h ~= ' + keyHash + ' then return end',
     source,
-  ];
-  return lines.join("\n");
+    'end',
+  ].join("\n");
+
+  return { code: wrapped, runtimeKey };
 }
 
 // ============================================================
@@ -1670,12 +1686,31 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
     ...hookGuardLuaLines(canaryUrl, integrityMode, strictGenv),
     'local __sol_fn, __sol_load_err',
     'if __sol_hookclean then',
-    '  __sol_fn, __sol_load_err = loadstring(__decrypted)',
+    '  -- Extract the 32-char runtime key from the front of the decrypted payload',
+    '  local __rtKey = string.sub(__decrypted, 1, 32)',
+    '  local __rtCode = string.sub(__decrypted, 33)',
+    '  local __rtFn, __rtErr = loadstring(__rtCode)',
+    '  if __rtFn then',
+    '    -- loadstring returns a function that RETURNS a function.',
+    '    -- Call it once to get the wrapped function, then call the',
+    '    -- wrapped function with the runtime key to actually execute.',
+    '    local __rtOk, __rtWrapped = pcall(__rtFn)',
+    '    if __rtOk and type(__rtWrapped) == "function" then',
+    '      __rtWrapped(__rtKey)',
+    '    elseif __rtOk then',
+    '      -- Fallback: if source was not wrapped (e.g. integrity_mode=off),',
+    '      -- the loadstring already executed the code directly.',
+    '    else',
+    '      warn("[Solaries] script load failed: "..tostring(__rtWrapped))',
+    '    end',
+    '  else',
+    '    __sol_load_err = __rtErr',
+    '  end',
     'end',
     '-- Wipe plaintext + intermediates from locals to shrink the window',
     '-- for memory scanners / debug.getlocal dumps.',
     '__decrypted = nil; __body = nil; __b64decode = nil; __xorDecrypt = nil; __hexToBytes = nil',
-    'if __sol_fn then __sol_fn() else warn("[Solaries] script load failed: "..tostring(__sol_load_err)) end',
+    'if __sol_load_err then warn("[Solaries] script load failed: "..tostring(__sol_load_err)) end',
   ].join("\n").replace("RAWURL", rawUrl).split("\n");
 }
 
@@ -2463,10 +2498,19 @@ async function handleLoadRoute(req, res) {
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
     const __canaryToken = issueCanaryToken(scriptSlug, key || "");
     const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
+    const __execResult = wrapExecCheck(__wm, __verifyUrl);
+    const __runtimeKey = __execResult.runtimeKey;
     const __ticketed = __integrityMode === "off"
-      ? wrapExecCheck(__wm, __verifyUrl)
-      : wrapIntegrityCheck(wrapExecCheck(__wm, __verifyUrl), __canaryUrl, __integrityMode === "kick");
-    const __enc = encryptDelivery(__ticketed, __n);
+      ? __execResult.code
+      : wrapIntegrityCheck(__execResult.code, __canaryUrl, __integrityMode === "kick");
+    // Prepend the runtime key as the first 32 chars of the plaintext
+    // before encryption. The client decoder strips it and uses it to
+    // call the wrapped function. An attacker who intercepts the
+    // encrypted blob and decrypts it sees the key, but the key is
+    // useless without the exec ticket check that runs INSIDE the
+    // wrapped function (which phones home to /v1/verify).
+    const __withKey = __runtimeKey + __ticketed;
+    const __enc = encryptDelivery(__withKey, __n);
     return res.status(200).send(__enc);
   }
   if (script.player_ui === "key_gui" && !key) {
