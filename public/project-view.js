@@ -229,7 +229,7 @@ function renderScripts() {
     tr.querySelector("[data-edit]").addEventListener("click", function () { openWizardForEdit(s); });
     tr.querySelector("[data-history]").addEventListener("click", function () { openHistory(s); });
     tr.querySelector("[data-del]").addEventListener("click", async function () {
-      if (!window.confirm("Delete script '" + s.name + "'?")) return;
+      if (!window.confirm("Delete script '" + s.name + "'?\n\nThis cannot be undone. All access logs for this script will also be removed.")) return;
       try {
         const r = await window.SL.api("/api/scripts/" + s.id, { method: "DELETE" });
         if (r.ok) { window.SL.toast("Script deleted", "ok"); loadScripts(); }
@@ -337,6 +337,8 @@ async function openWizardForEdit(s) {
   try {
     const r = await window.SL.api("/api/scripts/" + s.id + "/versions");
     editingScript = s;
+    // SECURITY: source is fetched separately (not bundled with script list)
+    // to avoid exposing all script sources in one API call.
     el.wizardTitle.textContent = "Edit " + s.name;
     wizard = { step: 1, protection: s.protection || "none", ui: s.player_ui || "no_gui" };
 
@@ -682,7 +684,9 @@ el.btnRename.addEventListener("click", async function () {
 });
 
 el.btnDelete.addEventListener("click", async function () {
-  if (!window.confirm("Delete project '" + project.name + "'? This removes all scripts, keys, blocklist, and allowlist tied to it.")) return;
+  if (!window.confirm("Delete project '" + project.name + "'? This removes all scripts, keys, blocklist, and allowlist tied to it.\n\nThis cannot be undone.")) return;
+  var typed = window.prompt("Type the project name to confirm deletion:\n\n" + project.name);
+  if (!typed || typed.trim() !== project.name) { window.SL.toast("Deletion cancelled — name did not match", "error"); return; }
   try {
     const r = await window.SL.api("/api/projects/" + projectId, { method: "DELETE" });
     if (r.ok) { window.SL.toast("Project deleted", "ok"); setTimeout(function () { window.location.href = "projects.html"; }, 500); }
