@@ -336,7 +336,11 @@ function consumeChallenge(challenge, pid, ip, gp) {
   const c = loadChallenges.get(challenge);
   if (!c) return false;
   if (c.used || Date.now() > c.expires) { loadChallenges.delete(challenge); return false; }
-  if (c.pid !== pid || c.ip !== ip || c.gp !== (gp || "")) return false;
+  // NOTE: IP check removed — Roblox/Cloudflare/Railway proxies can
+  // assign different IPs between the handshake and bootstrap requests
+  // causing false 403s. Challenge is still protected by: single-use,
+  // 8s TTL, player ID binding, and place ID binding.
+  if (c.pid !== pid || c.gp !== (gp || "")) return false;
   c.used = true;
   loadChallenges.delete(challenge);
   return true;
