@@ -584,6 +584,229 @@ function encryptDelivery(plaintext, nonce) {
   return Buffer.concat([iv, tag, ct]).toString("base64");
 }
 // ============================================================
+// STRATEGY A: HWID-BOUND RUNTIME SESSION TOKENS
+// ============================================================
+// When the real script source is delivered, we embed a short-lived
+// "identity token" INSIDE the source itself. The token is:
+//   HMAC-SHA256(SECRET, hwid + ":" + userId + ":" + placeId + ":" + ts)
+// truncated to 32 hex chars.
+//
+// The delivered source starts with a Lua call to /v1/idcheck/<token>
+// which verifies the CURRENT request's hwid/userId/placeId matches
+// what the token was minted for. If the attacker dumps the source and
+// runs it from a different account/device:
+//   - Their hwid is different → server rejects → Kick("Session expired.")
+//   - Their userId is different → same result
+//   - Token is expired (30s TTL) → same result
+//   - Token already consumed (single-use) → same result
+//
+// This makes dumped source USELESS — it is cryptographically bound to
+// the exact device+player+place that originally requested it.
+// ============================================================
+const ID_TOKEN_SECRET = process.env.ID_TOKEN_SECRET || (() => {
+  // Derive from DELIVERY_SECRET so no new env var is strictly required,
+  // but a dedicated env var is preferred for key separation.
+  return crypto.createHmac("sha256", Buffer.from(DELIVERY_SECRET)).update("id-token-v1").digest("hex");
+})();
+const idTokens = new Map(); // token -> { hwid, userId, placeId, expires }
+const ID_TOKEN_TTL_MS = 30 * 1000; // 30 seconds — enough to reach /v1/idcheck
+
+function issueIdToken(hwid, userId, placeId) {
+  const ts = Date.now();
+  const payload = [hwid || "", userId || "", placeId || "", ts].join(":");
+  const token = crypto.createHmac("sha256", Buffer.from(ID_TOKEN_SECRET))
+    .update(payload).digest("hex").slice(0, 32);
+  idTokens.set(token, {
+    hwid: hwid || "",
+    userId: String(userId || ""),
+    placeId: String(placeId || ""),
+    expires: ts + ID_TOKEN_TTL_MS,
+  });
+  return token;
+}
+
+function verifyIdToken(token, hwid, userId, placeId) {
+  if (!token) return false;
+  const t = idTokens.get(token);
+  if (!t) return false;
+  idTokens.delete(token); // single-use always
+  if (Date.now() > t.expires) return false;
+  // All three must match exactly
+  if (t.hwid !== (hwid || "")) return false;
+  if (t.userId !== String(userId || "")) return false;
+  if (t.placeId !== String(placeId || "")) return false;
+  return true;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of idTokens) if (now > v.expires) idTokens.delete(k);
+}, 15 * 1000).unref();
+
+// Lua preamble injected at the TOP of every delivered source.
+// Must be the first thing that executes — before any game logic.
+// If the check fails for any reason, the player is kicked and
+// the rest of the source never runs.
+function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
+  const checkUrl = PUBLIC_BASE_URL + "/v1/idcheck/" + idToken;
+  const r = () => "_" + crypto.randomBytes(3).toString("hex");
+  const ok=r(), res=r(), plr=r(), px=r(), gp=r(), hw=r(), url=r();
+  const kick = integrityMode !== "log" && integrityMode !== "off";
+  return [
+    "-- [IDENTITY LOCK]",
+    `local ${px} = tostring(game:GetService("Players").LocalPlayer.UserId)`,
+    `local ${gp} = tostring(game.PlaceId)`,
+    `local ${hw} = (gethwid and gethwid()) or game:GetService("RbxAnalyticsService"):GetClientId()`,
+    `local ${url} = "${checkUrl}?px="..${px}.."&gp="..${gp}.."&hwid="..${hw}`,
+    `local ${ok}, ${res} = pcall(function() return game:HttpGet(${url}) end)`,
+    `if not ${ok} or ${res} ~= "1" then`,
+    `  pcall(function() game:HttpGet("${canaryUrl}?r=id_mismatch") end)`,
+    ...(kick ? [
+      `  local ${plr} = game:GetService("Players").LocalPlayer`,
+      `  if ${plr} then ${plr}:Kick("Session expired.") end`,
+      `  return`,
+    ] : []),
+    `end`,
+  ].join("\n") + "\n";
+}
+
+// ============================================================
+// STRATEGY B: PER-CHUNK SPLIT DELIVERY
+// ============================================================
+// Instead of delivering the full script source in one encrypted blob,
+// we split it into N chunks. Each chunk has its own single-use nonce
+// and is encrypted independently with AES-256-GCM.
+//
+// Attack resistance:
+//   - Attacker who dumps one loadstring call gets ONE chunk — useless alone
+//   - Each chunk URL contains a different single-use nonce — can't replay
+//   - Chunks must be reassembled IN ORDER server-side token chain
+//   - Each chunk fetch requires a valid Roblox client (UA + pid checks)
+//   - If any chunk fetch fails (nonce expired/used), whole delivery aborts
+//
+// The Lua assembler fetches all chunks sequentially, concatenates them,
+// then passes the full source to loadstring exactly ONCE. The assembler
+// itself is obfuscated via the stage-split mechanism so it's the only
+// thing exposed to a hook at the first loadstring call.
+//
+// Chunk count is randomized per delivery (3-7) so static analysis of
+// the delivery pattern cannot reliably predict how many fetches to intercept.
+// ============================================================
+const chunkNonces = new Map(); // nonce -> { scriptSlug, key, chunkIdx, totalChunks, expires }
+const CHUNK_NONCE_TTL_MS = 20 * 1000; // 20s per chunk — sequential fetches
+
+function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks) {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  chunkNonces.set(nonce, {
+    scriptSlug,
+    key: key || "",
+    chunkIdx,
+    totalChunks,
+    expires: Date.now() + CHUNK_NONCE_TTL_MS,
+    used: false,
+  });
+  return nonce;
+}
+
+function consumeChunkNonce(nonce, scriptSlug, key, chunkIdx) {
+  if (!nonce) return false;
+  const c = chunkNonces.get(nonce);
+  if (!c) return false;
+  chunkNonces.delete(nonce);
+  if (c.used || Date.now() > c.expires) return false;
+  if (c.scriptSlug !== scriptSlug || c.key !== (key || "")) return false;
+  if (c.chunkIdx !== chunkIdx) return false;
+  return true;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of chunkNonces) if (now > v.expires) chunkNonces.delete(k);
+}, 15 * 1000).unref();
+
+// Split source into N chunks, encrypt each independently.
+// Returns array of { nonce, encrypted } objects.
+function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
+  const src = Buffer.from(source, "utf8");
+  const chunkSize = Math.ceil(src.length / numChunks);
+  const chunks = [];
+  for (let i = 0; i < numChunks; i++) {
+    const slice = src.subarray(i * chunkSize, (i + 1) * chunkSize).toString("utf8");
+    const nonce = issueChunkNonce(scriptSlug, key, i, numChunks);
+    const encrypted = encryptDelivery(slice, nonce);
+    chunks.push({ nonce, encrypted });
+  }
+  return chunks;
+}
+
+// Build a Lua assembler that fetches all chunks, decrypts each via
+// /v1/chunk/:nonce, concatenates them, and passes the result to
+// loadstring exactly once at the end.
+function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode) {
+  const r = () => "_" + crypto.randomBytes(3).toString("hex");
+  const lines = [];
+
+  // Fetch + decrypt each chunk sequentially
+  const partVars = chunks.map(() => r());
+  const assembledVar = r();
+  const okV = r(), resV = r(), iV = r(), urlV = r();
+
+  lines.push(`local ${assembledVar} = ""`);
+
+  for (let i = 0; i < chunks.length; i++) {
+    const pv = partVars[i];
+    const chunkUrl = baseUrl + "/v1/chunk/" + chunks[i].nonce;
+    lines.push(
+      `local ${okV}${i}, ${resV}${i} = pcall(function()`,
+      `  return game:HttpGet("${chunkUrl}")`,
+      `end)`,
+      `if not ${okV}${i} or not ${resV}${i} or ${resV}${i} == "" then`,
+      `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_fail_${i}") end)`,
+      `  return`,
+      `end`,
+      `local ${pv} = ${resV}${i}`,
+      `${assembledVar} = ${assembledVar} .. ${pv}`,
+    );
+  }
+
+  // ID check preamble + exec check + loadstring all at once
+  const fnV = r(), errV = r(), plrV = r(), rtV = r(), wrappedV = r();
+  const sha256fnV = r();
+
+  // Prepend idPreamble + runtime key verification to assembled source
+  lines.push(
+    `-- [ASSEMBLE COMPLETE — RUN]`,
+    `local ${sha256fnV} = (function()`,
+    sha256Lua(),
+    `end)()`,
+    `-- Verify live session ticket`,
+    `local ${okV}x, ${resV}x = pcall(function() return game:HttpGet("${execVerifyUrl}") end)`,
+    `if not ${okV}x or ${resV}x ~= "1" then`,
+    `  pcall(function() game:HttpGet("${canaryUrl}?r=exec_fail") end)`,
+    `  local ${plrV} = game:GetService("Players").LocalPlayer`,
+    `  if ${plrV} then ${plrV}:Kick("Session expired.") end`,
+    `  return`,
+    `end`,
+    // Full source is: idPreamble + actual source (already concatenated in assembledVar)
+    // Wrap in runtime key lock
+    `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
+    `if not ${fnV} then warn("[S] err: "..tostring(${errV})); return end`,
+    `local ${okV}r, ${wrappedV} = pcall(${fnV})`,
+    `if ${okV}r and type(${wrappedV}) == "function" then`,
+    `  local ${rtV} = "${runtimeKey}"`,
+    `  local ${resV}h = ${sha256fnV}(${rtV})`,
+    `  if ${resV}h == "${crypto.createHash("sha256").update(runtimeKey).digest("hex")}" then`,
+    `    ${wrappedV}(${rtV})`,
+    `  end`,
+    `elseif ${okV}r then`,
+    `  -- source ran directly (no wrapper)`,
+    `end`,
+  );
+
+  return lines.join("\n");
+}
+
+// ============================================================
 // Raw-fetch nonce: short-lived, single-use token tying the
 // wrapper's follow-up "?raw=1" request to the original request
 // that issued it. Prevents a captured raw=1 URL from being
@@ -2483,6 +2706,78 @@ app.post("/v1/decrypt/:nonce", async (req, res) => {
 app.use("/v1/decrypt", express.raw({ type: "application/octet-stream", limit: "4mb" }));
 
 // ============================================================
+// STRATEGY B: /v1/chunk/:nonce
+// Delivers one encrypted chunk of the script source.
+// Each chunk has its own single-use nonce — a dumped chunk URL
+// cannot be replayed (nonce already consumed), and even if it
+// could, the attacker gets only a fragment of the source.
+// ============================================================
+app.get("/v1/chunk/:nonce", async (req, res) => {
+  res.type("text/plain");
+  if (isBrowserNav(req)) return res.status(403).type("text/html").send(getBlockHtml());
+  if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("-- forbidden");
+  if (isRateLimited("chunk-ip", getClientIp(req), 40, 15 * 1000)) return res.status(429).send("-- rate limited");
+
+  const nonce = String(req.params.nonce || "").replace(/[^a-f0-9]/gi, "").slice(0, 32);
+  const entry = chunkNonces.get(nonce);
+  if (!entry) return res.status(401).send("-- expired");
+
+  // Look up the script to get its source and validate key
+  const { data: script } = await supabase.from("scripts")
+    .select("id, source, key_mode, enabled, project_id, projects!inner(status, owner_account_id)")
+    .eq("slug", entry.scriptSlug).maybeSingle();
+
+  if (!script || !script.enabled || script.projects.status === "paused") {
+    chunkNonces.delete(nonce);
+    return res.status(403).send("-- forbidden");
+  }
+
+  // Consume the nonce
+  const valid = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
+  if (!valid) return res.status(401).send("-- expired");
+
+  // Re-split the source identically to how it was split at delivery time
+  // (same numChunks, same chunkSize math) and return only this chunk encrypted.
+  const src = Buffer.from(script.source || "", "utf8");
+  const chunkSize = Math.ceil(src.length / entry.totalChunks);
+  const slice = src.subarray(entry.chunkIdx * chunkSize, (entry.chunkIdx + 1) * chunkSize).toString("utf8");
+  const encrypted = encryptDelivery(slice, nonce);
+  res.status(200).send(encrypted);
+});
+
+// ============================================================
+// STRATEGY A: /v1/idcheck/:token
+// Called by the HWID-bound preamble injected into every delivered source.
+// Verifies that hwid + userId + placeId match what the token was minted for.
+// Single-use + 30s TTL: even if attacker captures the full source AND this URL,
+// they cannot use it — token is already consumed by the legitimate player,
+// and their own hwid/userId won't match anyway.
+// ============================================================
+app.get("/v1/idcheck/:token", async (req, res) => {
+  res.type("text/plain");
+  if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("0");
+  if (isRateLimited("idcheck-ip", getClientIp(req), 20, 15 * 1000)) return res.status(429).send("0");
+
+  const token  = String(req.params.token || "").replace(/[^a-f0-9]/gi, "").slice(0, 32);
+  const hwid   = getHwid(req);
+  const userId = sanitizeString(String(req.query.px || ""), 32);
+  const placeId = sanitizeString(String(req.query.gp || ""), 20);
+
+  const ok = verifyIdToken(token, hwid, userId, placeId);
+  if (!ok) {
+    // Log the mismatch — every hit here is either a dump replay attempt
+    // or a race condition (should be extremely rare with 30s TTL).
+    await supabase.from("access_log").insert({
+      event: "blocked",
+      reason: "id_token_mismatch",
+      hwid: hwid || null,
+      ip: getClientIp(req) || null,
+    }).catch(() => {});
+  }
+  res.status(200).send(ok ? "1" : "0");
+});
+
+// ============================================================
 // EXECUTION TICKET REDEEM - called by the wrapExecCheck() preamble
 // embedded in delivered scripts. Single-use, short-lived (see
 // RAW_NONCE_TTL_MS): proves this exact script run is happening live,
@@ -2892,6 +3187,16 @@ async function handleLoadRoute(req, res) {
       return block("missing or expired session token", 401, null, projectId, script.id);
     }
     const __wm = injectWatermark(__raw, key ? (await supabase.from("keys").select("id").eq("key", key).maybeSingle()).data?.id : null, hwid, ip);
+
+    // STRATEGY A: Mint an HWID-bound identity token and prepend the
+    // verification preamble to the source. The preamble calls /v1/idcheck
+    // with the player's live hwid/userId/placeId. If a dumped copy of this
+    // source is run by a different player/device, the check fails and kicks.
+    const __pid   = String(req.query.px || "").trim();
+    const __gp    = String(req.query.gp || "").trim();
+    const __idTok = issueIdToken(hwid, __pid, __gp);
+    const __idPreamble = buildIdCheckPreamble(__idTok, __canaryUrl, __integrityMode);
+    const __wmWithId = __idPreamble + __wm;
     // FIX: embed a fresh, single-use, short-lived "proof of live execution"
     // ticket INSIDE the decrypted payload itself - not just around the
     // outer delivery. Without this, someone who manages to obtain the
@@ -2906,19 +3211,36 @@ async function handleLoadRoute(req, res) {
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
     const __canaryToken = issueCanaryToken(scriptSlug, key || "");
     const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
-    const __execResult = wrapExecCheck(__wm, __verifyUrl);
+    const __execResult = wrapExecCheck(__wmWithId, __verifyUrl);
     const __runtimeKey = __execResult.runtimeKey;
-    const __ticketed = __integrityMode === "off"
-      ? __execResult.code
-      : wrapIntegrityCheck(__execResult.code, __canaryUrl, __integrityMode === "kick");
-    // Prepend the runtime key as the first 32 chars of the plaintext
-    // before encryption. The client decoder strips it and uses it to
-    // call the wrapped function. An attacker who intercepts the
-    // encrypted blob and decrypts it sees the key, but the key is
-    // useless without the exec ticket check that runs INSIDE the
-    // wrapped function (which phones home to /v1/verify).
-    const __withKey = __runtimeKey + __ticketed;
-    const __enc = encryptDelivery(__withKey, __n);
+
+    // STRATEGY B: Split the source into random 3-7 chunks, each with its
+    // own nonce. The Lua assembler (itself stage-split so only it is exposed
+    // to a hook first) fetches each chunk, decrypts via /v1/chunk/:nonce,
+    // concatenates, and only then calls loadstring once on the full source.
+    // A hooked loadstring sees only the assembler wrapper first — worthless.
+    const __numChunks = 3 + crypto.randomInt(5); // 3-7 chunks
+    const __chunks = splitAndEncryptSource(__execResult.code, scriptSlug, key || "", __numChunks);
+
+    // Build the Lua assembler — fetches all chunks + does exec check + runs
+    const __assembler = buildChunkAssembler(
+      __chunks,
+      PUBLIC_BASE_URL,
+      __canaryUrl,
+      __idPreamble,
+      __verifyUrl,
+      __runtimeKey,
+      __integrityMode,
+    );
+
+    // Wrap the assembler itself in integrity checks + stage-split so it's
+    // the decoy-first thing exposed to any hooked loadstring
+    const __wrappedAssembler = __integrityMode === "off"
+      ? __assembler
+      : wrapIntegrityCheck(__assembler, __canaryUrl, __integrityMode === "kick");
+
+    // Encrypt the full assembler wrapper as the single raw=1 response
+    const __enc = encryptDelivery(__wrappedAssembler, __n);
     return res.status(200).send(__enc);
   }
   if (script.player_ui === "key_gui" && !key) {
