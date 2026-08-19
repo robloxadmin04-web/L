@@ -408,7 +408,7 @@
               </div>
               <div class="option-card" style="cursor:default;">
                 <p class="option-card-title">3 &middot; Player interface</p>
-                <p class="option-card-desc">Pick what the player sees in Roblox: No GUI, a loading screen, or a key entry box. All modes share the same protection stack — no weak path.</p>
+                <p class="option-card-desc">Pick what the player sees in Roblox: Indicator, a loading screen, or a key entry box. All modes share the same protection stack — no weak path.</p>
               </div>
               <div class="option-card" style="cursor:default;">
                 <p class="option-card-title">4 &middot; Source</p>
@@ -462,7 +462,7 @@
             <div class="toggle-block-title" style="border:none; padding:0 0 10px;">Player interface</div>
             <p style="margin:0 0 12px; color:var(--text-soft); font-size:12px;">What the player sees before the script runs. All modes have the same protection level — encrypted delivery, integrity checks, anti-dump, and watermarking apply equally.</p>
             <div class="ui-grid">
-              <div class="option-card is-selected" data-ui="no_gui"><p class="option-card-title">No GUI</p><p class="option-card-desc">Script starts silently. Best for background scripts or when you handle your own UI. Full protection via stage-split delivery.</p></div>
+              <div class="option-card is-selected" data-ui="no_gui"><p class="option-card-title">Indicator</p><p class="option-card-desc">Minimalist centered dot + "Loading..." that disappears when the script runs. Clean and non-intrusive. Full protection via stage-split delivery.</p></div>
               <div class="option-card" data-ui="loading"><p class="option-card-title">Loading screen</p><p class="option-card-desc">Shows a branded loading bar while the script loads. Recommended — gives visual feedback and uses the encrypted delivery pipeline.</p></div>
               <div class="option-card" data-ui="key_gui"><p class="option-card-title">Key system GUI</p><p class="option-card-desc">In-game key input box. Player enters their key before the script loads. Requires the script to be set to "Keyed" access.</p></div>
               <div class="option-card" data-ui="custom"><p class="option-card-title">Custom Lua GUI <span class="option-badge">Creator+</span></p><p class="option-card-desc">Build your own UI using the Solaries SDK. For advanced users who want full control.</p></div>
@@ -593,13 +593,13 @@
           {
             target: null,
             title: "Inside a project",
-            body: "This is where you manage a single project's scripts, protection settings, and access rules. All delivery modes (No GUI, Loading, Key GUI) share the same multi-layered protection: encrypted delivery, integrity checks, anti-dump tools, execution tickets, watermarking, and more.",
+            body: "This is where you manage a single project's scripts, protection settings, and access rules. All delivery modes (Indicator, Loading, Key GUI) share the same multi-layered protection: encrypted delivery, integrity checks, anti-dump tools, execution tickets, watermarking, and more.",
           },
           {
             target: "#openWizard",
             placement: "left",
             title: "Add a script",
-            body: "Upload or paste a new script version here. Choose the player interface (No GUI, Loading screen, or Key GUI), access mode (keyed/keyless), and delivery options. All modes have equal protection.",
+            body: "Upload or paste a new script version here. Choose the player interface (Indicator, Loading screen, or Key GUI), access mode (keyed/keyless), and delivery options. All modes have equal protection.",
           },
           {
             target: "#scriptsTable",
