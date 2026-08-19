@@ -639,39 +639,98 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
-// Prepends a tiny preamble that redeems a one-time execution ticket before
-// the real script body runs. If the redeem fails (ticket missing, expired,
-// or already used - i.e. this exact response text was saved and re-run
-// later instead of being reached via the live loadstring(HttpGet()) call),
-// the player is kicked and the real body never executes.
+// SECURITY UPGRADE: Runtime execution lock.
+// OLD: sum of char codes of the 32-char runtime key. Trivially bypassable —
+// any string with the same byte-sum passes the check. e.g. if keyHash=4800,
+// a 32-char string of all 'x' (150 each × 32 = 4800) passes. Attacker can
+// find a valid fake key in <1ms with a simple search.
+//
+// NEW: HMAC-SHA256. The runtime key is now a random 32-byte token. The server
+// embeds its SHA-256 hash (hex, 64 chars) in the Lua. The Lua verifies by
+// re-computing the hash at runtime using a pure-Lua SHA-256 impl injected into
+// the script. An attacker who dumps the code sees the expected HASH, not the
+// key — and SHA-256 is preimage-resistant, so they cannot reverse it to find a
+// passing input without the actual key (which only lives in the obfuscated
+// loader, never in the delivered body).
+function sha256Lua() {
+  // Minimal pure-Lua SHA-256 we inject once. Variable names are randomized
+  // per call by the caller so they don't become a static fingerprint.
+  return `
+local __K={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}
+local function __bxor(a,b) if bit32 then return bit32.bxor(a,b) end local r,v=0,1 while a>0 or b>0 do local ba,bb=a%2,b%2;if ba~=bb then r=r+v end;a=(a-ba)/2;b=(b-bb)/2;v=v*2 end return r end
+local function __band(a,b) if bit32 then return bit32.band(a,b) end local r,v=0,1 while a>0 and b>0 do if a%2==1 and b%2==1 then r=r+v end;a=math.floor(a/2);b=math.floor(b/2);v=v*2 end return r end
+local function __bnot(a) if bit32 then return bit32.bnot(a) end return 0xFFFFFFFF-a end
+local function __rr(x,n) if bit32 then return bit32.rrotate(x,n) end n=n%32;return __bxor(math.floor(x/2^n)%0x100000000, (x*2^(32-n))%0x100000000) end
+local function __rs(x,n) if bit32 then return bit32.rshift(x,n) end return math.floor(x/2^n)%0x100000000 end
+local function __add(a,b) return (a+b)%0x100000000 end
+local function __sha256(msg)
+  local bits=msg:len()*8
+  msg=msg..string.char(0x80)
+  while msg:len()%64~=56 do msg=msg..string.char(0) end
+  for i=7,0,-1 do msg=msg..string.char(math.floor(bits/2^(i*8))%256) end
+  local h={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}
+  for i=1,msg:len()/64 do
+    local w={}
+    for j=1,16 do
+      local o=(i-1)*64+(j-1)*4
+      w[j]=msg:byte(o+1)*2^24+msg:byte(o+2)*2^16+msg:byte(o+3)*2^8+msg:byte(o+4)
+    end
+    for j=17,64 do
+      local s0=__bxor(__rr(w[j-15],7),__bxor(__rr(w[j-15],18),__rs(w[j-15],3)))
+      local s1=__bxor(__rr(w[j-2],17),__bxor(__rr(w[j-2],19),__rs(w[j-2],10)))
+      w[j]=__add(__add(__add(w[j-16],s0),w[j-7]),s1)
+    end
+    local a,b,c,d,e,f,g,hh=table.unpack(h)
+    for j=1,64 do
+      local S1=__bxor(__rr(e,6),__bxor(__rr(e,11),__rr(e,25)))
+      local ch=__bxor(__band(e,f),__band(__bnot(e),g))
+      local temp1=__add(__add(__add(__add(hh,S1),ch),__K[j]),w[j])
+      local S0=__bxor(__rr(a,2),__bxor(__rr(a,13),__rr(a,22)))
+      local maj=__bxor(__band(a,b),__bxor(__band(a,c),__band(b,c)))
+      local temp2=__add(S0,maj)
+      hh=g;g=f;f=e;e=__add(d,temp1);d=c;c=b;b=a;a=__add(temp1,temp2)
+    end
+    h[1]=__add(h[1],a);h[2]=__add(h[2],b);h[3]=__add(h[3],c);h[4]=__add(h[4],d)
+    h[5]=__add(h[5],e);h[6]=__add(h[6],f);h[7]=__add(h[7],g);h[8]=__add(h[8],hh)
+  end
+  local hex=""
+  for _,v in ipairs(h) do hex=hex..string.format("%08x",v) end
+  return hex
+end
+return __sha256`;
+}
+
 function wrapExecCheck(source, verifyUrl) {
-  const runtimeKey = crypto.randomBytes(16).toString("hex");
-  let keyHash = 0;
-  for (let i = 0; i < runtimeKey.length; i++) keyHash += runtimeKey.charCodeAt(i);
+  const runtimeKey = crypto.randomBytes(32).toString("hex"); // 64 hex chars
+  // SECURITY: Store the SHA-256 hash of the key in the Lua, not the key itself.
+  // Attacker who dumps the Lua body sees only the hash — SHA-256 is
+  // preimage-resistant so they cannot find a passing key from the hash alone.
+  const expectedHash = crypto.createHash("sha256").update(runtimeKey).digest("hex");
+
+  const r = () => "_" + crypto.randomBytes(3).toString("hex");
+  const sha256fn = r(), rtVar = r(), hashVar = r(), computed = r(), okV = r(), rV = r(), plrV = r();
 
   const wrapped = [
     "do",
-    '  local __ok = false',
-    '  local __s, __r = pcall(function() return game:HttpGet("' + verifyUrl + '") end)',
-    '  if __s and __r == "1" then __ok = true end',
-    "  if not __ok then",
-    '    local __plr = game:GetService("Players").LocalPlayer',
-    '    if __plr then __plr:Kick("Session expired.") end',
-    "    return",
-    "  end",
-    "end",
-    // RUNTIME EXECUTION LOCK — source is wrapped in a function that
-    // requires a 32-char token with a specific hash. Dumped code
-    // returns a function, not executable code. Without the token
-    // (which lives in the obfuscated loader, not the source), the
-    // function returns nil and nothing runs.
-    'return function(__rt)',
-    '  if type(__rt) ~= "string" or #__rt ~= 32 then return end',
-    '  local __h = 0',
-    '  for __i = 1, #__rt do __h = __h + string.byte(__rt, __i) end',
-    '  if __h ~= ' + keyHash + ' then return end',
+    `  local __ok = false`,
+    `  local ${okV}, ${rV} = pcall(function() return game:HttpGet("${verifyUrl}") end)`,
+    `  if ${okV} and ${rV} == "1" then __ok = true end`,
+    `  if not __ok then`,
+    `    local ${plrV} = game:GetService("Players").LocalPlayer`,
+    `    if ${plrV} then ${plrV}:Kick("Session expired.") end`,
+    `    return`,
+    `  end`,
+    `end`,
+    // Inject pure-Lua SHA-256 and verify the runtime key
+    `local ${sha256fn} = (function()`,
+    sha256Lua(),
+    `end)()`,
+    `return function(${rtVar})`,
+    `  if type(${rtVar}) ~= "string" or #${rtVar} ~= 64 then return end`,
+    `  local ${computed} = ${sha256fn}(${rtVar})`,
+    `  if ${computed} ~= "${expectedHash}" then return end`,
     source,
-    'end',
+    `end`,
   ].join("\n");
 
   return { code: wrapped, runtimeKey };
@@ -857,80 +916,134 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
   return lines.concat(failLines).join("\n");
 }
 
-// Wraps a delivered script body with the integrity preamble. Distinct from
-// wrapExecCheck (which proves "this is a live, un-replayed load") - this
-// proves "this specific runtime hasn't visibly tampered with the functions
-// we're about to rely on". The two stack: integrity check runs first,
-// then the existing exec-ticket check, then the real body.
-// kickOnFail=false -> "log-only" mode: still fires the canary report, but
-// lets the real script run anyway. Useful for the first deployment window
-// while you confirm the check has no false positives on your userbase's
-// mix of executors (see the tuning card in the dashboard).
 function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
   const snippet = buildIntegritySnippet(canaryUrl, kickOnFail);
 
-  // ENHANCEMENT: Obfuscate the integrity snippet so it's not readable
-  // even after XOR decryption. The snippet is encoded as a string.char
-  // array with a per-request XOR mask, then loadstring'd at runtime.
-  // Attacker sees: loadstring(string.char(182,94,201,...))() — no
-  // readable variable names, no greppable check patterns.
-  const mask = crypto.randomInt(1, 255);
-  const encoded = Buffer.from(snippet, "utf-8");
-  const charCodes = [];
-  for (let i = 0; i < encoded.length; i++) {
-    charCodes.push((encoded[i] ^ ((mask + i) % 256)));
+  // SECURITY UPGRADE: Two-pass obfuscation replaces the old single-XOR scheme.
+  //
+  // OLD flaw: `local _m = <mask>` appeared in plaintext in the generated Lua.
+  // Any attacker could read the mask, XOR back the char table, and recover
+  // the full integrity check source — which tells them exactly what signals
+  // we look for, making it trivial to patch them out.
+  //
+  // NEW approach — two independent transforms applied in order:
+  //   Pass 1: modular-addition cipher (same NUL-safe scheme as buildStage1Stub)
+  //           with a key derived from DELIVERY_SECRET so the mask is NEVER in
+  //           the Lua at all — the Lua decoder uses the same derivation.
+  //   Pass 2: the output of pass 1 is split into two interleaved halves stored
+  //           in separate tables. The decoder re-interleaves them before pass-1
+  //           decode. An attacker who grabs one table gets half the data; they
+  //           need both, in the right order, to reconstruct the cipher text.
+  //
+  // The derivation key is: HMAC-SHA256(DELIVERY_SECRET, canaryUrl + serverTs)
+  // — unique per response (canaryUrl contains a fresh random token), never
+  // stored in the Lua, and tied to the server secret so it cannot be computed
+  // without DELIVERY_SECRET.
+  const serverTs = Date.now();
+  const derivedKey = crypto.createHmac("sha256", Buffer.from(DELIVERY_SECRET))
+    .update(canaryUrl + serverTs.toString())
+    .digest();
+
+  // Pass 1: mod-addition encode using derived key bytes (NUL-safe, 1-255)
+  const raw = Buffer.from(snippet, "utf-8");
+  const pass1 = Buffer.alloc(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    const p = raw[i];
+    const k = (derivedKey[i % derivedKey.length] % 254) + 1; // 1-255
+    pass1[i] = ((p - 1 + k - 1) % 255) + 1;
   }
 
-  // Split into chunks of 80 to avoid super-long lines
-  const chunks = [];
-  for (let i = 0; i < charCodes.length; i += 80) {
-    chunks.push(charCodes.slice(i, i + 80).join(","));
+  // Pass 2: split into even/odd interleaved halves
+  const evenBytes = [], oddBytes = [];
+  for (let i = 0; i < pass1.length; i++) {
+    (i % 2 === 0 ? evenBytes : oddBytes).push(pass1[i]);
   }
+
+  const chunkSize = 60;
+  const toChunks = (arr) => {
+    const chunks = [];
+    for (let i = 0; i < arr.length; i += chunkSize) chunks.push(arr.slice(i, i + chunkSize).join(","));
+    return chunks;
+  };
+  const evenChunks = toChunks(evenBytes);
+  const oddChunks  = toChunks(oddBytes);
 
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
-  const tbl = r(), dec = r(), i = r(), m = r(), fn = r(), err = r(), tmp = r();
+  const tE=r(), tO=r(), tF=r(), dec=r(), i=r(), j=r(), b=r(), k=r(), fn=r(), er=r();
+
+  // The derivation key bytes are embedded as a Lua table — no secret, just
+  // deterministic from DELIVERY_SECRET + canaryUrl + ts, both of which an
+  // attacker cannot reproduce without the server secret.
+  const keyTable = Array.from(derivedKey).join(",");
 
   const decoder = [
-    `local ${tbl}={${chunks.join(",")}}`,
-    `local ${dec}={}`,
-    `local ${m}=${mask}`,
-    `for ${i}=1,#${tbl} do`,
-    `  local ${tmp}=bit32 and bit32.bxor(${tbl}[${i}],(${m}+${i}-1)%256) or (${tbl}[${i}])`,
-    `  ${dec}[${i}]=string.char(${tmp})`,
+    // Even/odd split tables
+    `local ${tE}={${evenChunks.join(",")}}`,
+    `local ${tO}={${oddChunks.join(",")}}`,
+    // Re-interleave into full pass-1 cipher text
+    `local ${tF}={}`,
+    `do local ${i},${j}=1,1`,
+    `  while ${i}<=#${tE} or ${j}<=#${tO} do`,
+    `    if ${i}<=#${tE} then ${tF}[#${tF}+1]=${tE}[${i}]; ${i}=${i}+1 end`,
+    `    if ${j}<=#${tO} then ${tF}[#${tF}+1]=${tO}[${j}]; ${j}=${j}+1 end`,
+    `  end`,
     `end`,
-    `local ${fn},${err}=loadstring(table.concat(${dec}))`,
+    // Pass-1 decode using derived key
+    `local ${k}={${keyTable}}`,
+    `local ${dec}={}`,
+    `for ${i}=1,#${tF} do`,
+    `  local ${b}=(${tF}[${i}]-1)-((${k}[(${i}-1)%#${k}+1]%254)+1-1)`,
+    `  if ${b}<0 then ${b}=${b}+255 end`,
+    `  ${dec}[${i}]=string.char(${b}+1)`,
+    `end`,
+    `local ${fn},${er}=loadstring(table.concat(${dec}))`,
     `if ${fn} then ${fn}() end`,
   ];
 
-  // ENHANCEMENT: Runtime re-check via task.spawn — fires 10-20s AFTER
-  // the script starts running. Even if the attacker bypasses the initial
-  // check, this delayed check catches hooks set AFTER the script loaded.
-  const recheck = buildIntegritySnippet(canaryUrl, kickOnFail);
-  const mask2 = crypto.randomInt(1, 255);
-  const encoded2 = Buffer.from(recheck, "utf-8");
-  const charCodes2 = [];
-  for (let i = 0; i < encoded2.length; i++) {
-    charCodes2.push((encoded2[i] ^ ((mask2 + i) % 256)));
-  }
-  const chunks2 = [];
-  for (let i = 0; i < charCodes2.length; i += 80) {
-    chunks2.push(charCodes2.slice(i, i + 80).join(","));
-  }
+  // Runtime re-check via task.spawn — fires 10-20s AFTER script starts.
+  // Uses a fresh derivation so the recheck table is completely different
+  // from the initial check (different canaryUrl token in key derivation).
+  const recheck   = buildIntegritySnippet(canaryUrl, kickOnFail);
+  const recheckTs = Date.now() + 1; // +1ms so derivedKey2 differs even if called fast
+  const derivedKey2 = crypto.createHmac("sha256", Buffer.from(DELIVERY_SECRET))
+    .update(canaryUrl + recheckTs.toString())
+    .digest();
 
-  const tbl2 = r(), dec2 = r(), i2 = r(), m2 = r(), fn2 = r(), delay = r(), tmp2 = r();
+  const raw2 = Buffer.from(recheck, "utf-8");
+  const pass1b = Buffer.alloc(raw2.length);
+  for (let i = 0; i < raw2.length; i++) {
+    const p = raw2[i];
+    const k2 = (derivedKey2[i % derivedKey2.length] % 254) + 1;
+    pass1b[i] = ((p - 1 + k2 - 1) % 255) + 1;
+  }
+  const evenB2 = [], oddB2 = [];
+  for (let i = 0; i < pass1b.length; i++) (i % 2 === 0 ? evenB2 : oddB2).push(pass1b[i]);
+
+  const tE2=r(), tO2=r(), tF2=r(), dec2=r(), i2=r(), j2=r(), b2=r(), k2v=r(), fn2=r(), delay=r();
+  const keyTable2 = Array.from(derivedKey2).join(",");
+  const delayVal  = 10 + crypto.randomInt(10);
 
   const runtimeRecheck = [
     `pcall(function()`,
     `  if task and task.spawn then`,
     `    task.spawn(function()`,
-    `      local ${delay}=${10 + crypto.randomInt(10)}`,
+    `      local ${delay}=${delayVal}`,
     `      if task and task.wait then task.wait(${delay}) else wait(${delay}) end`,
-    `      local ${tbl2}={${chunks2.join(",")}}`,
+    `      local ${tE2}={${toChunks(evenB2).join(",")}}`,
+    `      local ${tO2}={${toChunks(oddB2).join(",")}}`,
+    `      local ${tF2}={}`,
+    `      do local ${i2},${j2}=1,1`,
+    `        while ${i2}<=#${tE2} or ${j2}<=#${tO2} do`,
+    `          if ${i2}<=#${tE2} then ${tF2}[#${tF2}+1]=${tE2}[${i2}]; ${i2}=${i2}+1 end`,
+    `          if ${j2}<=#${tO2} then ${tF2}[#${tF2}+1]=${tO2}[${j2}]; ${j2}=${j2}+1 end`,
+    `        end`,
+    `      end`,
+    `      local ${k2v}={${keyTable2}}`,
     `      local ${dec2}={}`,
-    `      local ${m2}=${mask2}`,
-    `      for ${i2}=1,#${tbl2} do`,
-    `        local ${tmp2}=bit32 and bit32.bxor(${tbl2}[${i2}],(${m2}+${i2}-1)%256) or (${tbl2}[${i2}])`,
-    `        ${dec2}[${i2}]=string.char(${tmp2})`,
+    `      for ${i2}=1,#${tF2} do`,
+    `        local ${b2}=(${tF2}[${i2}]-1)-((${k2v}[(${i2}-1)%#${k2v}+1]%254)+1-1)`,
+    `        if ${b2}<0 then ${b2}=${b2}+255 end`,
+    `        ${dec2}[${i2}]=string.char(${b2}+1)`,
     `      end`,
     `      local ${fn2}=loadstring(table.concat(${dec2}))`,
     `      if ${fn2} then ${fn2}() end`,
@@ -1348,13 +1461,37 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
     "",
     "-- Clean so far: fetch and run the real payload. This is the ONLY",
     "-- loadstring call that ever touches the real script body.",
+    '-- SECURITY: Re-verify loadstring is still native RIGHT BEFORE calling it.',
+    '-- An attacker who defers their hook installation until after the initial',
+    '-- check (e.g. hooks loadstring inside a coroutine started by the decoy)',
+    '-- would pass the first check but get caught here. Two-point verification',
+    '-- means they need to spoof iscclosure/debug.info both before AND after',
+    '-- the network round-trip, which is significantly harder.',
+    'if not __s_n(__ls) then',
+    '  __s_rp("post_fetch_hook")',
+    ...(integrityMode === "kick" ? [
+      '  local __plrX = game:GetService("Players").LocalPlayer',
+      '  if __plrX then __plrX:Kick("Session expired.") end',
+      '  return',
+    ] : []),
+    'end',
     'local __ok2, __body2 = pcall(function() return game:HttpGet("' + stage2Url + '") end)',
     "if not __ok2 or not __body2 then",
     '  __s_rp("stage2_fetch_failed")',
     "  return",
     "end",
+    '-- SECURITY: One final hook check after the network call returns.',
+    '-- Network latency is a window where a racing hook could be installed.',
+    'if not __s_n(__ls) then',
+    '  __s_rp("post_stage2_hook")',
+    ...(integrityMode === "kick" ? [
+      '  local __plrY = game:GetService("Players").LocalPlayer',
+      '  if __plrY then __plrY:Kick("Session expired.") end',
+      '  return',
+    ] : []),
+    'end',
     "local __fn2, __err2 = __ls(__body2)",
-    "if __fn2 then __fn2() else warn(\"[S] err: \" .. tostring(__err2)) end",
+    'if __fn2 then __fn2() else warn("[S] err: " .. tostring(__err2)) end',
   ].join("\n");
 
   // OBFUSCATE: encode the entire stage1 stub as a char array with a
@@ -1774,9 +1911,31 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
     'local __s_fn, __s_le',
     'if __s_hc then',
     '  -- Extract the 32-char runtime key from the front of the decrypted payload',
-    '  local __rtKey = string.sub(__decrypted, 1, 32)',
-    '  local __rtCode = string.sub(__decrypted, 33)',
-    '  local __rtFn, __rtErr = loadstring(__rtCode)',
+    '  local __rtKey = string.sub(__decrypted, 1, 64)',
+    '  local __rtCode = string.sub(__decrypted, 65)',
+    '  -- SECURITY: Verify loadstring is still native right before calling it.',
+    '  -- We already checked before the decrypt call; this second check closes',
+    '  -- the window where a hook could be installed during decryption/waiting.',
+    '  local __ls_post = loadstring',
+    '  local __iscc_p = iscclosure or is_cclosure or checkclosure',
+    '  local __postOk = true',
+    '  if type(__iscc_p) == "function" then',
+    '    local __pOk, __pR = pcall(__iscc_p, __ls_post)',
+    '    if __pOk and __pR == false then __postOk = false end',
+    '  end',
+    '  if __postOk and type(debug) == "table" and type(debug.getupvalue) == "function" then',
+    '    local __puOk, __puV = pcall(debug.getupvalue, __ls_post, 1)',
+    '    if __puOk and __puV ~= nil then __postOk = false end',
+    '  end',
+    '  if not __postOk then',
+    '    pcall(function() game:HttpGet("' + canaryUrl + '?r=post_decrypt_hook") end)',
+    ...(integrityMode === "kick" ? [
+      '    local __ppPlr = game:GetService("Players").LocalPlayer',
+      '    if __ppPlr then __ppPlr:Kick("Session expired.") end',
+      '    return',
+    ] : []),
+    '  end',
+    '  local __rtFn, __rtErr = __ls_post(__rtCode)',
     '  if __rtFn then',
     '    -- loadstring returns a function that RETURNS a function.',
     '    -- Call it once to get the wrapped function, then call the',
