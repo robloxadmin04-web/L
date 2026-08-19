@@ -364,18 +364,17 @@ setInterval(() => {
 const loaderTokens = new Map(); // token -> { ip, expires }
 const LOADER_TOKEN_TTL_MS = 30 * 1000; // 30s - enough for the bootstrap to run
 
-function issueLoaderToken(ip) {
+function issueLoaderToken() {
   const token = crypto.randomBytes(16).toString("hex");
-  loaderTokens.set(token, { ip, expires: Date.now() + LOADER_TOKEN_TTL_MS });
+  loaderTokens.set(token, { expires: Date.now() + LOADER_TOKEN_TTL_MS });
   return token;
 }
-function consumeLoaderToken(token, ip) {
+function consumeLoaderToken(token) {
   if (!token) return false;
   const t = loaderTokens.get(token);
   if (!t) return false;
   loaderTokens.delete(token); // always delete — single use
   if (Date.now() > t.expires) return false;
-  if (t.ip !== ip) return false; // must be same IP that got the loader
   return true;
 }
 setInterval(() => {
@@ -2040,7 +2039,7 @@ app.get("/v1/handshake", async (req, res) => {
   // are rejected — this is what kills the "copy bootstrap from Discord"
   // attack: the pasted code has lt=EXPIRED_TOKEN, so it fails here.
   const lt = String(req.query.lt || "").trim();
-  if (lt && !consumeLoaderToken(lt, ip)) {
+  if (lt && !consumeLoaderToken(lt)) {
     return res.status(403).send("0");
   }
   const pid = String(req.query.px || "").trim();
@@ -2513,7 +2512,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
   // IP (or after the 30s TTL), the handshake rejects the stale token
   // and the whole chain dies — the URL is reusable, but the OUTPUT
   // (the actual Lua code) is single-use.
-  const __lt = issueLoaderToken(getClientIp(req));
+  const __lt = issueLoaderToken();
 
   // FIX: this earliest-possible check used to always hard-kick, ignoring
   // the project's integrity_mode setting entirely (unlike the later
