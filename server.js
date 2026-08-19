@@ -774,7 +774,8 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
     // LAYER 9: Dump tool neutralization (kick only)
     ...(kick ? [
       `pcall(function() local ${ge}=type(getgenv)=="function" and getgenv() or _G`,
-      `  for _,${n} in ipairs({"decompile","getscriptbytecode","saveinstance","getscripts","getrunningscripts","getloadedmodules","dumpstring","getprotos","getconstants","getupvalues","getscriptclosure","getscripthash","cloneref","getthreadidentity","setthreadidentity","newcclosure","clonefunction"}) do`,
+      // NOTE: cloneref/newcclosure/clonefunction/getthreadidentity/setthreadidentity removed - legit executor utilities, not dump tools.
+      `  for _,${n} in ipairs({"decompile","getscriptbytecode","saveinstance","getscripts","getrunningscripts","getloadedmodules","dumpstring","getprotos","getconstants","getupvalues","getscriptclosure","getscripthash"}) do`,
       `    if type(${ge}[${n}])=="function" then ${ge}[${n}]=function() return "" end end`,
       `  end end)`,
     ] : []),
@@ -1047,7 +1048,10 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     ...(mode === "kick" ? [
       // LAYER: Dump tool neutralization (expanded)
       "pcall(function()",
-      "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash','cloneref','getthreadidentity','setthreadidentity','newcclosure','clonefunction'}",
+      // NOTE: cloneref/newcclosure/clonefunction/getthreadidentity/
+      // setthreadidentity removed - legit executor utilities used by
+      // real UI/net libraries, not dump tools.
+      "  local __dump_fns = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash'}",
       "  local __genv = type(getgenv) == \"function\" and getgenv() or _G",
       "  for _, name in ipairs(__dump_fns) do",
       "    if type(__genv[name]) == \"function\" then",
