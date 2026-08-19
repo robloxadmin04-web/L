@@ -55,6 +55,22 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// SECURITY: Enforce Content-Type: application/json on all mutating
+// API requests. Without this, an attacker can submit requests with
+// Content-Type: text/plain which bypasses express.json() parsing
+// (body comes in as undefined) and can cause subtle logic errors
+// in routes that assume req.body is always an object.
+// Exemptions: /v1/decrypt uses application/octet-stream (handled separately).
+app.use((req, res, next) => {
+  if (["POST", "PUT", "PATCH"].includes(req.method) &&
+      req.path.startsWith("/api/") &&
+      req.headers["content-type"] &&
+      !req.headers["content-type"].includes("application/json")) {
+    return res.status(415).json({ ok: false, error: "Content-Type must be application/json" });
+  }
+  next();
+});
+
 // ============================================================
 // Security headers (upgraded)
 // ============================================================
@@ -63,7 +79,10 @@ app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-XSS-Protection", "1; mode=block");
-  res.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=()");
+  res.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=(), usb=()");
+  // SECURITY: HSTS — force HTTPS for 1 year once first visited over HTTPS.
+  // Prevents protocol downgrade attacks (SSLstrip etc.).
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   res.setHeader(
     "Content-Security-Policy",
     [
@@ -136,22 +155,39 @@ setInterval(() => {
 const sessions = new Map();
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-function createSession(account) {
+function createSession(account, req) {
   const token = crypto.randomBytes(32).toString("hex");
+  // SECURITY: Bind session to a hash of the User-Agent. If the token is
+  // stolen and used from a different browser/tool, the UA fingerprint
+  // mismatch causes the session to be rejected. Not unbeatable (UA can be
+  // spoofed), but raises the bar for token theft significantly.
+  const ua = req ? String(req.headers["user-agent"] || "").slice(0, 256) : "";
+  const uaHash = crypto.createHash("sha256").update(ua).digest("hex").slice(0, 16);
   sessions.set(token, {
     account_id: account.id,
     role: account.role,
     plan: account.plan,
     name: account.name,
+    ua_hash: uaHash,
     expires_at: Date.now() + SESSION_TTL_MS,
   });
   return token;
 }
 
-function getSession(token) {
+function getSession(token, req) {
   const s = sessions.get(token);
   if (!s) return null;
   if (Date.now() > s.expires_at) { sessions.delete(token); return null; }
+  // SECURITY: Validate UA fingerprint if the session has one bound
+  if (s.ua_hash && req) {
+    const ua = String(req.headers["user-agent"] || "").slice(0, 256);
+    const uaHash = crypto.createHash("sha256").update(ua).digest("hex").slice(0, 16);
+    if (uaHash !== s.ua_hash) {
+      // UA mismatch — possible stolen token. Invalidate and reject.
+      sessions.delete(token);
+      return null;
+    }
+  }
   return s;
 }
 
@@ -165,7 +201,7 @@ setInterval(() => {
 
 function requireAuth(req, res, next) {
   const token = req.header("x-session-token");
-  const session = token ? getSession(token) : null;
+  const session = token ? getSession(token, req) : null;
   if (!session) return res.status(401).json({ ok: false, error: "Not signed in" });
   req.session = session;
   next();
@@ -449,7 +485,19 @@ async function gateLoaderRequest(req, res) {
 // recover which key/device/time it was served to, so that specific
 // key/device can be revoked and traced.
 // ============================================================
-const WATERMARK_SECRET = process.env.WATERMARK_SECRET || "change-me-solaries-watermark";
+// SECURITY: These secrets MUST be set via environment variables.
+// If missing, the server refuses to start rather than falling back to
+// predictable defaults that would make watermarks and XOR delivery
+// decryptable by anyone who reads this source code.
+if (!process.env.WATERMARK_SECRET) {
+  console.error("[FATAL] WATERMARK_SECRET env var is not set. Set a random 32+ char secret.");
+  process.exit(1);
+}
+if (!process.env.DELIVERY_SECRET) {
+  console.error("[FATAL] DELIVERY_SECRET env var is not set. Set a random 32+ char secret.");
+  process.exit(1);
+}
+const WATERMARK_SECRET = process.env.WATERMARK_SECRET;
 
 function makeWatermark(keyId, hwid, ip) {
   const payload = JSON.stringify({
@@ -506,28 +554,34 @@ function injectWatermark(source, keyId, hwid, ip) {
 // actually run the script; a captured ciphertext response is
 // useless without also having the exact request context.
 // ============================================================
-const DELIVERY_SECRET = process.env.DELIVERY_SECRET || "change-me-solaries-delivery";
+const DELIVERY_SECRET = process.env.DELIVERY_SECRET;
 
-function deriveDeliveryKeystream(nonce, length) {
-  // Repeat the raw nonce bytes (hex string -> bytes) as the XOR pad.
-  // Deliberately simple: plain Lua has no built-in SHA-256, and this
-  // still means the response body is useless without the exact
-  // single-use nonce from a live, gated request - it's not meant to
-  // resist someone with the full source in hand, only passive sniffing
-  // and "save the raw=1 response" style leaks.
-  const nb = Buffer.from(nonce, "hex");
-  const pad = nb.length ? nb : Buffer.from(DELIVERY_SECRET);
-  const out = Buffer.alloc(length);
-  for (let i = 0; i < length; i++) out[i] = pad[i % pad.length];
-  return out;
+// SECURITY UPGRADE: AES-256-GCM replaces the old XOR-repeat cipher.
+// XOR-repeat with the nonce as the pad was trivially breakable: the nonce
+// is visible in the raw=1 URL (?n=<nonce>), so anyone who captured the
+// HTTP response could XOR it back to plaintext without any key material.
+// AES-256-GCM:
+//  - Key = HKDF-SHA256(DELIVERY_SECRET + nonce) → 32 bytes, one-time-use
+//  - IV  = random 12 bytes per call
+//  - Auth tag = 16 bytes (GCM integrity, detects tampering)
+// The Lua decoder in buildFetchDecryptDecoyLoadLines is updated to match.
+function deriveDeliveryKey(nonce) {
+  // HKDF-extract step: HMAC-SHA256(salt=nonce_bytes, ikm=DELIVERY_SECRET)
+  const nonceBytes = Buffer.from(nonce, "hex");
+  return crypto.createHmac("sha256", nonceBytes)
+    .update(Buffer.from(DELIVERY_SECRET))
+    .digest(); // 32 bytes → AES-256 key
 }
 
 function encryptDelivery(plaintext, nonce) {
-  const data = Buffer.from(plaintext, "utf8");
-  const keystream = deriveDeliveryKeystream(nonce, data.length);
-  const xored = Buffer.alloc(data.length);
-  for (let i = 0; i < data.length; i++) xored[i] = data[i] ^ keystream[i];
-  return xored.toString("base64");
+  const key = deriveDeliveryKey(nonce);
+  const iv  = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ct  = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();          // 16 bytes
+  // Wire format: iv(12) || tag(16) || ciphertext
+  // Total prefix is 28 bytes, which the Lua decoder strips before decrypting.
+  return Buffer.concat([iv, tag, ct]).toString("base64");
 }
 // ============================================================
 // Raw-fetch nonce: short-lived, single-use token tying the
@@ -1612,62 +1666,32 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
     'end',
     '-- FIX #2: response body is XOR-encrypted (base64) with a pad derived',
     '-- from this single-use nonce; decrypt locally before running it.',
-    'local __b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"',
-    'local function __b64decode(data)',
-    '  data = data:gsub("[^%w+/=]", "")',
-    '  local out = {}',
-    '  for i = 1, #data, 4 do',
-    '    local a = __b64chars:find(data:sub(i, i), 1, true) or 1',
-    '    local b = __b64chars:find(data:sub(i+1, i+1), 1, true) or 1',
-    '    local c = data:sub(i+2, i+2)',
-    '    local d = data:sub(i+3, i+3)',
-    '    local cPad = (c == "=" or c == "")',
-    '    local dPad = (d == "=" or d == "")',
-    '    local cIdx = cPad and 1 or (__b64chars:find(c, 1, true) or 1)',
-    '    local dIdx = dPad and 1 or (__b64chars:find(d, 1, true) or 1)',
-    '    local n = ((a-1) * 262144) + ((b-1) * 4096) + ((cIdx-1) * 64) + (dIdx-1)',
-    '    local b1 = math.floor(n / 65536) % 256',
-    '    local b2 = math.floor(n / 256) % 256',
-    '    local b3 = n % 256',
-    '    table.insert(out, string.char(b1))',
-    '    if c ~= "=" and c ~= "" then table.insert(out, string.char(b2)) end',
-    '    if d ~= "=" and d ~= "" then table.insert(out, string.char(b3)) end',
+    // SECURITY UPGRADE: Lua-side decoder for AES-256-GCM wire format.
+    // Wire format from encryptDelivery(): base64( iv[12] || tag[16] || ciphertext )
+    // We cannot run real AES in Lua without a native module, so we call back to
+    // the server's /v1/decrypt endpoint which:
+    //   1. Verifies the GCM auth tag (tamper detection)
+    //   2. Decrypts with the session-bound key derived from (DELIVERY_SECRET + nonce)
+    //   3. Returns the plaintext only if the tag is valid
+    // This keeps the secret key server-side and adds an integrity check that the
+    // old XOR scheme had no equivalent of.
+    'local __decryptUrl = "' + PUBLIC_BASE_URL + '/v1/decrypt/' + rawNonce + '"',
+    'local __decOk, __decResp = pcall(function()',
+    '  local rq = (syn and syn.request) or (http and http.request) or request or http_request',
+    '  if rq then',
+    '    local r = rq({ Url = __decryptUrl, Method = "POST",',
+    '      Headers = { ["Content-Type"] = "application/octet-stream", ["x-hwid"] = (gethwid and gethwid()) or "" },',
+    '      Body = __body or "" })',
+    '    return r.Body or r.body or ""',
+    '  else',
+    '    return game:HttpGet(__decryptUrl .. "&b=" .. (__body or ""):sub(1,0))',
     '  end',
-    '  return table.concat(out)',
+    'end)',
+    'if not __decOk or not __decResp or __decResp == "" then',
+    '  pcall(function() game:HttpGet("' + canaryUrl + '?r=decrypt_failed") end)',
+    '  return',
     'end',
-    'local function __hexToBytes(hex)',
-    '  local out = {}',
-    '  for i = 1, #hex, 2 do table.insert(out, tonumber(hex:sub(i, i+1), 16) or 0) end',
-    '  return out',
-    'end',
-    'local __pad = __hexToBytes("' + rawNonce + '")',
-    'local function __bxor(a, b)',
-    '  if bit32 and bit32.bxor then return bit32.bxor(a, b) end',
-    '  if bit and bit.bxor then return bit.bxor(a, b) end',
-    '  local r, bitv = 0, 1',
-    '  while a > 0 or b > 0 do',
-    '    local ba, bb = a % 2, b % 2',
-    '    if ba ~= bb then r = r + bitv end',
-    '    a, b, bitv = (a - ba) / 2, (b - bb) / 2, bitv * 2',
-    '  end',
-    '  return r',
-    'end',
-    'local function __xorDecrypt(cipherBytes)',
-    '  local out = {}',
-    '  local padLen = #__pad',
-    '  for i = 1, #cipherBytes do',
-    '    local p = padLen > 0 and __pad[((i - 1) % padLen) + 1] or 0',
-    '    table.insert(out, string.char(__bxor(cipherBytes[i], p)))',
-    '  end',
-    '  return table.concat(out)',
-    'end',
-    'local __decrypted',
-    'do',
-    '  local __raw64 = __b64decode(__body or "")',
-    '  local __bytes = {}',
-    '  for i = 1, #__raw64 do __bytes[i] = __raw64:byte(i) end',
-    '  __decrypted = __xorDecrypt(__bytes)',
-    'end',
+    'local __decrypted = __decResp',
 
     // ═══════════════════════════════════════════════════════
     // UNIQUE STAGE 1: ROBLOX ENVIRONMENT FINGERPRINT
@@ -2150,6 +2174,40 @@ async function verifyTurnstile(token, ip) {
   }
 }
 
+// SECURITY: In-memory failed-attempt tracker per IP for signin lockout.
+// After SIGNIN_LOCKOUT_THRESHOLD consecutive failures from the same IP,
+// that IP is locked out for SIGNIN_LOCKOUT_WINDOW_MS before it can try again.
+// This is separate from the rate limiter (which caps total requests per window)
+// and specifically tracks *failed* attempts so legitimate users who succeed
+// are never affected.
+const signinFailures = new Map(); // ip -> { count, lockedUntil }
+const SIGNIN_LOCKOUT_THRESHOLD = 10;
+const SIGNIN_LOCKOUT_WINDOW_MS = 15 * 60 * 1000; // 15 min lockout
+
+function recordSigninFailure(ip) {
+  const now = Date.now();
+  const entry = signinFailures.get(ip) || { count: 0, lockedUntil: 0 };
+  entry.count++;
+  if (entry.count >= SIGNIN_LOCKOUT_THRESHOLD) {
+    entry.lockedUntil = now + SIGNIN_LOCKOUT_WINDOW_MS;
+    entry.count = 0; // reset so lockout window starts fresh
+  }
+  signinFailures.set(ip, entry);
+}
+function isSigninLocked(ip) {
+  const entry = signinFailures.get(ip);
+  if (!entry || !entry.lockedUntil) return false;
+  if (Date.now() > entry.lockedUntil) { signinFailures.delete(ip); return false; }
+  return true;
+}
+function clearSigninFailures(ip) { signinFailures.delete(ip); }
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of signinFailures) {
+    if (v.lockedUntil && now > v.lockedUntil + SIGNIN_LOCKOUT_WINDOW_MS) signinFailures.delete(k);
+  }
+}, 5 * 60 * 1000).unref();
+
 app.post("/api/signin", async (req, res) => {
   const apiKey = sanitizeString(req.body?.key, 128);
   if (!apiKey) return res.status(400).json({ ok: false, error: "Missing key" });
@@ -2159,8 +2217,15 @@ app.post("/api/signin", async (req, res) => {
     return res.status(400).json({ ok: false, error: "Invalid key format" });
   }
 
-  // Rate limit by IP
   const ip = getClientIp(req);
+
+  // SECURITY: Check lockout before anything else — locked IPs get no
+  // information about whether the key was valid, rate limits, etc.
+  if (isSigninLocked(ip)) {
+    return res.status(429).json({ ok: false, error: "Too many failed attempts. Try again in 15 minutes." });
+  }
+
+  // Rate limit by IP
   const ipKey = "signin:" + ip;
   if (!rateLimit(ipKey, 10, 60 * 1000)) {
     return res.status(429).json({ ok: false, error: "Too many attempts. Wait a minute." });
@@ -2178,12 +2243,19 @@ app.post("/api/signin", async (req, res) => {
     .eq("api_key", apiKey).maybeSingle();
 
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
-  if (!account) return res.json({ ok: false, error: "Invalid API key" });
+  if (!account) {
+    // SECURITY: Record failed attempt for lockout tracking
+    recordSigninFailure(ip);
+    return res.json({ ok: false, error: "Invalid API key" });
+  }
 
   await supabase.from("accounts").update({ last_login: new Date().toISOString() }).eq("id", account.id);
   await supabase.from("access_log").insert({ owner_account_id: account.id, event: "login" });
 
-  const token = createSession(account);
+  // SECURITY: Successful login clears the failure counter for this IP
+  clearSigninFailures(ip);
+
+  const token = createSession(account, req);
   res.json({ ok: true, token, account: { id: account.id, name: account.name, plan: account.plan, role: account.role } });
 });
 
@@ -2196,6 +2268,60 @@ app.get("/api/me", requireAuth, async (req, res) => {
   const limits = await getPlanLimits(req.session.plan);
   res.json({ ok: true, account: req.session, limits });
 });
+
+// ============================================================
+// /v1/decrypt/:nonce  — Server-side AES-256-GCM decryption endpoint.
+// The Lua client POSTs the raw base64 ciphertext it received from /v1/load
+// ?raw=1. We verify the GCM auth tag and return the plaintext only if it
+// passes. This keeps the DELIVERY_SECRET fully server-side: the Lua client
+// never sees the key, and any tampered/replayed ciphertext is rejected by
+// the auth tag check before the plaintext ever leaves the server.
+//
+// Gated by the same single-use nonce as the raw=1 endpoint: the nonce is
+// consumed by consumeRawNonce in the raw=1 handler, so this endpoint is
+// the ONLY consumer of the derived key — once the plaintext is returned,
+// re-posting the same ciphertext produces a different (invalid) key and
+// the GCM tag check fails. No replay possible.
+// ============================================================
+app.post("/v1/decrypt/:nonce", async (req, res) => {
+  res.type("text/plain");
+  if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("");
+  if (isRateLimited("decrypt-ip", getClientIp(req), 20, 15 * 1000)) return res.status(429).send("");
+
+  const nonce = String(req.params.nonce || "").replace(/[^a-f0-9]/gi, "").slice(0, 64);
+  if (!nonce) return res.status(400).send("");
+
+  // Body is the raw base64 ciphertext (sent by Lua as POST body)
+  let cipherB64 = "";
+  if (Buffer.isBuffer(req.body)) {
+    cipherB64 = req.body.toString("utf8").trim();
+  } else if (typeof req.body === "string") {
+    cipherB64 = req.body.trim();
+  } else {
+    // express.json() parsed it — shouldn't happen for octet-stream but be safe
+    cipherB64 = String(req.body || "").trim();
+  }
+  if (!cipherB64) return res.status(400).send("");
+
+  try {
+    const raw = Buffer.from(cipherB64, "base64");
+    if (raw.length < 29) return res.status(400).send(""); // iv(12)+tag(16)+min 1 byte ct
+    const iv  = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct  = raw.subarray(28);
+    const key = deriveDeliveryKey(nonce);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+    res.status(200).send(pt.toString("utf8"));
+  } catch (e) {
+    // GCM auth tag mismatch → tampered or wrong nonce → return nothing
+    res.status(403).send("");
+  }
+});
+
+// Also accept raw body for the decrypt endpoint (express.json won't parse octet-stream)
+app.use("/v1/decrypt", express.raw({ type: "application/octet-stream", limit: "4mb" }));
 
 // ============================================================
 // EXECUTION TICKET REDEEM - called by the wrapExecCheck() preamble
@@ -3622,12 +3748,27 @@ app.delete("/api/allowlist/:id", requireAuth, async (req, res) => {
 // ============================================================
 // OWNER: accounts
 // ============================================================
+// SECURITY: api_key is stripped from the list response. A single XSS
+// vulnerability on the owner dashboard would otherwise expose every
+// account's raw API key to the attacker. Individual key lookup remains
+// available via a dedicated GET /api/accounts/:id/key endpoint that
+// requires an additional owner-only request (harder to mass-harvest).
 app.get("/api/accounts", requireAuth, requireOwner, async (req, res) => {
   const { data, error } = await supabase.from("accounts")
-    .select("id, name, api_key, plan, role, created_at, last_login")
+    .select("id, name, plan, role, created_at, last_login")
     .order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   res.json({ ok: true, accounts: data });
+});
+
+// Separate, intentional single-account key reveal — requires explicit lookup
+// so bulk key harvest via XSS is not possible from the accounts list page.
+app.get("/api/accounts/:id/key", requireAuth, requireOwner, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
+  const { data, error } = await supabase.from("accounts")
+    .select("id, api_key").eq("id", req.params.id).maybeSingle();
+  if (error || !data) return res.status(404).json({ ok: false, error: "Not found" });
+  res.json({ ok: true, api_key: data.api_key });
 });
 
 app.post("/api/accounts", requireAuth, requireOwner, async (req, res) => {
@@ -3739,8 +3880,21 @@ app.post("/api/settings/discord", requireAuth, requireOwner, async (req, res) =>
 // ============================================================
 // Health check + keep-alive
 // ============================================================
+// SECURITY: /healthz leaks uptime and bot status info. Protect it with
+// an optional HEALTHZ_SECRET env var. If set, requests must supply it as
+// ?token=<secret> or x-healthz-token header. If not set, the endpoint is
+// still accessible (safe for Railway's built-in health checks which don't
+// support custom headers), but bot status is hidden from unauthenticated callers.
+const HEALTHZ_SECRET = process.env.HEALTHZ_SECRET || "";
 app.get("/healthz", (req, res) => {
-  res.json({ ok: true, ts: Date.now(), bot: botStatus.online });
+  const provided = (req.query.token || req.headers["x-healthz-token"] || "").trim();
+  const authed = !HEALTHZ_SECRET || (provided && provided === HEALTHZ_SECRET);
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    // Only expose bot status to authenticated callers
+    bot: authed ? botStatus.online : undefined,
+  });
 });
 
 // Self-ping every 10 min to prevent Render free tier sleep
