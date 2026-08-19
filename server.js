@@ -1132,7 +1132,7 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
 
 function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
   integrityMode = ["kick", "log", "off"].includes(integrityMode) ? integrityMode : "log";
-  return [
+  const stub = [
     "local function __s_rp(reason)",
     '  pcall(function() game:HttpGet("' + canaryUrl + '?r=" .. tostring(reason)) end)',
     "end",
@@ -1285,6 +1285,34 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
     "end",
     "local __fn2, __err2 = __ls(__body2)",
     "if __fn2 then __fn2() else warn(\"[S] err: \" .. tostring(__err2)) end",
+  ].join("\n");
+
+  // OBFUSCATE: encode the entire stage1 stub as a char array with
+  // per-request XOR mask. Attacker sees numbers, not readable Lua.
+  const mask = crypto.randomInt(1, 255);
+  const encoded = Buffer.from(stub, "utf-8");
+  const charCodes = [];
+  for (let i = 0; i < encoded.length; i++) {
+    charCodes.push((encoded[i] ^ ((mask + i) % 256)));
+  }
+  const chunks = [];
+  for (let i = 0; i < charCodes.length; i += 80) {
+    chunks.push(charCodes.slice(i, i + 80).join(","));
+  }
+
+  const r = () => "_" + crypto.randomBytes(3).toString("hex");
+  const tbl=r(), dec=r(), idx=r(), m=r(), tmp=r(), fn=r(), err=r();
+
+  return [
+    `local ${tbl}={${chunks.join(",")}}`,
+    `local ${dec}={}`,
+    `local ${m}=${mask}`,
+    `for ${idx}=1,#${tbl} do`,
+    `  local ${tmp}=bit32 and bit32.bxor(${tbl}[${idx}],(${m}+${idx}-1)%256) or (${tbl}[${idx}])`,
+    `  ${dec}[${idx}]=string.char(${tmp})`,
+    `end`,
+    `local ${fn},${err}=loadstring(table.concat(${dec}))`,
+    `if ${fn} then ${fn}() end`,
   ].join("\n");
 }
 
