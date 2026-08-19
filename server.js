@@ -1287,13 +1287,36 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
     "if __fn2 then __fn2() else warn(\"[S] err: \" .. tostring(__err2)) end",
   ].join("\n");
 
-  // OBFUSCATE: encode the entire stage1 stub as a char array with
-  // per-request XOR mask. Attacker sees numbers, not readable Lua.
-  const mask = crypto.randomInt(1, 255);
+  // OBFUSCATE: encode the entire stage1 stub as a char array with a
+  // per-request additive mask. Attacker sees numbers, not readable Lua.
+  //
+  // BUG FIX: the previous version used raw XOR mod 256 (encoded[i] ^
+  // ((mask+i) % 256)). XOR of two equal bytes is 0, so whenever a stub
+  // byte happened to equal the mask at that position, the encoded value
+  // came out as 0. On decode, string.char(0) then embedded a real NUL
+  // byte into the *middle of Lua source text* (not inside a string
+  // literal - inside actual code), which the Luau parser can't tokenize,
+  // causing exactly the intermittent "loadstring ... error" you saw
+  // (only intermittent because the mask is random per request - the
+  // whole stub has to avoid a collision by chance, so the odds are
+  // heavily against it for anything but a very short stub).
+  //
+  // Fix: use a modular-addition cipher confined to the range 1-255
+  // (0 is never a valid output) instead of a raw byte-range XOR:
+  //   e = (((p-1) + (k-1)) mod 255) + 1
+  // This is a bijection on {1..255} for a fixed per-index key k, so
+  // it's always invertible, and by construction can never produce 0 -
+  // no more embedded NUL bytes, no more intermittent parse failures.
+  // (Assumes the plaintext stub itself never contains a raw NUL byte,
+  // which holds here since it's built entirely from literal JS strings.)
+  const mask = crypto.randomInt(1, 255); // 1..254
   const encoded = Buffer.from(stub, "utf-8");
   const charCodes = [];
   for (let i = 0; i < encoded.length; i++) {
-    charCodes.push((encoded[i] ^ ((mask + i) % 256)));
+    const p = encoded[i];                  // 1..255 (never 0 - see note above)
+    const keyi = ((mask + i) % 255) + 1;    // 1..255, never 0
+    const e0 = ((p - 1) + (keyi - 1)) % 255; // 0..254
+    charCodes.push(e0 + 1);                 // 1..255, never 0
   }
   const chunks = [];
   for (let i = 0; i < charCodes.length; i += 80) {
@@ -1301,15 +1324,16 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
   }
 
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
-  const tbl=r(), dec=r(), idx=r(), m=r(), tmp=r(), fn=r(), err=r();
+  const tbl=r(), dec=r(), idx=r(), m=r(), ki=r(), p0=r(), fn=r(), err=r();
 
   return [
     `local ${tbl}={${chunks.join(",")}}`,
     `local ${dec}={}`,
     `local ${m}=${mask}`,
     `for ${idx}=1,#${tbl} do`,
-    `  local ${tmp}=bit32 and bit32.bxor(${tbl}[${idx}],(${m}+${idx}-1)%256) or (${tbl}[${idx}])`,
-    `  ${dec}[${idx}]=string.char(${tmp})`,
+    `  local ${ki}=((${m}+(${idx}-1))%255)+1`,
+    `  local ${p0}=((${tbl}[${idx}]-1)-(${ki}-1))%255`,
+    `  ${dec}[${idx}]=string.char(${p0}+1)`,
     `end`,
     `local ${fn},${err}=loadstring(table.concat(${dec}))`,
     `if ${fn} then ${fn}() end`,
