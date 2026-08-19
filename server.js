@@ -55,6 +55,21 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// SECURITY: Verify X-Requested-With header on all /api/* requests.
+// This prevents CSRF attacks where a malicious site tricks the browser
+// into making credentialed requests to the API. The SL.api() helper
+// always sends this header; a cross-origin form or fetch without CORS
+// cannot set custom headers, so its absence = not from our dashboard.
+// Exception: /api/signin doesn't require a session, protected by Turnstile.
+app.use("/api", (req, res, next) => {
+  if (req.method === "GET" || req.path === "/signin") return next();
+  const xrw = req.headers["x-requested-with"] || "";
+  if (xrw !== "XMLHttpRequest") {
+    return res.status(403).json({ ok: false, error: "Forbidden" });
+  }
+  next();
+});
+
 // SECURITY: Enforce Content-Type: application/json on all mutating
 // API requests. Without this, an attacker can submit requests with
 // Content-Type: text/plain which bypasses express.json() parsing
@@ -2188,7 +2203,12 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
 // that shouldn't render anything (e.g. plain no_gui scripts), so those
 // projects get the exact same anti-dump protection as the Loading GUI
 // instead of the old direct/no-split delivery.
-function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv) {
+function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv, prebuiltAssembler) {
+  // If a pre-built assembler is passed (from buildSecureDelivery), use it directly.
+  // Otherwise fall back to old fetch-decrypt pipeline for backward compat.
+  const payloadLines = prebuiltAssembler
+    ? [prebuiltAssembler]
+    : buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv);
   return [
     '--[[ PROPRIETARY ]]',
     '',
@@ -2263,9 +2283,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '  end)',
     'end)',
     '',
-    ...buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv),
-    '',
-    '-- Remove indicator after script loads',
+    ...payloadLines,
     'pcall(function() if __solIndicator then __solIndicator:Destroy() end end)',
     ''
   ].join("\n");
@@ -2520,11 +2538,71 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
 }
 
 // ============================================================
-// AUTH
+// UNIVERSAL SECURE DELIVERY HELPER
 // ============================================================
+// Applies Strategy A (HWID-bound token) + Strategy B (chunk split)
+// to ALL delivery modes: no_gui, loading, key_gui, keyless, keyed.
+//
+// Previously A+B only fired on the raw=1 path. Every other mode
+// (wrapLoadingGui, wrapHeadlessDecoyDelay, wrapKeyGui, buildStage1Stub)
+// delivered the source as a single encrypted blob that a hooked
+// loadstring could capture in one grab.
+//
+// This helper is called from every delivery branch and returns the
+// final Lua string to send to the client. The caller just needs to
+// provide: source, delivery context (hwid/pid/gp), and mode params.
 // ============================================================
-// Input sanitization helper
-// ============================================================
+async function buildSecureDelivery({
+  source,           // plaintext Lua source
+  scriptSlug,
+  key,
+  hwid,
+  pid,              // Roblox UserId string
+  gp,               // Roblox PlaceId string
+  canaryUrl,
+  verifyUrl,        // exec ticket URL (from issueRawNonce)
+  integrityMode,
+  strictGenv,
+  nonceTtlMs,
+  wrapperFn,        // optional: function(assemblerLua) -> string  for GUI wrapping
+}) {
+  // --- Strategy A: Mint HWID-bound identity token ---
+  const idTok = issueIdToken(hwid, pid, gp);
+  const idPreamble = buildIdCheckPreamble(idTok, canaryUrl, integrityMode);
+
+  // --- Build exec check wrapper around source+idPreamble ---
+  const sourceWithId = idPreamble + source;
+  const execResult   = wrapExecCheck(sourceWithId, verifyUrl);
+  const runtimeKey   = execResult.runtimeKey;
+
+  // --- Strategy B: Split into 3-7 chunks ---
+  const numChunks = 3 + crypto.randomInt(5);
+  const chunks    = splitAndEncryptSource(execResult.code, scriptSlug, key || "", numChunks);
+
+  // --- Build chunk assembler Lua ---
+  const assembler = buildChunkAssembler(
+    chunks,
+    PUBLIC_BASE_URL,
+    canaryUrl,
+    idPreamble,
+    verifyUrl,
+    runtimeKey,
+    integrityMode,
+  );
+
+  // --- Wrap assembler in integrity checks ---
+  const wrappedAssembler = integrityMode === "off"
+    ? assembler
+    : wrapIntegrityCheck(assembler, canaryUrl, integrityMode === "kick");
+
+  // --- Optional GUI wrapper (loading screen, key GUI, etc.) ---
+  if (typeof wrapperFn === "function") {
+    return wrapperFn(wrappedAssembler);
+  }
+  return wrappedAssembler;
+}
+
+
 function sanitizeString(val, maxLen) {
   if (typeof val !== "string") return "";
   return val.trim().slice(0, maxLen || 512);
@@ -3035,8 +3113,20 @@ async function handleLoadRoute(req, res) {
     if (!key) {
       if (script.player_ui === "key_gui") {
         const __cToken = issueCanaryToken(scriptSlug, "");
-        const __cUrl = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
-        return res.status(200).send(wrapKeyGui(script.source || "-- empty script", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck));
+        const __cUrl   = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
+        const __execNonce0 = issueRawNonce(scriptSlug, "", __nonceTtlMs);
+        const __verifyUrl0 = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce0;
+        const __pid0 = String(req.query.px || "").trim();
+        const __gp0  = String(req.query.gp || "").trim();
+        const __secured0 = await buildSecureDelivery({
+          source: script.source || "-- empty script",
+          scriptSlug, key: "", hwid, pid: __pid0, gp: __gp0,
+          canaryUrl: __cUrl, verifyUrl: __verifyUrl0,
+          integrityMode: __integrityMode, strictGenv: __strictGenvCheck,
+          nonceTtlMs: __nonceTtlMs,
+          wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck),
+        });
+        return res.status(200).send(__secured0);
       }
       return block("missing key", 401, null, projectId, script.id);
     }
@@ -3243,71 +3333,61 @@ async function handleLoadRoute(req, res) {
     const __enc = encryptDelivery(__wrappedAssembler, __n);
     return res.status(200).send(__enc);
   }
+
+  // ── Shared delivery context for all remaining modes ──────────────────
+  const __dpid = String(req.query.px || "").trim();
+  const __dgp  = String(req.query.gp || "").trim();
+  const __dCanaryToken = issueCanaryToken(scriptSlug, key || "");
+  const __dCanaryUrl   = PUBLIC_BASE_URL + "/v1/canary/" + __dCanaryToken;
+  const __dExecNonce   = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
+  const __dVerifyUrl   = PUBLIC_BASE_URL + "/v1/verify/" + __dExecNonce;
+
+  // key_gui without key (keyless or key entered via GUI on next request)
   if (script.player_ui === "key_gui" && !key) {
-    const __cToken0 = issueCanaryToken(scriptSlug, "");
-    const __cUrl0 = PUBLIC_BASE_URL + "/v1/canary/" + __cToken0;
-    return res.status(200).send(wrapKeyGui(__raw, scriptSlug, PUBLIC_BASE_URL, __opts, __cUrl0, __integrityMode, __strictGenvCheck));
+    const __secured_kg = await buildSecureDelivery({
+      source: __raw, scriptSlug, key: "", hwid, pid: __dpid, gp: __dgp,
+      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
+      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
+      wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck),
+    });
+    return res.status(200).send(__secured_kg);
   }
+
+  // loading GUI mode — A+B wrapped, GUI is cosmetic shell only
   if (script.player_ui === "loading") {
-    const __rawNonce = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
-    const _z9 = String(req.query.px || "").trim();
-    const __rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug + "?key=" + encodeURIComponent(key || "") + "&px=" + encodeURIComponent(_z9) + "&raw=1&n=" + __rawNonce;
-    const __cToken1 = issueCanaryToken(scriptSlug, key || "");
-    const __cUrl1 = PUBLIC_BASE_URL + "/v1/canary/" + __cToken1;
-    return res.status(200).send(wrapLoadingGui(__raw, __opts, __rawUrl, __rawNonce, __cUrl1, __integrityMode, __strictGenvCheck));
+    const __secured_lg = await buildSecureDelivery({
+      source: __raw, scriptSlug, key: key || "", hwid, pid: __dpid, gp: __dgp,
+      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
+      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
+      wrapperFn: (asm) => wrapLoadingGui(asm, __opts, "", "", __dCanaryUrl, __integrityMode, __strictGenvCheck),
+    });
+    return res.status(200).send(__secured_lg);
   }
-  // Plain delivery: mint a short-lived, single-use "execution ticket" nonce
-  // and prepend a tiny preamble that must redeem it via /v1/verify within
-  // the project's configured nonce TTL (falls back to RAW_NONCE_TTL_MS) of
-  // THIS load response being generated. A copy of the delivered script
-  // saved and re-run later (outside the normal loadstring(game:HttpGet(...))()
-  // flow) will fail the redeem and kick the player instead of running.
-  {
-    const __canaryToken = issueCanaryToken(scriptSlug, key || "");
-    const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
-
-    // Stage-split: a hooked getgenv().loadstring installed client-side
-    // BEFORE our code ever runs will dump whatever the FIRST loadstring
-    // call receives. So the first thing we hand back must not be the
-    // real script. Gate it behind its own single-use token (reusing the
-    // raw-nonce store) so the stage2 URL can't be scraped/replayed on
-    // its own either.
-    if (req.query.stage2) {
-      const __s2 = String(req.query.s2 || "");
-      if (!consumeRawNonce(__s2, scriptSlug, key || "")) {
-        if (global.__solScrapeAlert) {
-          global.__solScrapeAlert(accountId, "stage2_replay", {
-            scriptSlug, ip, hwid, key,
-            reason: "stage2=1 hit with invalid/expired/used token",
-          });
-        }
-        return block("missing or expired session token", 401, null, projectId, script.id);
+  // no_gui / default — stage-split + full A+B protection
+  if (req.query.stage2) {
+    const __s2 = String(req.query.s2 || "");
+    if (!consumeRawNonce(__s2, scriptSlug, key || "")) {
+      if (global.__solScrapeAlert) {
+        global.__solScrapeAlert(accountId, "stage2_replay", {
+          scriptSlug, ip, hwid, key,
+          reason: "stage2=1 hit with invalid/expired/used token",
+        });
       }
-      const __execNonce = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
-      const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce;
-      // FIX: previously this embedded the real script as literal text in
-      // THIS single stage2 response (only wrapped with check code, no
-      // loadstring split) - meaning a getgenv().loadstring override
-      // captured everything in one grab the moment stage-1's own
-      // loadstring(stage2Body)() call ran, regardless of any checks. Now
-      // reuses the same decoy/delay/encrypted-fetch pipeline as the
-      // Loading GUI: this response is a short shell that runs a decoy
-      // first, waits, then fetches the REAL content over a fresh,
-      // separately-encrypted network call - so the real script text is
-      // never present in what gets captured here.
-      const __z9b = String(req.query.px || "").trim();
-      const __rawUrl2 = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
-        + "?key=" + encodeURIComponent(key || "") + "&px=" + encodeURIComponent(__z9b)
-        + "&raw=1&n=" + __execNonce;
-      return res.status(200).send(wrapHeadlessDecoyDelay(__rawUrl2, __execNonce, __canaryUrl, __integrityMode, __strictGenvCheck));
+      return block("missing or expired session token", 401, null, projectId, script.id);
     }
-
-    const __s2Token = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
-    const __stage2Url = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
-      + "?key=" + encodeURIComponent(key || "")
-      + "&stage2=1&s2=" + encodeURIComponent(__s2Token);
-    return res.status(200).send(buildStage1Stub(__stage2Url, __canaryUrl, __strictGenvCheck, __integrityMode));
+    const __secured_s2 = await buildSecureDelivery({
+      source: __raw, scriptSlug, key: key || "", hwid, pid: __dpid, gp: __dgp,
+      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
+      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
+      wrapperFn: (asm) => wrapHeadlessDecoyDelay("", "", __dCanaryUrl, __integrityMode, __strictGenvCheck, asm),
+    });
+    return res.status(200).send(__secured_s2);
   }
+  const __s2Token = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
+  const __stage2Url = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
+    + "?key=" + encodeURIComponent(key || "")
+    + "&stage2=1&s2=" + encodeURIComponent(__s2Token);
+  return res.status(200).send(buildStage1Stub(__stage2Url, __dCanaryUrl, __strictGenvCheck, __integrityMode));
 }
 app.get("/v1/load/:script_slug", handleLoadRoute);
 
@@ -3854,11 +3934,23 @@ async function loadScriptOwned(scriptId, accountId) {
 app.get("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
   if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
+  // SECURITY: source is NOT included in the list — only metadata.
+  // A single XSS or session-theft would otherwise expose every script's
+  // full source code in one request. Source is fetched separately only
+  // when the editor is opened (GET /api/scripts/:id/source).
   const { data, error } = await supabase.from("scripts")
-    .select("id, name, description, slug, protection, key_mode, size_bytes, version, enabled, created_at, updated_at")
+    .select("id, name, description, slug, protection, key_mode, size_bytes, version, enabled, created_at, updated_at, player_ui, game_id, same_device, silent_mode, fast_mode, syntax_check")
     .eq("project_id", req.params.pid).order("created_at", { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: "Server error" });
   res.json({ ok: true, scripts: data });
+});
+
+// Dedicated source endpoint — requires explicit fetch, not bundled with list
+app.get("/api/scripts/:id/source", requireAuth, async (req, res) => {
+  if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
+  const existing = await loadScriptOwned(req.params.id, req.session.account_id);
+  if (!existing) return res.status(404).json({ ok: false, error: "Script not found" });
+  res.json({ ok: true, source: existing.source || "" });
 });
 
 app.post("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
