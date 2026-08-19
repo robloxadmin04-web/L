@@ -1132,7 +1132,7 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
 
 function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
   integrityMode = ["kick", "log", "off"].includes(integrityMode) ? integrityMode : "log";
-  const stub = [
+  return [
     "local function __s_rp(reason)",
     '  pcall(function() game:HttpGet("' + canaryUrl + '?r=" .. tostring(reason)) end)',
     "end",
@@ -1233,19 +1233,7 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
       // Neutralize dump tools + extraction functions — ONLY in kick mode
       ...(integrityMode === "kick" ? [
         "pcall(function()",
-        // NOTE: cloneref/newcclosure/clonefunction/getthreadidentity/
-        // setthreadidentity were previously in this list and got
-        // neutered too. Those are NOT dump/extraction tools - they're
-        // general-purpose executor utilities that lots of legitimate
-        // UI and networking libraries rely on for normal operation
-        // (e.g. cloneref-wrapped Instances, newcclosure-wrapped
-        // callbacks around RemoteEvent:FireServer). Blanking them to
-        // return '' meant any such library got a string back where it
-        // expected an Instance/function, producing exactly this class
-        // of error: 'attempt to call missing method FindFirstChild of
-        // string' / 'attempt to index nil with FireServer'. Only true
-        // dump/extraction primitives stay in this list.
-        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash'}",
+        "  local __df = {'decompile','getscriptbytecode','saveinstance','getscripts','getrunningscripts','getloadedmodules','dumpstring','getprotos','getconstants','getupvalues','getscriptclosure','getscripthash','cloneref','getthreadidentity','setthreadidentity','newcclosure','clonefunction'}",
         "  local __ge = type(getgenv) == \"function\" and getgenv() or _G",
         "  for _, n in ipairs(__df) do if type(__ge[n]) == \"function\" then __ge[n] = function() return '' end end end",
         "end)",
@@ -1297,58 +1285,6 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
     "end",
     "local __fn2, __err2 = __ls(__body2)",
     "if __fn2 then __fn2() else warn(\"[S] err: \" .. tostring(__err2)) end",
-  ].join("\n");
-
-  // OBFUSCATE: encode the entire stage1 stub as a char array with a
-  // per-request additive mask. Attacker sees numbers, not readable Lua.
-  //
-  // BUG FIX: the previous version used raw XOR mod 256 (encoded[i] ^
-  // ((mask+i) % 256)). XOR of two equal bytes is 0, so whenever a stub
-  // byte happened to equal the mask at that position, the encoded value
-  // came out as 0. On decode, string.char(0) then embedded a real NUL
-  // byte into the *middle of Lua source text* (not inside a string
-  // literal - inside actual code), which the Luau parser can't tokenize,
-  // causing exactly the intermittent "loadstring ... error" you saw
-  // (only intermittent because the mask is random per request - the
-  // whole stub has to avoid a collision by chance, so the odds are
-  // heavily against it for anything but a very short stub).
-  //
-  // Fix: use a modular-addition cipher confined to the range 1-255
-  // (0 is never a valid output) instead of a raw byte-range XOR:
-  //   e = (((p-1) + (k-1)) mod 255) + 1
-  // This is a bijection on {1..255} for a fixed per-index key k, so
-  // it's always invertible, and by construction can never produce 0 -
-  // no more embedded NUL bytes, no more intermittent parse failures.
-  // (Assumes the plaintext stub itself never contains a raw NUL byte,
-  // which holds here since it's built entirely from literal JS strings.)
-  const mask = crypto.randomInt(1, 255); // 1..254
-  const encoded = Buffer.from(stub, "utf-8");
-  const charCodes = [];
-  for (let i = 0; i < encoded.length; i++) {
-    const p = encoded[i];                  // 1..255 (never 0 - see note above)
-    const keyi = ((mask + i) % 255) + 1;    // 1..255, never 0
-    const e0 = ((p - 1) + (keyi - 1)) % 255; // 0..254
-    charCodes.push(e0 + 1);                 // 1..255, never 0
-  }
-  const chunks = [];
-  for (let i = 0; i < charCodes.length; i += 80) {
-    chunks.push(charCodes.slice(i, i + 80).join(","));
-  }
-
-  const r = () => "_" + crypto.randomBytes(3).toString("hex");
-  const tbl=r(), dec=r(), idx=r(), m=r(), ki=r(), p0=r(), fn=r(), err=r();
-
-  return [
-    `local ${tbl}={${chunks.join(",")}}`,
-    `local ${dec}={}`,
-    `local ${m}=${mask}`,
-    `for ${idx}=1,#${tbl} do`,
-    `  local ${ki}=((${m}+(${idx}-1))%255)+1`,
-    `  local ${p0}=((${tbl}[${idx}]-1)-(${ki}-1))%255`,
-    `  ${dec}[${idx}]=string.char(${p0}+1)`,
-    `end`,
-    `local ${fn},${err}=loadstring(table.concat(${dec}))`,
-    `if ${fn} then ${fn}() end`,
   ].join("\n");
 }
 
