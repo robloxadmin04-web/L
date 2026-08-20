@@ -2143,7 +2143,13 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
   // If a pre-built assembler is passed (from buildSecureDelivery), use it directly.
   // Otherwise fall back to old fetch-decrypt pipeline for backward compat.
   const payloadLines = prebuiltAssembler
-    ? [prebuiltAssembler]
+    ? (() => {
+        const safeSource = prebuiltAssembler.replace(/\]=*\]/g, (m) => "]" + "=".repeat(m.length - 2 + 1) + "]");
+        return [
+          'local __lfn, __lerr = loadstring([==[' + safeSource + ']==])',
+          'if __lfn then __lfn() else warn("[S] err: " .. tostring(__lerr)) end',
+        ];
+      })()
     : buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv);
   return [
     '--[[ PROPRIETARY ]]',
@@ -2315,7 +2321,18 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  gui:Destroy()',
     'end)',
     'if not __s_ok then warn("[S] err: "..tostring(__s_er)) end',
-    ...buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv),
+    // When called from buildSecureDelivery, `source` is the pre-built chunk
+    // assembler (plain Lua). Embed it as a long-string and loadstring it directly.
+    // When called the old way (rawUrl set), use the fetch-decrypt pipeline.
+    ...(rawUrl
+      ? buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv)
+      : (() => {
+          const safeSource = source.replace(/\]=*\]/g, (m) => "]" + "=".repeat(m.length - 2 + 1) + "]");
+          return [
+            'local __lfn, __lerr = loadstring([==[' + safeSource + ']==])',
+            'if __lfn then __lfn() else warn("[S] err: " .. tostring(__lerr)) end',
+          ];
+        })()),
     ''
   ].join("\n");
 }
@@ -2324,7 +2341,20 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
   canaryUrl = canaryUrl || "";
   opts = opts || {};
   const warnKey = opts.silent ? "" : 'if not __s_ok then warn("[S] err:", __s_er) end\n';
-  const warnLoad = opts.silent ? 'if fn then fn() end' : 'if fn then fn() else warn("[S] err:", lerr) end';
+
+  // IMPORTANT: `source` here is the pre-built chunk assembler (plain Lua, not encrypted).
+  // We embed it as a long-string literal [==[...]==] so that after the key GUI
+  // verifies the key server-side, we just loadstring the embedded assembler directly
+  // rather than making a second HTTP request (which would return AES ciphertext → broken).
+  // The assembler itself fetches+decrypts the real script in chunks, so nothing
+  // sensitive is exposed here — it's just the orchestration code.
+  const safeSource = source.replace(/\]=*\]/g, (m) => {
+    // Escape any ]=*] sequences that would prematurely close the long string
+    const eqCount = m.length - 2;
+    return "]" + "=".repeat(eqCount + 1) + "]";
+  });
+
+
   return [
     '--[[ PROPRIETARY ]]',
     '',
@@ -2783,6 +2813,54 @@ app.get("/v1/idcheck/:token", async (req, res) => {
     }).catch(() => {});
   }
   res.status(200).send(ok ? "1" : "0");
+});
+
+// ============================================================
+// /v1/keycheck/:slug — Lightweight key verify for key_gui mode.
+// The key GUI submits the user's key here instead of re-fetching
+// the full /v1/load pipeline. Returns "ok" or an error string.
+// No script source is returned — just a verdict.
+// ============================================================
+app.get("/v1/keycheck/:slug", async (req, res) => {
+  res.type("text/plain");
+  if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("Forbidden");
+  if (isRateLimited("keycheck-ip", getClientIp(req), 10, 60 * 1000)) return res.status(429).send("Too many attempts");
+
+  const scriptSlug = sanitizeString(String(req.params.slug || ""), 64);
+  const key        = sanitizeString(String(req.query.key || ""), 128);
+  const hwid       = getHwid(req);
+
+  if (!scriptSlug || !key) return res.status(400).send("Missing params");
+
+  const { data: script } = await supabase.from("scripts")
+    .select("id, key_mode, enabled, project_id, projects!inner(status, owner_account_id)")
+    .eq("slug", scriptSlug).maybeSingle();
+
+  if (!script || !script.enabled || script.projects.status === "paused")
+    return res.status(404).send("Script not found");
+
+  if (script.key_mode !== "keyed") return res.status(200).send("ok");
+
+  const { data: keyRow } = await supabase.from("keys")
+    .select("id, expires_at, hwid, revoked, paused")
+    .eq("script_id", script.id).eq("key", key).maybeSingle();
+
+  if (!keyRow)            return res.status(200).send("Invalid key");
+  if (keyRow.revoked)     return res.status(200).send("Key has been revoked");
+  if (keyRow.paused)      return res.status(200).send("Key is paused");
+  if (keyRow.expires_at && new Date(keyRow.expires_at) < new Date())
+                          return res.status(200).send("Key has expired");
+
+  // HWID check
+  if (keyRow.hwid && hwid && keyRow.hwid !== hwid)
+    return res.status(200).send("Key is bound to another device");
+
+  // Bind HWID if not yet bound
+  if (!keyRow.hwid && hwid) {
+    await supabase.from("keys").update({ hwid }).eq("id", keyRow.id);
+  }
+
+  res.status(200).send("ok");
 });
 
 // ============================================================
