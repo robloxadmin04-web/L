@@ -826,6 +826,9 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, runtimeKey, integrityMo
 
   lines.push(
     `-- [ASSEMBLE COMPLETE — RUN]`,
+    `local ${sha256fnV} = (function()`,
+    sha256Lua(),
+    `end)()`,
     `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
     `if not ${fnV} then warn("[S] err: "..tostring(${errV})); return end`,
     `local ${okV}r, ${wrappedV} = pcall(${fnV})`,
