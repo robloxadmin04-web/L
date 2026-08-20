@@ -2484,51 +2484,60 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
 // provide: source, delivery context (hwid/pid/gp), and mode params.
 // ============================================================
 async function buildSecureDelivery({
-  source,           // plaintext Lua source
+  source,
   scriptSlug,
   key,
   hwid,
-  pid,              // Roblox UserId string
-  gp,               // Roblox PlaceId string
+  pid,
+  gp,
   canaryUrl,
-  verifyUrl,        // exec ticket URL (from issueRawNonce)
+  verifyUrl,
   integrityMode,
   strictGenv,
   nonceTtlMs,
-  wrapperFn,        // optional: function(assemblerLua) -> string  for GUI wrapping
+  wrapperFn,
 }) {
-  // --- Strategy A: Mint HWID-bound identity token ---
+  // Strategy A: HWID-bound identity token
   const idTok = issueIdToken(hwid, pid, gp);
   const idPreamble = buildIdCheckPreamble(idTok, canaryUrl, integrityMode);
 
-  // --- Build exec check wrapper around source+idPreamble ---
+  // Wrap source with exec check + id preamble
   const sourceWithId = idPreamble + source;
   const execResult   = wrapExecCheck(sourceWithId, verifyUrl);
   const runtimeKey   = execResult.runtimeKey;
 
-  // --- Strategy B: Split into 3-7 chunks ---
+  // Strategy B: Split into 3-7 chunks
   const numChunks = 3 + crypto.randomInt(5);
   const chunks    = splitAndEncryptSource(execResult.code, scriptSlug, key || "", numChunks);
 
-  // --- Build chunk assembler Lua ---
+  // Build chunk assembler Lua
   const assembler = buildChunkAssembler(
-    chunks,
-    PUBLIC_BASE_URL,
-    canaryUrl,
-    idPreamble,
-    verifyUrl,
-    runtimeKey,
-    integrityMode,
+    chunks, PUBLIC_BASE_URL, canaryUrl,
+    idPreamble, verifyUrl, runtimeKey, integrityMode,
   );
 
-  // --- Wrap assembler in integrity checks ---
+  // Wrap assembler in integrity checks
   const wrappedAssembler = integrityMode === "off"
     ? assembler
     : wrapIntegrityCheck(assembler, canaryUrl, integrityMode === "kick");
 
-  // --- Optional GUI wrapper (loading screen, key GUI, etc.) ---
+  // Issue a rawNonce and encrypt the wrapped assembler under it.
+  // Store the encrypted payload on the nonce entry so the raw=1
+  // handler can return it directly without re-building anything.
+  const rawNonce = issueRawNonce(scriptSlug, key || "", nonceTtlMs);
+  const encrypted = encryptDelivery(wrappedAssembler, rawNonce);
+  const nonceEntry = rawNonces.get(rawNonce);
+  if (nonceEntry) nonceEntry.payload = encrypted;
+
+  const rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
+    + "?key=" + encodeURIComponent(key || "")
+    + "&px=" + encodeURIComponent(pid || "")
+    + "&raw=1&n=" + rawNonce;
+
+  // wrapperFn receives (rawUrl, rawNonce) so wrapLoadingGui /
+  // wrapHeadlessDecoyDelay can use them exactly as they always did.
   if (typeof wrapperFn === "function") {
-    return wrapperFn(wrappedAssembler);
+    return wrapperFn(rawUrl, rawNonce);
   }
   return wrappedAssembler;
 }
@@ -3048,19 +3057,9 @@ async function handleLoadRoute(req, res) {
       if (script.player_ui === "key_gui") {
         const __cToken = issueCanaryToken(scriptSlug, "");
         const __cUrl   = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
-        const __execNonce0 = issueRawNonce(scriptSlug, "", __nonceTtlMs);
-        const __verifyUrl0 = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce0;
-        const __pid0 = String(req.query.px || "").trim();
-        const __gp0  = String(req.query.gp || "").trim();
-        const __secured0 = await buildSecureDelivery({
-          source: script.source || "-- empty script",
-          scriptSlug, key: "", hwid, pid: __pid0, gp: __gp0,
-          canaryUrl: __cUrl, verifyUrl: __verifyUrl0,
-          integrityMode: __integrityMode, strictGenv: __strictGenvCheck,
-          nonceTtlMs: __nonceTtlMs,
-          wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck),
-        });
-        return res.status(200).send(__secured0);
+        return res.status(200).send(
+          wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck)
+        );
       }
       return block("missing key", 401, null, projectId, script.id);
     }
@@ -3197,9 +3196,9 @@ async function handleLoadRoute(req, res) {
   // so a captured raw=1 URL can't be replayed on its own later.
   if (req.query.raw) {
     const __n = String(req.query.n || "");
+    const __nonceEntry = rawNonces.get(__n);
+
     if (!consumeRawNonce(__n, scriptSlug, key || "")) {
-      // This is the clearest scraping signal: someone replayed or manually
-      // crafted a raw=1 URL without going through the normal loader flow.
       if (global.__solScrapeAlert) {
         global.__solScrapeAlert(accountId, __n ? "nonce_replay" : "raw_no_key", {
           scriptSlug, ip, hwid, key,
@@ -3209,6 +3208,12 @@ async function handleLoadRoute(req, res) {
         });
       }
       return block("missing or expired session token", 401, null, projectId, script.id);
+    }
+
+    // If buildSecureDelivery pre-built and stored an encrypted payload
+    // on this nonce entry, return it directly.
+    if (__nonceEntry && __nonceEntry.payload) {
+      return res.status(200).send(__nonceEntry.payload);
     }
     const __wm = injectWatermark(__raw, key ? (await supabase.from("keys").select("id").eq("key", key).maybeSingle()).data?.id : null, hwid, ip);
 
@@ -3276,28 +3281,25 @@ async function handleLoadRoute(req, res) {
   const __dExecNonce   = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
   const __dVerifyUrl   = PUBLIC_BASE_URL + "/v1/verify/" + __dExecNonce;
 
-  // key_gui without key (keyless or key entered via GUI on next request)
+  // key_gui without key — shell only, no source pre-built
   if (script.player_ui === "key_gui" && !key) {
-    const __secured_kg = await buildSecureDelivery({
-      source: __raw, scriptSlug, key: "", hwid, pid: __dpid, gp: __dgp,
-      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
-      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
-      wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck),
-    });
-    return res.status(200).send(__secured_kg);
+    return res.status(200).send(
+      wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck)
+    );
   }
 
-  // loading GUI mode — A+B wrapped, GUI is cosmetic shell only
+  // loading GUI mode
   if (script.player_ui === "loading") {
     const __secured_lg = await buildSecureDelivery({
       source: __raw, scriptSlug, key: key || "", hwid, pid: __dpid, gp: __dgp,
       canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
       integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
-      wrapperFn: (asm) => wrapLoadingGui(asm, __opts, "", "", __dCanaryUrl, __integrityMode, __strictGenvCheck),
+      wrapperFn: (rawUrl, rawNonce) => wrapLoadingGui(__raw, __opts, rawUrl, rawNonce, __dCanaryUrl, __integrityMode, __strictGenvCheck),
     });
     return res.status(200).send(__secured_lg);
   }
-  // no_gui / default — stage-split + full A+B protection
+
+  // no_gui / default — stage-split
   if (req.query.stage2) {
     const __s2 = String(req.query.s2 || "");
     if (!consumeRawNonce(__s2, scriptSlug, key || "")) {
@@ -3313,7 +3315,7 @@ async function handleLoadRoute(req, res) {
       source: __raw, scriptSlug, key: key || "", hwid, pid: __dpid, gp: __dgp,
       canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
       integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
-      wrapperFn: (asm) => wrapHeadlessDecoyDelay("", "", __dCanaryUrl, __integrityMode, __strictGenvCheck, asm),
+      wrapperFn: (rawUrl, rawNonce) => wrapHeadlessDecoyDelay(rawUrl, rawNonce, __dCanaryUrl, __integrityMode, __strictGenvCheck),
     });
     return res.status(200).send(__secured_s2);
   }
