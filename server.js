@@ -798,16 +798,13 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, runtimeKey, integrityMo
   // which is why loadstring always failed with "Incomplete statement" —
   // it was parsing encrypted bytes, not Lua source.
   const rqV = r();
-  lines.push(`local ${rqV} = (syn and syn.request) or (http and http.request) or request or http_request`);
 
   for (let i = 0; i < chunks.length; i++) {
     const pv = partVars[i];
     const nonce = chunks[i].nonce;
     const chunkUrl = baseUrl + "/v1/chunk/" + nonce;
-    const decryptUrl = baseUrl + "/v1/decrypt/" + nonce;
-    const cipherV = r();
     lines.push(
-      // 1) fetch the encrypted chunk
+      // fetch plaintext chunk — /v1/chunk decrypts server-side before returning
       `local ${okV}${i}, ${resV}${i} = pcall(function()`,
       `  return game:HttpGet("${chunkUrl}")`,
       `end)`,
@@ -815,22 +812,7 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, runtimeKey, integrityMo
       `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_fail_${i}") end)`,
       `  return`,
       `end`,
-      `local ${cipherV} = ${resV}${i}`,
-      // 2) decrypt it server-side via POST /v1/decrypt/:nonce
-      `local ${okV}d${i}, ${resV}d${i} = pcall(function()`,
-      `  if ${rqV} then`,
-      `    local __r = ${rqV}({ Url = "${decryptUrl}", Method = "POST",`,
-      `      Headers = { ["Content-Type"] = "application/octet-stream" },`,
-      `      Body = ${cipherV} })`,
-      `    return __r.Body or __r.body`,
-      `  end`,
-      `  return nil`,
-      `end)`,
-      `if not ${okV}d${i} or not ${resV}d${i} or ${resV}d${i} == "" then`,
-      `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_decrypt_fail_${i}") end)`,
-      `  return`,
-      `end`,
-      `local ${pv} = ${resV}d${i}`,
+      `local ${pv} = ${resV}${i}`,
       `${assembledVar} = ${assembledVar} .. ${pv}`,
     );
   }
@@ -2143,13 +2125,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
   // If a pre-built assembler is passed (from buildSecureDelivery), use it directly.
   // Otherwise fall back to old fetch-decrypt pipeline for backward compat.
   const payloadLines = prebuiltAssembler
-    ? (() => {
-        const safeSource = prebuiltAssembler.replace(/\]=*\]/g, (m) => "]" + "=".repeat(m.length - 2 + 1) + "]");
-        return [
-          'local __lfn, __lerr = loadstring([==[' + safeSource + ']==])',
-          'if __lfn then __lfn() else warn("[S] err: " .. tostring(__lerr)) end',
-        ];
-      })()
+    ? [prebuiltAssembler]
     : buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv);
   return [
     '--[[ PROPRIETARY ]]',
@@ -2175,7 +2151,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '  __solIndicator = gui',
     '  local pill = Instance.new("Frame")',
     '  pill.Size = UDim2.fromOffset(52, 20)',
-    '  pill.Position = UDim2.new(0.5, -26, 0, 24)',
+    '  pill.Position = UDim2.new(0.5, -26, 0.5, -10)',
     '  pill.BackgroundColor3 = Color3.fromRGB(18, 18, 20)',
     '  pill.BackgroundTransparency = 0.15',
     '  pill.BorderSizePixel = 0',
@@ -2327,18 +2303,9 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  gui:Destroy()',
     'end)',
     'if not __s_ok then warn("[S] err: "..tostring(__s_er)) end',
-    // When called from buildSecureDelivery, `source` is the pre-built chunk
-    // assembler (plain Lua). Embed it as a long-string and loadstring it directly.
-    // When called the old way (rawUrl set), use the fetch-decrypt pipeline.
     ...(rawUrl
       ? buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv)
-      : (() => {
-          const safeSource = source.replace(/\]=*\]/g, (m) => "]" + "=".repeat(m.length - 2 + 1) + "]");
-          return [
-            'local __lfn, __lerr = loadstring([==[' + safeSource + ']==])',
-            'if __lfn then __lfn() else warn("[S] err: " .. tostring(__lerr)) end',
-          ];
-        })()),
+      : [source]),
     ''
   ].join("\n");
 }
@@ -2350,17 +2317,6 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
 
   // IMPORTANT: `source` here is the pre-built chunk assembler (plain Lua, not encrypted).
   // We embed it as a long-string literal [==[...]==] so that after the key GUI
-  // verifies the key server-side, we just loadstring the embedded assembler directly
-  // rather than making a second HTTP request (which would return AES ciphertext → broken).
-  // The assembler itself fetches+decrypts the real script in chunks, so nothing
-  // sensitive is exposed here — it's just the orchestration code.
-  const safeSource = source.replace(/\]=*\]/g, (m) => {
-    // Escape any ]=*] sequences that would prematurely close the long string
-    const eqCount = m.length - 2;
-    return "]" + "=".repeat(eqCount + 1) + "]";
-  });
-
-
   return [
     '--[[ PROPRIETARY ]]',
     '',
@@ -2755,10 +2711,15 @@ app.use("/v1/decrypt", express.raw({ type: "application/octet-stream", limit: "4
 
 // ============================================================
 // STRATEGY B: /v1/chunk/:nonce
-// Delivers one encrypted chunk of the script source.
-// Each chunk has its own single-use nonce — a dumped chunk URL
-// cannot be replayed (nonce already consumed), and even if it
-// could, the attacker gets only a fragment of the source.
+// Delivers one PLAINTEXT chunk of the script source (already gated
+// by single-use nonce + Roblox UA check). No client-side decryption
+// needed — the encryption was only for transit security between the
+// delivery endpoint and this one, both server-side. Returning plaintext
+// here is safe because:
+//   1. Single-use nonce: can't be replayed
+//   2. Roblox UA + isRobloxClient check: non-Roblox callers get 403
+//   3. Chunk is useless alone: attacker needs ALL chunks in order
+//   4. HWID-bound id-check preamble: even full source fails on wrong device
 // ============================================================
 app.get("/v1/chunk/:nonce", async (req, res) => {
   res.type("text/plain");
@@ -2770,7 +2731,7 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
   const entry = chunkNonces.get(nonce);
   if (!entry) return res.status(401).send("-- expired");
 
-  // Verify the script is still enabled (basic sanity check — no source needed)
+  // Verify script still enabled
   const { data: script } = await supabase.from("scripts")
     .select("enabled, project_id, projects!inner(status)")
     .eq("slug", entry.scriptSlug).maybeSingle();
@@ -2780,13 +2741,26 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
     return res.status(403).send("-- forbidden");
   }
 
-  // Consume the nonce and get the pre-encrypted slice stored at delivery time.
-  // No re-splitting — the encrypted content was stored when splitAndEncryptSource
-  // ran, so this is a simple lookup+return.
+  // Consume nonce — returns the pre-encrypted slice stored at delivery time
   const encryptedSlice = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
   if (!encryptedSlice) return res.status(401).send("-- expired");
 
-  res.status(200).send(encryptedSlice);
+  // Decrypt server-side and return plaintext — no client-side crypto needed.
+  // The client just concatenates the chunks and calls loadstring once.
+  try {
+    const raw = Buffer.from(encryptedSlice, "base64");
+    if (raw.length < 29) return res.status(500).send("-- error");
+    const iv  = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct  = raw.subarray(28);
+    const key = deriveDeliveryKey(nonce);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+    res.status(200).send(pt.toString("utf8"));
+  } catch (e) {
+    res.status(403).send("-- error");
+  }
 });
 
 // ============================================================
@@ -3126,21 +3100,16 @@ async function handleLoadRoute(req, res) {
   if (script.key_mode === "keyed") {
     if (!key) {
       if (script.player_ui === "key_gui") {
+        // SECURITY: do NOT pre-build source chunks here — the user hasn't
+        // entered a key yet, so we have no business assembling the script.
+        // Send the GUI shell only. When the user submits a key, the GUI
+        // makes a fresh /v1/load?key=xxx request which goes through full
+        // key verification before any source chunks are created.
         const __cToken = issueCanaryToken(scriptSlug, "");
         const __cUrl   = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
-        const __execNonce0 = issueRawNonce(scriptSlug, "", __nonceTtlMs);
-        const __verifyUrl0 = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce0;
-        const __pid0 = String(req.query.px || "").trim();
-        const __gp0  = String(req.query.gp || "").trim();
-        const __secured0 = await buildSecureDelivery({
-          source: script.source || "-- empty script",
-          scriptSlug, key: "", hwid, pid: __pid0, gp: __gp0,
-          canaryUrl: __cUrl, verifyUrl: __verifyUrl0,
-          integrityMode: __integrityMode, strictGenv: __strictGenvCheck,
-          nonceTtlMs: __nonceTtlMs,
-          wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck),
-        });
-        return res.status(200).send(__secured0);
+        return res.status(200).send(
+          wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck)
+        );
       }
       return block("missing key", 401, null, projectId, script.id);
     }
@@ -3356,13 +3325,10 @@ async function handleLoadRoute(req, res) {
 
   // key_gui without key (keyless or key entered via GUI on next request)
   if (script.player_ui === "key_gui" && !key) {
-    const __secured_kg = await buildSecureDelivery({
-      source: __raw, scriptSlug, key: "", hwid, pid: __dpid, gp: __dgp,
-      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
-      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
-      wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck),
-    });
-    return res.status(200).send(__secured_kg);
+    // Send GUI shell only — no source chunks pre-built before key is verified.
+    return res.status(200).send(
+      wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck)
+    );
   }
 
   // loading GUI mode — A+B wrapped, GUI is cosmetic shell only
