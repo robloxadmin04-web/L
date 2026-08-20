@@ -2138,17 +2138,17 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '--[[ PROPRIETARY ]]',
     '',
     '',
-    '-- 3-dot loading indicator',
+    '-- Minimalist loading indicator',
     'local __solIndicator',
     'pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
-    '  local UIS = game:GetService("UserInputService")',
     '  local plr = Players.LocalPlayer',
     '  local parentGui = nil',
     '  pcall(function() if gethui then parentGui = gethui() end end)',
     '  if not parentGui then pcall(function() parentGui = game:GetService("CoreGui") end) end',
     '  if not parentGui then parentGui = plr:WaitForChild("PlayerGui") end',
+    '',
     '  local gui = Instance.new("ScreenGui")',
     '  gui.Name = "SI"',
     '  gui.IgnoreGuiInset = true',
@@ -2156,60 +2156,54 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '  gui.DisplayOrder = 999998',
     '  gui.Parent = parentGui',
     '  __solIndicator = gui',
-    '  local pill = Instance.new("Frame")',
-    '  pill.Size = UDim2.fromOffset(52, 20)',
-    '  pill.Position = UDim2.new(0.5, -26, 0.5, -10)',
-    '  pill.BackgroundColor3 = Color3.fromRGB(18, 18, 20)',
-    '  pill.BackgroundTransparency = 0.15',
-    '  pill.BorderSizePixel = 0',
-    '  pill.Active = true',
-    '  pill.Parent = gui',
-    '  local pc = Instance.new("UICorner")',
-    '  pc.CornerRadius = UDim.new(1, 0)',
-    '  pc.Parent = pill',
-    '  local dots = {}',
-    '  for i = 1, 3 do',
-    '    local d = Instance.new("Frame")',
-    '    d.Size = UDim2.fromOffset(5, 5)',
-    '    d.Position = UDim2.fromOffset(8 + (i-1)*16, 7)',
-    '    d.BackgroundColor3 = Color3.fromRGB(200, 200, 205)',
-    '    d.BackgroundTransparency = i == 1 and 0 or 0.6',
-    '    d.BorderSizePixel = 0',
-    '    d.Parent = pill',
-    '    local dc = Instance.new("UICorner")',
-    '    dc.CornerRadius = UDim.new(1, 0)',
-    '    dc.Parent = d',
-    '    dots[i] = d',
-    '  end',
-    '  local active = 1',
+    '',
+    '  -- Container',
+    '  local frame = Instance.new("Frame")',
+    '  frame.Size = UDim2.fromOffset(120, 36)',
+    '  frame.Position = UDim2.new(0.5, -60, 0.5, -18)',
+    '  frame.BackgroundColor3 = Color3.fromRGB(20, 20, 22)',
+    '  frame.BackgroundTransparency = 0.15',
+    '  frame.BorderSizePixel = 0',
+    '  frame.Parent = gui',
+    '  local corner = Instance.new("UICorner")',
+    '  corner.CornerRadius = UDim.new(0, 18)',
+    '  corner.Parent = frame',
+    '  local stroke = Instance.new("UIStroke")',
+    '  stroke.Color = Color3.fromRGB(60, 60, 65)',
+    '  stroke.Thickness = 0.5',
+    '  stroke.Parent = frame',
+    '',
+    '  -- Pulsing dot',
+    '  local dot = Instance.new("Frame")',
+    '  dot.Size = UDim2.fromOffset(8, 8)',
+    '  dot.Position = UDim2.new(0, 16, 0.5, -4)',
+    '  dot.BackgroundColor3 = Color3.fromRGB(180, 180, 185)',
+    '  dot.BorderSizePixel = 0',
+    '  dot.Parent = frame',
+    '  local dotCorner = Instance.new("UICorner")',
+    '  dotCorner.CornerRadius = UDim.new(1, 0)',
+    '  dotCorner.Parent = dot',
+    '',
+    '  -- Text',
+    '  local label = Instance.new("TextLabel")',
+    '  label.Size = UDim2.new(1, -38, 1, 0)',
+    '  label.Position = UDim2.fromOffset(32, 0)',
+    '  label.BackgroundTransparency = 1',
+    '  label.Text = "Loading..."',
+    '  label.TextColor3 = Color3.fromRGB(160, 160, 165)',
+    '  label.TextSize = 12',
+    '  label.Font = Enum.Font.GothamMedium',
+    '  label.TextXAlignment = Enum.TextXAlignment.Left',
+    '  label.Parent = frame',
+    '',
+    '  -- Pulse animation',
     '  task.spawn(function()',
     '    while gui and gui.Parent do',
-    '      for i = 1, 3 do',
-    '        TweenService:Create(dots[i], TweenInfo.new(0.18, Enum.EasingStyle.Quad), { BackgroundTransparency = i == active and 0 or 0.65 }):Play()',
-    '      end',
-    '      active = active % 3 + 1',
-    '      task.wait(0.3)',
-    '    end',
-    '  end)',
-    '  local dragging, dragStart, startPos',
-    '  pill.InputBegan:Connect(function(inp)',
-    '    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then',
-    '      dragging = true',
-    '      dragStart = inp.Position',
-    '      startPos = pill.Position',
-    '    end',
-    '  end)',
-    '  pill.InputEnded:Connect(function(inp)',
-    '    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then',
-    '      dragging = false',
-    '    end',
-    '  end)',
-    '  UIS.InputChanged:Connect(function(inp)',
-    '    if dragging and startPos then',
-    '      if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then',
-    '        local delta = inp.Position - dragStart',
-    '        pill.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)',
-    '      end',
+    '      local ti = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)',
+    '      TweenService:Create(dot, ti, { BackgroundTransparency = 0.7 }):Play()',
+    '      task.wait(0.6)',
+    '      TweenService:Create(dot, ti, { BackgroundTransparency = 0 }):Play()',
+    '      task.wait(0.6)',
     '    end',
     '  end)',
     'end)',
@@ -2484,60 +2478,51 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
 // provide: source, delivery context (hwid/pid/gp), and mode params.
 // ============================================================
 async function buildSecureDelivery({
-  source,
+  source,           // plaintext Lua source
   scriptSlug,
   key,
   hwid,
-  pid,
-  gp,
+  pid,              // Roblox UserId string
+  gp,               // Roblox PlaceId string
   canaryUrl,
-  verifyUrl,
+  verifyUrl,        // exec ticket URL (from issueRawNonce)
   integrityMode,
   strictGenv,
   nonceTtlMs,
-  wrapperFn,
+  wrapperFn,        // optional: function(assemblerLua) -> string  for GUI wrapping
 }) {
-  // Strategy A: HWID-bound identity token
+  // --- Strategy A: Mint HWID-bound identity token ---
   const idTok = issueIdToken(hwid, pid, gp);
   const idPreamble = buildIdCheckPreamble(idTok, canaryUrl, integrityMode);
 
-  // Wrap source with exec check + id preamble
+  // --- Build exec check wrapper around source+idPreamble ---
   const sourceWithId = idPreamble + source;
   const execResult   = wrapExecCheck(sourceWithId, verifyUrl);
   const runtimeKey   = execResult.runtimeKey;
 
-  // Strategy B: Split into 3-7 chunks
+  // --- Strategy B: Split into 3-7 chunks ---
   const numChunks = 3 + crypto.randomInt(5);
   const chunks    = splitAndEncryptSource(execResult.code, scriptSlug, key || "", numChunks);
 
-  // Build chunk assembler Lua
+  // --- Build chunk assembler Lua ---
   const assembler = buildChunkAssembler(
-    chunks, PUBLIC_BASE_URL, canaryUrl,
-    idPreamble, verifyUrl, runtimeKey, integrityMode,
+    chunks,
+    PUBLIC_BASE_URL,
+    canaryUrl,
+    idPreamble,
+    verifyUrl,
+    runtimeKey,
+    integrityMode,
   );
 
-  // Wrap assembler in integrity checks
+  // --- Wrap assembler in integrity checks ---
   const wrappedAssembler = integrityMode === "off"
     ? assembler
     : wrapIntegrityCheck(assembler, canaryUrl, integrityMode === "kick");
 
-  // Issue a rawNonce and encrypt the wrapped assembler under it.
-  // Store the encrypted payload on the nonce entry so the raw=1
-  // handler can return it directly without re-building anything.
-  const rawNonce = issueRawNonce(scriptSlug, key || "", nonceTtlMs);
-  const encrypted = encryptDelivery(wrappedAssembler, rawNonce);
-  const nonceEntry = rawNonces.get(rawNonce);
-  if (nonceEntry) nonceEntry.payload = encrypted;
-
-  const rawUrl = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
-    + "?key=" + encodeURIComponent(key || "")
-    + "&px=" + encodeURIComponent(pid || "")
-    + "&raw=1&n=" + rawNonce;
-
-  // wrapperFn receives (rawUrl, rawNonce) so wrapLoadingGui /
-  // wrapHeadlessDecoyDelay can use them exactly as they always did.
+  // --- Optional GUI wrapper (loading screen, key GUI, etc.) ---
   if (typeof wrapperFn === "function") {
-    return wrapperFn(rawUrl, rawNonce);
+    return wrapperFn(wrappedAssembler);
   }
   return wrappedAssembler;
 }
@@ -3196,9 +3181,9 @@ async function handleLoadRoute(req, res) {
   // so a captured raw=1 URL can't be replayed on its own later.
   if (req.query.raw) {
     const __n = String(req.query.n || "");
-    const __nonceEntry = rawNonces.get(__n);
-
     if (!consumeRawNonce(__n, scriptSlug, key || "")) {
+      // This is the clearest scraping signal: someone replayed or manually
+      // crafted a raw=1 URL without going through the normal loader flow.
       if (global.__solScrapeAlert) {
         global.__solScrapeAlert(accountId, __n ? "nonce_replay" : "raw_no_key", {
           scriptSlug, ip, hwid, key,
@@ -3208,12 +3193,6 @@ async function handleLoadRoute(req, res) {
         });
       }
       return block("missing or expired session token", 401, null, projectId, script.id);
-    }
-
-    // If buildSecureDelivery pre-built and stored an encrypted payload
-    // on this nonce entry, return it directly.
-    if (__nonceEntry && __nonceEntry.payload) {
-      return res.status(200).send(__nonceEntry.payload);
     }
     const __wm = injectWatermark(__raw, key ? (await supabase.from("keys").select("id").eq("key", key).maybeSingle()).data?.id : null, hwid, ip);
 
@@ -3278,17 +3257,17 @@ async function handleLoadRoute(req, res) {
   const __dgp  = String(req.query.gp || "").trim();
   const __dCanaryToken = issueCanaryToken(scriptSlug, key || "");
   const __dCanaryUrl   = PUBLIC_BASE_URL + "/v1/canary/" + __dCanaryToken;
-  const __dExecNonce   = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
-  const __dVerifyUrl   = PUBLIC_BASE_URL + "/v1/verify/" + __dExecNonce;
 
-  // key_gui without key — shell only
+  // key_gui without key — shell only.
+  // When user submits a key, wrapKeyGui makes a fresh /v1/load request
+  // which goes through the full A+B pipeline via raw=1.
   if (script.player_ui === "key_gui" && !key) {
     return res.status(200).send(
       wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck)
     );
   }
 
-  // loading GUI — issue rawNonce, wrapLoadingGui fetches raw=1 which runs buildSecureDelivery path
+  // loading GUI mode
   if (script.player_ui === "loading") {
     const __rawNonce_lg = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
     const __rawUrl_lg = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
@@ -3300,7 +3279,7 @@ async function handleLoadRoute(req, res) {
     );
   }
 
-  // no_gui — stage-split, stage2 runs buildSecureDelivery path via raw=1
+  // no_gui — stage-split delivery
   if (req.query.stage2) {
     const __s2 = String(req.query.s2 || "");
     if (!consumeRawNonce(__s2, scriptSlug, key || "")) {
