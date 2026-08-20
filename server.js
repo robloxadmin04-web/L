@@ -715,13 +715,18 @@ function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
 const chunkNonces = new Map(); // nonce -> { scriptSlug, key, chunkIdx, totalChunks, expires }
 const CHUNK_NONCE_TTL_MS = 20 * 1000; // 20s per chunk — sequential fetches
 
-function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks) {
+function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks, encryptedSlice) {
   const nonce = crypto.randomBytes(16).toString("hex");
   chunkNonces.set(nonce, {
     scriptSlug,
     key: key || "",
     chunkIdx,
     totalChunks,
+    // Store the already-encrypted slice so /v1/chunk just returns it directly.
+    // This avoids the fatal re-split mismatch: previously /v1/chunk re-split
+    // script.source (raw) but splitAndEncryptSource had split execResult.code
+    // (the full wrapped+exec-checked Lua) — completely different content.
+    encryptedSlice,
     expires: Date.now() + CHUNK_NONCE_TTL_MS,
     used: false,
   });
@@ -729,14 +734,14 @@ function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks) {
 }
 
 function consumeChunkNonce(nonce, scriptSlug, key, chunkIdx) {
-  if (!nonce) return false;
+  if (!nonce) return null;
   const c = chunkNonces.get(nonce);
-  if (!c) return false;
+  if (!c) return null;
   chunkNonces.delete(nonce);
-  if (c.used || Date.now() > c.expires) return false;
-  if (c.scriptSlug !== scriptSlug || c.key !== (key || "")) return false;
-  if (c.chunkIdx !== chunkIdx) return false;
-  return true;
+  if (c.used || Date.now() > c.expires) return null;
+  if (c.scriptSlug !== scriptSlug || c.key !== (key || "")) return null;
+  if (c.chunkIdx !== chunkIdx) return null;
+  return c.encryptedSlice; // return the stored slice, not a boolean
 }
 
 setInterval(() => {
@@ -751,15 +756,22 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
   const chunkSize = Math.ceil(src.length / numChunks);
   const chunks = [];
   for (let i = 0; i < numChunks; i++) {
-    // FIX: keep this a raw Buffer slice — do NOT .toString("utf8") here.
-    // Cutting a byte buffer at an arbitrary offset can land in the middle
-    // of a multi-byte UTF-8 character; decoding that partial slice to a
-    // string corrupts it (replacement chars) before it's even encrypted,
-    // so the reassembled source on the Roblox side no longer matches the
-    // original bytes -> intermittent "Incomplete statement" loadstring errors.
     const slice = src.subarray(i * chunkSize, (i + 1) * chunkSize);
-    const nonce = issueChunkNonce(scriptSlug, key, i, numChunks);
+    // Generate nonce first, encrypt with it, then store the encrypted result
+    // inside the nonce entry so /v1/chunk just looks it up and returns it.
+    // This eliminates the re-split: the chunk endpoint never touches script.source.
+    const nonce = crypto.randomBytes(16).toString("hex");
     const encrypted = encryptDelivery(slice, nonce);
+    // Store directly into chunkNonces (bypassing issueChunkNonce's own randomBytes)
+    chunkNonces.set(nonce, {
+      scriptSlug,
+      key: key || "",
+      chunkIdx: i,
+      totalChunks: numChunks,
+      encryptedSlice: encrypted,
+      expires: Date.now() + CHUNK_NONCE_TTL_MS,
+      used: false,
+    });
     chunks.push({ nonce, encrypted });
   }
   return chunks;
@@ -768,7 +780,7 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
 // Build a Lua assembler that fetches all chunks, decrypts each via
 // /v1/chunk/:nonce, concatenates them, and passes the result to
 // loadstring exactly once at the end.
-function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode) {
+function buildChunkAssembler(chunks, baseUrl, canaryUrl, runtimeKey, integrityMode) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const lines = [];
 
@@ -823,26 +835,15 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     );
   }
 
-  // ID check preamble + exec check + loadstring all at once
-  const fnV = r(), errV = r(), plrV = r(), rtV = r(), wrappedV = r();
+  // Assemble complete — call loadstring once on the full reassembled source.
+  // No exec-ticket verify here: wrapExecCheck already embedded the /v1/verify
+  // call INSIDE the source that was chunked. A second verify here would consume
+  // the single-use nonce before the source code gets to use it → always fails.
+  const fnV = r(), errV = r(), rtV = r(), wrappedV = r();
   const sha256fnV = r();
 
-  // Prepend idPreamble + runtime key verification to assembled source
   lines.push(
     `-- [ASSEMBLE COMPLETE — RUN]`,
-    `local ${sha256fnV} = (function()`,
-    sha256Lua(),
-    `end)()`,
-    `-- Verify live session ticket`,
-    `local ${okV}x, ${resV}x = pcall(function() return game:HttpGet("${execVerifyUrl}") end)`,
-    `if not ${okV}x or ${resV}x ~= "1" then`,
-    `  pcall(function() game:HttpGet("${canaryUrl}?r=exec_fail") end)`,
-    `  local ${plrV} = game:GetService("Players").LocalPlayer`,
-    `  if ${plrV} then ${plrV}:Kick("Session expired.") end`,
-    `  return`,
-    `end`,
-    // Full source is: idPreamble + actual source (already concatenated in assembledVar)
-    // Wrap in runtime key lock
     `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
     `if not ${fnV} then warn("[S] err: "..tostring(${errV})); return end`,
     `local ${okV}r, ${wrappedV} = pcall(${fnV})`,
@@ -2519,8 +2520,6 @@ async function buildSecureDelivery({
     chunks,
     PUBLIC_BASE_URL,
     canaryUrl,
-    idPreamble,
-    verifyUrl,
     runtimeKey,
     integrityMode,
   );
@@ -2735,9 +2734,9 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
   const entry = chunkNonces.get(nonce);
   if (!entry) return res.status(401).send("-- expired");
 
-  // Look up the script to get its source and validate key
+  // Verify the script is still enabled (basic sanity check — no source needed)
   const { data: script } = await supabase.from("scripts")
-    .select("id, source, key_mode, enabled, project_id, projects!inner(status, owner_account_id)")
+    .select("enabled, project_id, projects!inner(status)")
     .eq("slug", entry.scriptSlug).maybeSingle();
 
   if (!script || !script.enabled || script.projects.status === "paused") {
@@ -2745,20 +2744,13 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
     return res.status(403).send("-- forbidden");
   }
 
-  // Consume the nonce
-  const valid = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
-  if (!valid) return res.status(401).send("-- expired");
+  // Consume the nonce and get the pre-encrypted slice stored at delivery time.
+  // No re-splitting — the encrypted content was stored when splitAndEncryptSource
+  // ran, so this is a simple lookup+return.
+  const encryptedSlice = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
+  if (!encryptedSlice) return res.status(401).send("-- expired");
 
-  // Re-split the source identically to how it was split at delivery time
-  // (same numChunks, same chunkSize math) and return only this chunk encrypted.
-  const src = Buffer.from(script.source || "", "utf8");
-  const chunkSize = Math.ceil(src.length / entry.totalChunks);
-  // FIX: pass the raw byte slice straight through — same reasoning as in
-  // splitAndEncryptSource. This endpoint must re-split IDENTICALLY to how
-  // it was split at delivery time, byte-for-byte, not string-for-string.
-  const slice = src.subarray(entry.chunkIdx * chunkSize, (entry.chunkIdx + 1) * chunkSize);
-  const encrypted = encryptDelivery(slice, nonce);
-  res.status(200).send(encrypted);
+  res.status(200).send(encryptedSlice);
 });
 
 // ============================================================
@@ -3255,8 +3247,6 @@ async function handleLoadRoute(req, res) {
       __chunks,
       PUBLIC_BASE_URL,
       __canaryUrl,
-      __idPreamble,
-      __verifyUrl,
       __runtimeKey,
       __integrityMode,
     );
