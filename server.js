@@ -3281,25 +3281,26 @@ async function handleLoadRoute(req, res) {
   const __dExecNonce   = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
   const __dVerifyUrl   = PUBLIC_BASE_URL + "/v1/verify/" + __dExecNonce;
 
-  // key_gui without key — shell only, no source pre-built
+  // key_gui without key — shell only
   if (script.player_ui === "key_gui" && !key) {
     return res.status(200).send(
       wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck)
     );
   }
 
-  // loading GUI mode
+  // loading GUI — issue rawNonce, wrapLoadingGui fetches raw=1 which runs buildSecureDelivery path
   if (script.player_ui === "loading") {
-    const __secured_lg = await buildSecureDelivery({
-      source: __raw, scriptSlug, key: key || "", hwid, pid: __dpid, gp: __dgp,
-      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
-      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
-      wrapperFn: (rawUrl, rawNonce) => wrapLoadingGui(__raw, __opts, rawUrl, rawNonce, __dCanaryUrl, __integrityMode, __strictGenvCheck),
-    });
-    return res.status(200).send(__secured_lg);
+    const __rawNonce_lg = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
+    const __rawUrl_lg = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
+      + "?key=" + encodeURIComponent(key || "")
+      + "&px=" + encodeURIComponent(__dpid)
+      + "&raw=1&n=" + __rawNonce_lg;
+    return res.status(200).send(
+      wrapLoadingGui(__raw, __opts, __rawUrl_lg, __rawNonce_lg, __dCanaryUrl, __integrityMode, __strictGenvCheck)
+    );
   }
 
-  // no_gui / default — stage-split
+  // no_gui — stage-split, stage2 runs buildSecureDelivery path via raw=1
   if (req.query.stage2) {
     const __s2 = String(req.query.s2 || "");
     if (!consumeRawNonce(__s2, scriptSlug, key || "")) {
@@ -3311,13 +3312,14 @@ async function handleLoadRoute(req, res) {
       }
       return block("missing or expired session token", 401, null, projectId, script.id);
     }
-    const __secured_s2 = await buildSecureDelivery({
-      source: __raw, scriptSlug, key: key || "", hwid, pid: __dpid, gp: __dgp,
-      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
-      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
-      wrapperFn: (rawUrl, rawNonce) => wrapHeadlessDecoyDelay(rawUrl, rawNonce, __dCanaryUrl, __integrityMode, __strictGenvCheck),
-    });
-    return res.status(200).send(__secured_s2);
+    const __rawNonce_s2 = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
+    const __rawUrl_s2 = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
+      + "?key=" + encodeURIComponent(key || "")
+      + "&px=" + encodeURIComponent(__dpid)
+      + "&raw=1&n=" + __rawNonce_s2;
+    return res.status(200).send(
+      wrapHeadlessDecoyDelay(__rawUrl_s2, __rawNonce_s2, __dCanaryUrl, __integrityMode, __strictGenvCheck)
+    );
   }
   const __s2Token = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
   const __stage2Url = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
