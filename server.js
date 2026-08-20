@@ -930,52 +930,62 @@ setInterval(() => {
 // passing input without the actual key (which only lives in the obfuscated
 // loader, never in the delivered body).
 function sha256Lua() {
-  // Minimal pure-Lua SHA-256 we inject once. Variable names are randomized
-  // per call by the caller so they don't become a static fingerprint.
-  return `
-local __K={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}
-local function __bxor(a,b) if bit32 then return bit32.bxor(a,b) end local r,v=0,1 while a>0 or b>0 do local ba,bb=a%2,b%2;if ba~=bb then r=r+v end;a=(a-ba)/2;b=(b-bb)/2;v=v*2 end return r end
-local function __band(a,b) if bit32 then return bit32.band(a,b) end local r,v=0,1 while a>0 and b>0 do if a%2==1 and b%2==1 then r=r+v end;a=math.floor(a/2);b=math.floor(b/2);v=v*2 end return r end
-local function __bnot(a) if bit32 then return bit32.bnot(a) end return 0xFFFFFFFF-a end
-local function __rr(x,n) if bit32 then return bit32.rrotate(x,n) end n=n%32;return __bxor(math.floor(x/2^n)%0x100000000, (x*2^(32-n))%0x100000000) end
-local function __rs(x,n) if bit32 then return bit32.rshift(x,n) end return math.floor(x/2^n)%0x100000000 end
-local function __add(a,b) return (a+b)%0x100000000 end
-local function __sha256(msg)
-  local bits=msg:len()*8
-  msg=msg..string.char(0x80)
-  while msg:len()%64~=56 do msg=msg..string.char(0) end
-  for i=7,0,-1 do msg=msg..string.char(math.floor(bits/2^(i*8))%256) end
-  local h={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}
-  for i=1,msg:len()/64 do
-    local w={}
-    for j=1,16 do
-      local o=(i-1)*64+(j-1)*4
-      w[j]=msg:byte(o+1)*2^24+msg:byte(o+2)*2^16+msg:byte(o+3)*2^8+msg:byte(o+4)
+  // Each call generates unique variable names so multiple injections
+  // in the same Lua chunk don't conflict with each other.
+  const p = "_" + crypto.randomBytes(3).toString("hex");
+  const K=`${p}K`, bxor=`${p}bx`, band=`${p}ba`, bnot=`${p}bn`,
+        rr=`${p}rr`, rs=`${p}rs`, add=`${p}ad`, sha=`${p}sh`,
+        msg=`${p}ms`, bits=`${p}bi`, h=`${p}h`, w=`${p}w`,
+        i=`${p}i`, j=`${p}j`, o=`${p}o`, r=`${p}r`, v=`${p}v`,
+        a=`${p}a`, b=`${p}b`, c=`${p}c`, d=`${p}d`, e=`${p}e`,
+        f=`${p}f`, g=`${p}g`, hh=`${p}hh`, s0=`${p}s0`, s1=`${p}s1`,
+        ch=`${p}ch`, t1=`${p}t1`, t2=`${p}t2`, S0=`${p}S0`, S1=`${p}S1`,
+        maj=`${p}mj`, n=`${p}n`, x=`${p}x`, ba=`${p}ba2`, bb=`${p}bb`,
+        hex=`${p}hx`;
+  return `local ${K}={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}
+local function ${bxor}(${a},${b}) if bit32 then return bit32.bxor(${a},${b}) end local ${r},${v}=0,1 while ${a}>0 or ${b}>0 do local ${ba},${bb}=${a}%2,${b}%2;if ${ba}~=${bb} then ${r}=${r}+${v} end;${a}=(${a}-${ba})/2;${b}=(${b}-${bb})/2;${v}=${v}*2 end return ${r} end
+local function ${band}(${a},${b}) if bit32 then return bit32.band(${a},${b}) end local ${r},${v}=0,1 while ${a}>0 and ${b}>0 do if ${a}%2==1 and ${b}%2==1 then ${r}=${r}+${v} end;${a}=math.floor(${a}/2);${b}=math.floor(${b}/2);${v}=${v}*2 end return ${r} end
+local function ${bnot}(${a}) if bit32 then return bit32.bnot(${a}) end return 0xFFFFFFFF-${a} end
+local function ${rr}(${x},${n}) if bit32 then return bit32.rrotate(${x},${n}) end ${n}=${n}%32;return ${bxor}(math.floor(${x}/2^${n})%0x100000000,(${x}*2^(32-${n}))%0x100000000) end
+local function ${rs}(${x},${n}) if bit32 then return bit32.rshift(${x},${n}) end return math.floor(${x}/2^${n})%0x100000000 end
+local function ${add}(${a},${b}) return (${a}+${b})%0x100000000 end
+local function ${sha}(${msg})
+  local ${bits}=${msg}:len()*8
+  ${msg}=${msg}..string.char(0x80)
+  while ${msg}:len()%64~=56 do ${msg}=${msg}..string.char(0) end
+  for ${i}=7,0,-1 do ${msg}=${msg}..string.char(math.floor(${bits}/2^(${i}*8))%256) end
+  local ${h}={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}
+  for ${i}=1,${msg}:len()/64 do
+    local ${w}={}
+    for ${j}=1,16 do
+      local ${o}=(${i}-1)*64+(${j}-1)*4
+      ${w}[${j}]=${msg}:byte(${o}+1)*2^24+${msg}:byte(${o}+2)*2^16+${msg}:byte(${o}+3)*2^8+${msg}:byte(${o}+4)
     end
-    for j=17,64 do
-      local s0=__bxor(__rr(w[j-15],7),__bxor(__rr(w[j-15],18),__rs(w[j-15],3)))
-      local s1=__bxor(__rr(w[j-2],17),__bxor(__rr(w[j-2],19),__rs(w[j-2],10)))
-      w[j]=__add(__add(__add(w[j-16],s0),w[j-7]),s1)
+    for ${j}=17,64 do
+      local ${s0}=${bxor}(${rr}(${w}[${j}-15],7),${bxor}(${rr}(${w}[${j}-15],18),${rs}(${w}[${j}-15],3)))
+      local ${s1}=${bxor}(${rr}(${w}[${j}-2],17),${bxor}(${rr}(${w}[${j}-2],19),${rs}(${w}[${j}-2],10)))
+      ${w}[${j}]=${add}(${add}(${add}(${w}[${j}-16],${s0}),${w}[${j}-7]),${s1})
     end
-    local a,b,c,d,e,f,g,hh=table.unpack(h)
-    for j=1,64 do
-      local S1=__bxor(__rr(e,6),__bxor(__rr(e,11),__rr(e,25)))
-      local ch=__bxor(__band(e,f),__band(__bnot(e),g))
-      local temp1=__add(__add(__add(__add(hh,S1),ch),__K[j]),w[j])
-      local S0=__bxor(__rr(a,2),__bxor(__rr(a,13),__rr(a,22)))
-      local maj=__bxor(__band(a,b),__bxor(__band(a,c),__band(b,c)))
-      local temp2=__add(S0,maj)
-      hh=g;g=f;f=e;e=__add(d,temp1);d=c;c=b;b=a;a=__add(temp1,temp2)
+    local ${a},${b},${c},${d},${e},${f},${g},${hh}=table.unpack(${h})
+    for ${j}=1,64 do
+      local ${S1}=${bxor}(${rr}(${e},6),${bxor}(${rr}(${e},11),${rr}(${e},25)))
+      local ${ch}=${bxor}(${band}(${e},${f}),${band}(${bnot}(${e}),${g}))
+      local ${t1}=${add}(${add}(${add}(${add}(${hh},${S1}),${ch}),${K}[${j}]),${w}[${j}])
+      local ${S0}=${bxor}(${rr}(${a},2),${bxor}(${rr}(${a},13),${rr}(${a},22)))
+      local ${maj}=${bxor}(${band}(${a},${b}),${bxor}(${band}(${a},${c}),${band}(${b},${c})))
+      local ${t2}=${add}(${S0},${maj})
+      ${hh}=${g};${g}=${f};${f}=${e};${e}=${add}(${d},${t1});${d}=${c};${c}=${b};${b}=${a};${a}=${add}(${t1},${t2})
     end
-    h[1]=__add(h[1],a);h[2]=__add(h[2],b);h[3]=__add(h[3],c);h[4]=__add(h[4],d)
-    h[5]=__add(h[5],e);h[6]=__add(h[6],f);h[7]=__add(h[7],g);h[8]=__add(h[8],hh)
+    ${h}[1]=${add}(${h}[1],${a});${h}[2]=${add}(${h}[2],${b});${h}[3]=${add}(${h}[3],${c});${h}[4]=${add}(${h}[4],${d})
+    ${h}[5]=${add}(${h}[5],${e});${h}[6]=${add}(${h}[6],${f});${h}[7]=${add}(${h}[7],${g});${h}[8]=${add}(${h}[8],${hh})
   end
-  local hex=""
-  for _,v in ipairs(h) do hex=hex..string.format("%08x",v) end
-  return hex
+  local ${hex}=""
+  for _,${v} in ipairs(${h}) do ${hex}=${hex}..string.format("%08x",${v}) end
+  return ${hex}
 end
-return __sha256`;
+return ${sha}`;
 }
+
 
 function wrapExecCheck(source, verifyUrl) {
   const runtimeKey = crypto.randomBytes(32).toString("hex"); // 64 hex chars
