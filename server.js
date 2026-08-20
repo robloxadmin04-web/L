@@ -715,18 +715,13 @@ function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
 const chunkNonces = new Map(); // nonce -> { scriptSlug, key, chunkIdx, totalChunks, expires }
 const CHUNK_NONCE_TTL_MS = 20 * 1000; // 20s per chunk — sequential fetches
 
-function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks, encryptedSlice) {
+function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks) {
   const nonce = crypto.randomBytes(16).toString("hex");
   chunkNonces.set(nonce, {
     scriptSlug,
     key: key || "",
     chunkIdx,
     totalChunks,
-    // Store the already-encrypted slice so /v1/chunk just returns it directly.
-    // This avoids the fatal re-split mismatch: previously /v1/chunk re-split
-    // script.source (raw) but splitAndEncryptSource had split execResult.code
-    // (the full wrapped+exec-checked Lua) — completely different content.
-    encryptedSlice,
     expires: Date.now() + CHUNK_NONCE_TTL_MS,
     used: false,
   });
@@ -734,14 +729,14 @@ function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks, encryptedSlice)
 }
 
 function consumeChunkNonce(nonce, scriptSlug, key, chunkIdx) {
-  if (!nonce) return null;
+  if (!nonce) return false;
   const c = chunkNonces.get(nonce);
-  if (!c) return null;
+  if (!c) return false;
   chunkNonces.delete(nonce);
-  if (c.used || Date.now() > c.expires) return null;
-  if (c.scriptSlug !== scriptSlug || c.key !== (key || "")) return null;
-  if (c.chunkIdx !== chunkIdx) return null;
-  return c.encryptedSlice; // return the stored slice, not a boolean
+  if (c.used || Date.now() > c.expires) return false;
+  if (c.scriptSlug !== scriptSlug || c.key !== (key || "")) return false;
+  if (c.chunkIdx !== chunkIdx) return false;
+  return true;
 }
 
 setInterval(() => {
@@ -756,22 +751,15 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
   const chunkSize = Math.ceil(src.length / numChunks);
   const chunks = [];
   for (let i = 0; i < numChunks; i++) {
+    // FIX: keep this a raw Buffer slice — do NOT .toString("utf8") here.
+    // Cutting a byte buffer at an arbitrary offset can land in the middle
+    // of a multi-byte UTF-8 character; decoding that partial slice to a
+    // string corrupts it (replacement chars) before it's even encrypted,
+    // so the reassembled source on the Roblox side no longer matches the
+    // original bytes -> intermittent "Incomplete statement" loadstring errors.
     const slice = src.subarray(i * chunkSize, (i + 1) * chunkSize);
-    // Generate nonce first, encrypt with it, then store the encrypted result
-    // inside the nonce entry so /v1/chunk just looks it up and returns it.
-    // This eliminates the re-split: the chunk endpoint never touches script.source.
-    const nonce = crypto.randomBytes(16).toString("hex");
+    const nonce = issueChunkNonce(scriptSlug, key, i, numChunks);
     const encrypted = encryptDelivery(slice, nonce);
-    // Store directly into chunkNonces (bypassing issueChunkNonce's own randomBytes)
-    chunkNonces.set(nonce, {
-      scriptSlug,
-      key: key || "",
-      chunkIdx: i,
-      totalChunks: numChunks,
-      encryptedSlice: encrypted,
-      expires: Date.now() + CHUNK_NONCE_TTL_MS,
-      used: false,
-    });
     chunks.push({ nonce, encrypted });
   }
   return chunks;
@@ -780,7 +768,7 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
 // Build a Lua assembler that fetches all chunks, decrypts each via
 // /v1/chunk/:nonce, concatenates them, and passes the result to
 // loadstring exactly once at the end.
-function buildChunkAssembler(chunks, baseUrl, canaryUrl, runtimeKey, integrityMode) {
+function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const lines = [];
 
@@ -798,13 +786,16 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, runtimeKey, integrityMo
   // which is why loadstring always failed with "Incomplete statement" —
   // it was parsing encrypted bytes, not Lua source.
   const rqV = r();
+  lines.push(`local ${rqV} = (syn and syn.request) or (http and http.request) or request or http_request`);
 
   for (let i = 0; i < chunks.length; i++) {
     const pv = partVars[i];
     const nonce = chunks[i].nonce;
     const chunkUrl = baseUrl + "/v1/chunk/" + nonce;
+    const decryptUrl = baseUrl + "/v1/decrypt/" + nonce;
+    const cipherV = r();
     lines.push(
-      // fetch plaintext chunk — /v1/chunk decrypts server-side before returning
+      // 1) fetch the encrypted chunk
       `local ${okV}${i}, ${resV}${i} = pcall(function()`,
       `  return game:HttpGet("${chunkUrl}")`,
       `end)`,
@@ -812,23 +803,46 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, runtimeKey, integrityMo
       `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_fail_${i}") end)`,
       `  return`,
       `end`,
-      `local ${pv} = ${resV}${i}`,
+      `local ${cipherV} = ${resV}${i}`,
+      // 2) decrypt it server-side via POST /v1/decrypt/:nonce
+      `local ${okV}d${i}, ${resV}d${i} = pcall(function()`,
+      `  if ${rqV} then`,
+      `    local __r = ${rqV}({ Url = "${decryptUrl}", Method = "POST",`,
+      `      Headers = { ["Content-Type"] = "application/octet-stream" },`,
+      `      Body = ${cipherV} })`,
+      `    return __r.Body or __r.body`,
+      `  end`,
+      `  return nil`,
+      `end)`,
+      `if not ${okV}d${i} or not ${resV}d${i} or ${resV}d${i} == "" then`,
+      `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_decrypt_fail_${i}") end)`,
+      `  return`,
+      `end`,
+      `local ${pv} = ${resV}d${i}`,
       `${assembledVar} = ${assembledVar} .. ${pv}`,
     );
   }
 
-  // Assemble complete — call loadstring once on the full reassembled source.
-  // No exec-ticket verify here: wrapExecCheck already embedded the /v1/verify
-  // call INSIDE the source that was chunked. A second verify here would consume
-  // the single-use nonce before the source code gets to use it → always fails.
-  const fnV = r(), errV = r(), rtV = r(), wrappedV = r();
+  // ID check preamble + exec check + loadstring all at once
+  const fnV = r(), errV = r(), plrV = r(), rtV = r(), wrappedV = r();
   const sha256fnV = r();
 
+  // Prepend idPreamble + runtime key verification to assembled source
   lines.push(
     `-- [ASSEMBLE COMPLETE — RUN]`,
     `local ${sha256fnV} = (function()`,
     sha256Lua(),
     `end)()`,
+    `-- Verify live session ticket`,
+    `local ${okV}x, ${resV}x = pcall(function() return game:HttpGet("${execVerifyUrl}") end)`,
+    `if not ${okV}x or ${resV}x ~= "1" then`,
+    `  pcall(function() game:HttpGet("${canaryUrl}?r=exec_fail") end)`,
+    `  local ${plrV} = game:GetService("Players").LocalPlayer`,
+    `  if ${plrV} then ${plrV}:Kick("Session expired.") end`,
+    `  return`,
+    `end`,
+    // Full source is: idPreamble + actual source (already concatenated in assembledVar)
+    // Wrap in runtime key lock
     `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
     `if not ${fnV} then warn("[S] err: "..tostring(${errV})); return end`,
     `local ${okV}r, ${wrappedV} = pcall(${fnV})`,
@@ -916,62 +930,52 @@ setInterval(() => {
 // passing input without the actual key (which only lives in the obfuscated
 // loader, never in the delivered body).
 function sha256Lua() {
-  // Each call generates unique variable names so multiple injections
-  // in the same Lua chunk don't conflict with each other.
-  const p = "_" + crypto.randomBytes(3).toString("hex");
-  const K=`${p}K`, bxor=`${p}bx`, band=`${p}ba`, bnot=`${p}bn`,
-        rr=`${p}rr`, rs=`${p}rs`, add=`${p}ad`, sha=`${p}sh`,
-        msg=`${p}ms`, bits=`${p}bi`, h=`${p}h`, w=`${p}w`,
-        i=`${p}i`, j=`${p}j`, o=`${p}o`, r=`${p}r`, v=`${p}v`,
-        a=`${p}a`, b=`${p}b`, c=`${p}c`, d=`${p}d`, e=`${p}e`,
-        f=`${p}f`, g=`${p}g`, hh=`${p}hh`, s0=`${p}s0`, s1=`${p}s1`,
-        ch=`${p}ch`, t1=`${p}t1`, t2=`${p}t2`, S0=`${p}S0`, S1=`${p}S1`,
-        maj=`${p}mj`, n=`${p}n`, x=`${p}x`, ba=`${p}ba2`, bb=`${p}bb`,
-        hex=`${p}hx`;
-  return `local ${K}={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}
-local function ${bxor}(${a},${b}) if bit32 then return bit32.bxor(${a},${b}) end local ${r},${v}=0,1 while ${a}>0 or ${b}>0 do local ${ba},${bb}=${a}%2,${b}%2;if ${ba}~=${bb} then ${r}=${r}+${v} end;${a}=(${a}-${ba})/2;${b}=(${b}-${bb})/2;${v}=${v}*2 end return ${r} end
-local function ${band}(${a},${b}) if bit32 then return bit32.band(${a},${b}) end local ${r},${v}=0,1 while ${a}>0 and ${b}>0 do if ${a}%2==1 and ${b}%2==1 then ${r}=${r}+${v} end;${a}=math.floor(${a}/2);${b}=math.floor(${b}/2);${v}=${v}*2 end return ${r} end
-local function ${bnot}(${a}) if bit32 then return bit32.bnot(${a}) end return 0xFFFFFFFF-${a} end
-local function ${rr}(${x},${n}) if bit32 then return bit32.rrotate(${x},${n}) end ${n}=${n}%32;return ${bxor}(math.floor(${x}/2^${n})%0x100000000,(${x}*2^(32-${n}))%0x100000000) end
-local function ${rs}(${x},${n}) if bit32 then return bit32.rshift(${x},${n}) end return math.floor(${x}/2^${n})%0x100000000 end
-local function ${add}(${a},${b}) return (${a}+${b})%0x100000000 end
-local function ${sha}(${msg})
-  local ${bits}=${msg}:len()*8
-  ${msg}=${msg}..string.char(0x80)
-  while ${msg}:len()%64~=56 do ${msg}=${msg}..string.char(0) end
-  for ${i}=7,0,-1 do ${msg}=${msg}..string.char(math.floor(${bits}/2^(${i}*8))%256) end
-  local ${h}={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}
-  for ${i}=1,${msg}:len()/64 do
-    local ${w}={}
-    for ${j}=1,16 do
-      local ${o}=(${i}-1)*64+(${j}-1)*4
-      ${w}[${j}]=${msg}:byte(${o}+1)*2^24+${msg}:byte(${o}+2)*2^16+${msg}:byte(${o}+3)*2^8+${msg}:byte(${o}+4)
+  // Minimal pure-Lua SHA-256 we inject once. Variable names are randomized
+  // per call by the caller so they don't become a static fingerprint.
+  return `
+local __K={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}
+local function __bxor(a,b) if bit32 then return bit32.bxor(a,b) end local r,v=0,1 while a>0 or b>0 do local ba,bb=a%2,b%2;if ba~=bb then r=r+v end;a=(a-ba)/2;b=(b-bb)/2;v=v*2 end return r end
+local function __band(a,b) if bit32 then return bit32.band(a,b) end local r,v=0,1 while a>0 and b>0 do if a%2==1 and b%2==1 then r=r+v end;a=math.floor(a/2);b=math.floor(b/2);v=v*2 end return r end
+local function __bnot(a) if bit32 then return bit32.bnot(a) end return 0xFFFFFFFF-a end
+local function __rr(x,n) if bit32 then return bit32.rrotate(x,n) end n=n%32;return __bxor(math.floor(x/2^n)%0x100000000, (x*2^(32-n))%0x100000000) end
+local function __rs(x,n) if bit32 then return bit32.rshift(x,n) end return math.floor(x/2^n)%0x100000000 end
+local function __add(a,b) return (a+b)%0x100000000 end
+local function __sha256(msg)
+  local bits=msg:len()*8
+  msg=msg..string.char(0x80)
+  while msg:len()%64~=56 do msg=msg..string.char(0) end
+  for i=7,0,-1 do msg=msg..string.char(math.floor(bits/2^(i*8))%256) end
+  local h={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}
+  for i=1,msg:len()/64 do
+    local w={}
+    for j=1,16 do
+      local o=(i-1)*64+(j-1)*4
+      w[j]=msg:byte(o+1)*2^24+msg:byte(o+2)*2^16+msg:byte(o+3)*2^8+msg:byte(o+4)
     end
-    for ${j}=17,64 do
-      local ${s0}=${bxor}(${rr}(${w}[${j}-15],7),${bxor}(${rr}(${w}[${j}-15],18),${rs}(${w}[${j}-15],3)))
-      local ${s1}=${bxor}(${rr}(${w}[${j}-2],17),${bxor}(${rr}(${w}[${j}-2],19),${rs}(${w}[${j}-2],10)))
-      ${w}[${j}]=${add}(${add}(${add}(${w}[${j}-16],${s0}),${w}[${j}-7]),${s1})
+    for j=17,64 do
+      local s0=__bxor(__rr(w[j-15],7),__bxor(__rr(w[j-15],18),__rs(w[j-15],3)))
+      local s1=__bxor(__rr(w[j-2],17),__bxor(__rr(w[j-2],19),__rs(w[j-2],10)))
+      w[j]=__add(__add(__add(w[j-16],s0),w[j-7]),s1)
     end
-    local ${a},${b},${c},${d},${e},${f},${g},${hh}=table.unpack(${h})
-    for ${j}=1,64 do
-      local ${S1}=${bxor}(${rr}(${e},6),${bxor}(${rr}(${e},11),${rr}(${e},25)))
-      local ${ch}=${bxor}(${band}(${e},${f}),${band}(${bnot}(${e}),${g}))
-      local ${t1}=${add}(${add}(${add}(${add}(${hh},${S1}),${ch}),${K}[${j}]),${w}[${j}])
-      local ${S0}=${bxor}(${rr}(${a},2),${bxor}(${rr}(${a},13),${rr}(${a},22)))
-      local ${maj}=${bxor}(${band}(${a},${b}),${bxor}(${band}(${a},${c}),${band}(${b},${c})))
-      local ${t2}=${add}(${S0},${maj})
-      ${hh}=${g};${g}=${f};${f}=${e};${e}=${add}(${d},${t1});${d}=${c};${c}=${b};${b}=${a};${a}=${add}(${t1},${t2})
+    local a,b,c,d,e,f,g,hh=table.unpack(h)
+    for j=1,64 do
+      local S1=__bxor(__rr(e,6),__bxor(__rr(e,11),__rr(e,25)))
+      local ch=__bxor(__band(e,f),__band(__bnot(e),g))
+      local temp1=__add(__add(__add(__add(hh,S1),ch),__K[j]),w[j])
+      local S0=__bxor(__rr(a,2),__bxor(__rr(a,13),__rr(a,22)))
+      local maj=__bxor(__band(a,b),__bxor(__band(a,c),__band(b,c)))
+      local temp2=__add(S0,maj)
+      hh=g;g=f;f=e;e=__add(d,temp1);d=c;c=b;b=a;a=__add(temp1,temp2)
     end
-    ${h}[1]=${add}(${h}[1],${a});${h}[2]=${add}(${h}[2],${b});${h}[3]=${add}(${h}[3],${c});${h}[4]=${add}(${h}[4],${d})
-    ${h}[5]=${add}(${h}[5],${e});${h}[6]=${add}(${h}[6],${f});${h}[7]=${add}(${h}[7],${g});${h}[8]=${add}(${h}[8],${hh})
+    h[1]=__add(h[1],a);h[2]=__add(h[2],b);h[3]=__add(h[3],c);h[4]=__add(h[4],d)
+    h[5]=__add(h[5],e);h[6]=__add(h[6],f);h[7]=__add(h[7],g);h[8]=__add(h[8],hh)
   end
-  local ${hex}=""
-  for _,${v} in ipairs(${h}) do ${hex}=${hex}..string.format("%08x",${v}) end
-  return ${hex}
+  local hex=""
+  for _,v in ipairs(h) do hex=hex..string.format("%08x",v) end
+  return hex
 end
-return ${sha}`;
+return __sha256`;
 }
-
 
 function wrapExecCheck(source, verifyUrl) {
   const runtimeKey = crypto.randomBytes(32).toString("hex"); // 64 hex chars
@@ -2306,9 +2310,7 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  gui:Destroy()',
     'end)',
     'if not __s_ok then warn("[S] err: "..tostring(__s_er)) end',
-    ...(rawUrl
-      ? buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv)
-      : [source]),
+    ...buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv),
     ''
   ].join("\n");
 }
@@ -2317,9 +2319,7 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
   canaryUrl = canaryUrl || "";
   opts = opts || {};
   const warnKey = opts.silent ? "" : 'if not __s_ok then warn("[S] err:", __s_er) end\n';
-
-  // IMPORTANT: `source` here is the pre-built chunk assembler (plain Lua, not encrypted).
-  // We embed it as a long-string literal [==[...]==] so that after the key GUI
+  const warnLoad = opts.silent ? 'if fn then fn() end' : 'if fn then fn() else warn("[S] err:", lerr) end';
   return [
     '--[[ PROPRIETARY ]]',
     '',
@@ -2515,6 +2515,8 @@ async function buildSecureDelivery({
     chunks,
     PUBLIC_BASE_URL,
     canaryUrl,
+    idPreamble,
+    verifyUrl,
     runtimeKey,
     integrityMode,
   );
@@ -2714,15 +2716,10 @@ app.use("/v1/decrypt", express.raw({ type: "application/octet-stream", limit: "4
 
 // ============================================================
 // STRATEGY B: /v1/chunk/:nonce
-// Delivers one PLAINTEXT chunk of the script source (already gated
-// by single-use nonce + Roblox UA check). No client-side decryption
-// needed — the encryption was only for transit security between the
-// delivery endpoint and this one, both server-side. Returning plaintext
-// here is safe because:
-//   1. Single-use nonce: can't be replayed
-//   2. Roblox UA + isRobloxClient check: non-Roblox callers get 403
-//   3. Chunk is useless alone: attacker needs ALL chunks in order
-//   4. HWID-bound id-check preamble: even full source fails on wrong device
+// Delivers one encrypted chunk of the script source.
+// Each chunk has its own single-use nonce — a dumped chunk URL
+// cannot be replayed (nonce already consumed), and even if it
+// could, the attacker gets only a fragment of the source.
 // ============================================================
 app.get("/v1/chunk/:nonce", async (req, res) => {
   res.type("text/plain");
@@ -2734,9 +2731,9 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
   const entry = chunkNonces.get(nonce);
   if (!entry) return res.status(401).send("-- expired");
 
-  // Verify script still enabled
+  // Look up the script to get its source and validate key
   const { data: script } = await supabase.from("scripts")
-    .select("enabled, project_id, projects!inner(status)")
+    .select("id, source, key_mode, enabled, project_id, projects!inner(status, owner_account_id)")
     .eq("slug", entry.scriptSlug).maybeSingle();
 
   if (!script || !script.enabled || script.projects.status === "paused") {
@@ -2744,26 +2741,20 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
     return res.status(403).send("-- forbidden");
   }
 
-  // Consume nonce — returns the pre-encrypted slice stored at delivery time
-  const encryptedSlice = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
-  if (!encryptedSlice) return res.status(401).send("-- expired");
+  // Consume the nonce
+  const valid = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
+  if (!valid) return res.status(401).send("-- expired");
 
-  // Decrypt server-side and return plaintext — no client-side crypto needed.
-  // The client just concatenates the chunks and calls loadstring once.
-  try {
-    const raw = Buffer.from(encryptedSlice, "base64");
-    if (raw.length < 29) return res.status(500).send("-- error");
-    const iv  = raw.subarray(0, 12);
-    const tag = raw.subarray(12, 28);
-    const ct  = raw.subarray(28);
-    const key = deriveDeliveryKey(nonce);
-    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-    decipher.setAuthTag(tag);
-    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
-    res.status(200).send(pt.toString("utf8"));
-  } catch (e) {
-    res.status(403).send("-- error");
-  }
+  // Re-split the source identically to how it was split at delivery time
+  // (same numChunks, same chunkSize math) and return only this chunk encrypted.
+  const src = Buffer.from(script.source || "", "utf8");
+  const chunkSize = Math.ceil(src.length / entry.totalChunks);
+  // FIX: pass the raw byte slice straight through — same reasoning as in
+  // splitAndEncryptSource. This endpoint must re-split IDENTICALLY to how
+  // it was split at delivery time, byte-for-byte, not string-for-string.
+  const slice = src.subarray(entry.chunkIdx * chunkSize, (entry.chunkIdx + 1) * chunkSize);
+  const encrypted = encryptDelivery(slice, nonce);
+  res.status(200).send(encrypted);
 });
 
 // ============================================================
@@ -2796,54 +2787,6 @@ app.get("/v1/idcheck/:token", async (req, res) => {
     }).catch(() => {});
   }
   res.status(200).send(ok ? "1" : "0");
-});
-
-// ============================================================
-// /v1/keycheck/:slug — Lightweight key verify for key_gui mode.
-// The key GUI submits the user's key here instead of re-fetching
-// the full /v1/load pipeline. Returns "ok" or an error string.
-// No script source is returned — just a verdict.
-// ============================================================
-app.get("/v1/keycheck/:slug", async (req, res) => {
-  res.type("text/plain");
-  if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("Forbidden");
-  if (isRateLimited("keycheck-ip", getClientIp(req), 10, 60 * 1000)) return res.status(429).send("Too many attempts");
-
-  const scriptSlug = sanitizeString(String(req.params.slug || ""), 64);
-  const key        = sanitizeString(String(req.query.key || ""), 128);
-  const hwid       = getHwid(req);
-
-  if (!scriptSlug || !key) return res.status(400).send("Missing params");
-
-  const { data: script } = await supabase.from("scripts")
-    .select("id, key_mode, enabled, project_id, projects!inner(status, owner_account_id)")
-    .eq("slug", scriptSlug).maybeSingle();
-
-  if (!script || !script.enabled || script.projects.status === "paused")
-    return res.status(404).send("Script not found");
-
-  if (script.key_mode !== "keyed") return res.status(200).send("ok");
-
-  const { data: keyRow } = await supabase.from("keys")
-    .select("id, expires_at, hwid, revoked, paused")
-    .eq("script_id", script.id).eq("key", key).maybeSingle();
-
-  if (!keyRow)            return res.status(200).send("Invalid key");
-  if (keyRow.revoked)     return res.status(200).send("Key has been revoked");
-  if (keyRow.paused)      return res.status(200).send("Key is paused");
-  if (keyRow.expires_at && new Date(keyRow.expires_at) < new Date())
-                          return res.status(200).send("Key has expired");
-
-  // HWID check
-  if (keyRow.hwid && hwid && keyRow.hwid !== hwid)
-    return res.status(200).send("Key is bound to another device");
-
-  // Bind HWID if not yet bound
-  if (!keyRow.hwid && hwid) {
-    await supabase.from("keys").update({ hwid }).eq("id", keyRow.id);
-  }
-
-  res.status(200).send("ok");
 });
 
 // ============================================================
@@ -3103,16 +3046,21 @@ async function handleLoadRoute(req, res) {
   if (script.key_mode === "keyed") {
     if (!key) {
       if (script.player_ui === "key_gui") {
-        // SECURITY: do NOT pre-build source chunks here — the user hasn't
-        // entered a key yet, so we have no business assembling the script.
-        // Send the GUI shell only. When the user submits a key, the GUI
-        // makes a fresh /v1/load?key=xxx request which goes through full
-        // key verification before any source chunks are created.
         const __cToken = issueCanaryToken(scriptSlug, "");
         const __cUrl   = PUBLIC_BASE_URL + "/v1/canary/" + __cToken;
-        return res.status(200).send(
-          wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck)
-        );
+        const __execNonce0 = issueRawNonce(scriptSlug, "", __nonceTtlMs);
+        const __verifyUrl0 = PUBLIC_BASE_URL + "/v1/verify/" + __execNonce0;
+        const __pid0 = String(req.query.px || "").trim();
+        const __gp0  = String(req.query.gp || "").trim();
+        const __secured0 = await buildSecureDelivery({
+          source: script.source || "-- empty script",
+          scriptSlug, key: "", hwid, pid: __pid0, gp: __gp0,
+          canaryUrl: __cUrl, verifyUrl: __verifyUrl0,
+          integrityMode: __integrityMode, strictGenv: __strictGenvCheck,
+          nonceTtlMs: __nonceTtlMs,
+          wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, { silent: script.silent_mode }, __cUrl, __integrityMode, __strictGenvCheck),
+        });
+        return res.status(200).send(__secured0);
       }
       return block("missing key", 401, null, projectId, script.id);
     }
@@ -3303,6 +3251,8 @@ async function handleLoadRoute(req, res) {
       __chunks,
       PUBLIC_BASE_URL,
       __canaryUrl,
+      __idPreamble,
+      __verifyUrl,
       __runtimeKey,
       __integrityMode,
     );
@@ -3328,10 +3278,13 @@ async function handleLoadRoute(req, res) {
 
   // key_gui without key (keyless or key entered via GUI on next request)
   if (script.player_ui === "key_gui" && !key) {
-    // Send GUI shell only — no source chunks pre-built before key is verified.
-    return res.status(200).send(
-      wrapKeyGui("", scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck)
-    );
+    const __secured_kg = await buildSecureDelivery({
+      source: __raw, scriptSlug, key: "", hwid, pid: __dpid, gp: __dgp,
+      canaryUrl: __dCanaryUrl, verifyUrl: __dVerifyUrl,
+      integrityMode: __integrityMode, strictGenv: __strictGenvCheck, nonceTtlMs: __nonceTtlMs,
+      wrapperFn: (asm) => wrapKeyGui(asm, scriptSlug, PUBLIC_BASE_URL, __opts, __dCanaryUrl, __integrityMode, __strictGenvCheck),
+    });
+    return res.status(200).send(__secured_kg);
   }
 
   // loading GUI mode — A+B wrapped, GUI is cosmetic shell only
