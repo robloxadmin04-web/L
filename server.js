@@ -712,31 +712,28 @@ function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
 // Chunk count is randomized per delivery (3-7) so static analysis of
 // the delivery pattern cannot reliably predict how many fetches to intercept.
 // ============================================================
-const chunkNonces = new Map(); // nonce -> { scriptSlug, key, chunkIdx, totalChunks, expires }
-const CHUNK_NONCE_TTL_MS = 20 * 1000; // 20s per chunk — sequential fetches
+const chunkNonces = new Map();
+const CHUNK_NONCE_TTL_MS = 60 * 1000; // 60s — enough for decoy+fetch pipeline
 
-function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks) {
+function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks, plaintextSlice) {
   const nonce = crypto.randomBytes(16).toString("hex");
   chunkNonces.set(nonce, {
-    scriptSlug,
-    key: key || "",
-    chunkIdx,
-    totalChunks,
-    expires: Date.now() + CHUNK_NONCE_TTL_MS,
-    used: false,
+    scriptSlug, key: key || "", chunkIdx, totalChunks,
+    plaintextSlice, // stored so /v1/chunk returns plaintext directly
+    expires: Date.now() + CHUNK_NONCE_TTL_MS, used: false,
   });
   return nonce;
 }
 
 function consumeChunkNonce(nonce, scriptSlug, key, chunkIdx) {
-  if (!nonce) return false;
+  if (!nonce) return null;
   const c = chunkNonces.get(nonce);
-  if (!c) return false;
+  if (!c) return null;
   chunkNonces.delete(nonce);
-  if (c.used || Date.now() > c.expires) return false;
-  if (c.scriptSlug !== scriptSlug || c.key !== (key || "")) return false;
-  if (c.chunkIdx !== chunkIdx) return false;
-  return true;
+  if (c.used || Date.now() > c.expires) return null;
+  if (c.scriptSlug !== scriptSlug || c.key !== (key || "")) return null;
+  if (c.chunkIdx !== chunkIdx) return null;
+  return c.plaintextSlice;
 }
 
 setInterval(() => {
@@ -758,7 +755,7 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
     // so the reassembled source on the Roblox side no longer matches the
     // original bytes -> intermittent "Incomplete statement" loadstring errors.
     const slice = src.subarray(i * chunkSize, (i + 1) * chunkSize);
-    const nonce = issueChunkNonce(scriptSlug, key, i, numChunks);
+    const nonce = issueChunkNonce(scriptSlug, key, i, numChunks, slice);
     const encrypted = encryptDelivery(slice, nonce);
     chunks.push({ nonce, encrypted });
   }
@@ -785,17 +782,11 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
   // was concatenated straight into assembledVar and handed to loadstring(),
   // which is why loadstring always failed with "Incomplete statement" —
   // it was parsing encrypted bytes, not Lua source.
-  const rqV = r();
-  lines.push(`local ${rqV} = (syn and syn.request) or (http and http.request) or request or http_request`);
-
+  // Simple: /v1/chunk returns plaintext directly (server-side decrypt)
   for (let i = 0; i < chunks.length; i++) {
     const pv = partVars[i];
-    const nonce = chunks[i].nonce;
-    const chunkUrl = baseUrl + "/v1/chunk/" + nonce;
-    const decryptUrl = baseUrl + "/v1/decrypt/" + nonce;
-    const cipherV = r();
+    const chunkUrl = baseUrl + "/v1/chunk/" + chunks[i].nonce;
     lines.push(
-      // 1) fetch the encrypted chunk
       `local ${okV}${i}, ${resV}${i} = pcall(function()`,
       `  return game:HttpGet("${chunkUrl}")`,
       `end)`,
@@ -803,46 +794,23 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
       `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_fail_${i}") end)`,
       `  return`,
       `end`,
-      `local ${cipherV} = ${resV}${i}`,
-      // 2) decrypt it server-side via POST /v1/decrypt/:nonce
-      `local ${okV}d${i}, ${resV}d${i} = pcall(function()`,
-      `  if ${rqV} then`,
-      `    local __r = ${rqV}({ Url = "${decryptUrl}", Method = "POST",`,
-      `      Headers = { ["Content-Type"] = "application/octet-stream" },`,
-      `      Body = ${cipherV} })`,
-      `    return __r.Body or __r.body`,
-      `  end`,
-      `  return nil`,
-      `end)`,
-      `if not ${okV}d${i} or not ${resV}d${i} or ${resV}d${i} == "" then`,
-      `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_decrypt_fail_${i}") end)`,
-      `  return`,
-      `end`,
-      `local ${pv} = ${resV}d${i}`,
+      `local ${pv} = ${resV}${i}`,
       `${assembledVar} = ${assembledVar} .. ${pv}`,
     );
   }
 
-  // ID check preamble + exec check + loadstring all at once
-  const fnV = r(), errV = r(), plrV = r(), rtV = r(), wrappedV = r();
+  // Assemble complete — run via loadstring once.
+  // NOTE: no exec verify here — wrapExecCheck already embedded it inside
+  // the source that was split into chunks. Running it again here would
+  // consume the single-use nonce before the source gets to verify it.
+  const fnV = r(), errV = r(), rtV = r(), wrappedV = r();
   const sha256fnV = r();
 
-  // Prepend idPreamble + runtime key verification to assembled source
   lines.push(
     `-- [ASSEMBLE COMPLETE — RUN]`,
     `local ${sha256fnV} = (function()`,
     sha256Lua(),
     `end)()`,
-    `-- Verify live session ticket`,
-    `local ${okV}x, ${resV}x = pcall(function() return game:HttpGet("${execVerifyUrl}") end)`,
-    `if not ${okV}x or ${resV}x ~= "1" then`,
-    `  pcall(function() game:HttpGet("${canaryUrl}?r=exec_fail") end)`,
-    `  local ${plrV} = game:GetService("Players").LocalPlayer`,
-    `  if ${plrV} then ${plrV}:Kick("Session expired.") end`,
-    `  return`,
-    `end`,
-    // Full source is: idPreamble + actual source (already concatenated in assembledVar)
-    // Wrap in runtime key lock
     `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
     `if not ${fnV} then warn("[S] err: "..tostring(${errV})); return end`,
     `local ${okV}r, ${wrappedV} = pcall(${fnV})`,
@@ -867,7 +835,7 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
 // replayed later on its own, even with a valid key.
 // ============================================================
 const rawNonces = new Map(); // nonce -> { scriptSlug, key, expires, used }
-const RAW_NONCE_TTL_MS = 15 * 1000;
+const RAW_NONCE_TTL_MS = 60 * 1000; // 60s
 
 function issueRawNonce(scriptSlug, key, ttlMs) {
   const nonce = crypto.randomBytes(16).toString("hex");
@@ -2054,14 +2022,7 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
     '  local __decoyFn = loadstring([==[' + buildDecoyChunk() + ']==])',
     '  if __decoyFn then __decoyFn() end',
     'end)',
-    '-- Randomized delay: defeats timing-based memory scanners that',
-    '-- know to scan at exactly T+8s after loadstring. The wait is',
-    '-- between 5-12s, unpredictable per execution.',
-    'do',
-    '  local __dMin, __dMax = 5, 12',
-    '  local __delay = __dMin + (__dMax - __dMin) * (math.random())',
-    '  if task and task.wait then task.wait(__delay) else wait(__delay) end',
-    'end',
+
     '-- Defense against debug.getlocal stack reading: if an attacker',
     '-- set debug.sethook to read locals at specific call depths,',
     '-- clear the hook right before we touch decrypted content.',
@@ -2138,17 +2099,17 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '--[[ PROPRIETARY ]]',
     '',
     '',
-    '-- Minimalist loading indicator',
+    '-- 3-dot loading indicator',
     'local __solIndicator',
     'pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
+    '  local UIS = game:GetService("UserInputService")',
     '  local plr = Players.LocalPlayer',
     '  local parentGui = nil',
     '  pcall(function() if gethui then parentGui = gethui() end end)',
     '  if not parentGui then pcall(function() parentGui = game:GetService("CoreGui") end) end',
     '  if not parentGui then parentGui = plr:WaitForChild("PlayerGui") end',
-    '',
     '  local gui = Instance.new("ScreenGui")',
     '  gui.Name = "SI"',
     '  gui.IgnoreGuiInset = true',
@@ -2156,54 +2117,60 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '  gui.DisplayOrder = 999998',
     '  gui.Parent = parentGui',
     '  __solIndicator = gui',
-    '',
-    '  -- Container',
-    '  local frame = Instance.new("Frame")',
-    '  frame.Size = UDim2.fromOffset(120, 36)',
-    '  frame.Position = UDim2.new(0.5, -60, 0.5, -18)',
-    '  frame.BackgroundColor3 = Color3.fromRGB(20, 20, 22)',
-    '  frame.BackgroundTransparency = 0.15',
-    '  frame.BorderSizePixel = 0',
-    '  frame.Parent = gui',
-    '  local corner = Instance.new("UICorner")',
-    '  corner.CornerRadius = UDim.new(0, 18)',
-    '  corner.Parent = frame',
-    '  local stroke = Instance.new("UIStroke")',
-    '  stroke.Color = Color3.fromRGB(60, 60, 65)',
-    '  stroke.Thickness = 0.5',
-    '  stroke.Parent = frame',
-    '',
-    '  -- Pulsing dot',
-    '  local dot = Instance.new("Frame")',
-    '  dot.Size = UDim2.fromOffset(8, 8)',
-    '  dot.Position = UDim2.new(0, 16, 0.5, -4)',
-    '  dot.BackgroundColor3 = Color3.fromRGB(180, 180, 185)',
-    '  dot.BorderSizePixel = 0',
-    '  dot.Parent = frame',
-    '  local dotCorner = Instance.new("UICorner")',
-    '  dotCorner.CornerRadius = UDim.new(1, 0)',
-    '  dotCorner.Parent = dot',
-    '',
-    '  -- Text',
-    '  local label = Instance.new("TextLabel")',
-    '  label.Size = UDim2.new(1, -38, 1, 0)',
-    '  label.Position = UDim2.fromOffset(32, 0)',
-    '  label.BackgroundTransparency = 1',
-    '  label.Text = "Loading..."',
-    '  label.TextColor3 = Color3.fromRGB(160, 160, 165)',
-    '  label.TextSize = 12',
-    '  label.Font = Enum.Font.GothamMedium',
-    '  label.TextXAlignment = Enum.TextXAlignment.Left',
-    '  label.Parent = frame',
-    '',
-    '  -- Pulse animation',
+    '  local pill = Instance.new("Frame")',
+    '  pill.Size = UDim2.fromOffset(52, 20)',
+    '  pill.Position = UDim2.new(0.5, -26, 0.5, -10)',
+    '  pill.BackgroundColor3 = Color3.fromRGB(18, 18, 20)',
+    '  pill.BackgroundTransparency = 0.15',
+    '  pill.BorderSizePixel = 0',
+    '  pill.Active = true',
+    '  pill.Parent = gui',
+    '  local pc = Instance.new("UICorner")',
+    '  pc.CornerRadius = UDim.new(1, 0)',
+    '  pc.Parent = pill',
+    '  local dots = {}',
+    '  for i = 1, 3 do',
+    '    local d = Instance.new("Frame")',
+    '    d.Size = UDim2.fromOffset(5, 5)',
+    '    d.Position = UDim2.fromOffset(8 + (i-1)*16, 7)',
+    '    d.BackgroundColor3 = Color3.fromRGB(200, 200, 205)',
+    '    d.BackgroundTransparency = i == 1 and 0 or 0.6',
+    '    d.BorderSizePixel = 0',
+    '    d.Parent = pill',
+    '    local dc = Instance.new("UICorner")',
+    '    dc.CornerRadius = UDim.new(1, 0)',
+    '    dc.Parent = d',
+    '    dots[i] = d',
+    '  end',
+    '  local active = 1',
     '  task.spawn(function()',
     '    while gui and gui.Parent do',
-    '      local ti = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)',
-    '      TweenService:Create(dot, ti, { BackgroundTransparency = 0.7 }):Play()',
-    '      task.wait(0.6)',
-    '      TweenService:Create(dot, ti, { BackgroundTransparency = 0 }):Play()',
-    '      task.wait(0.6)',
+    '      for i = 1, 3 do',
+    '        TweenService:Create(dots[i], TweenInfo.new(0.18, Enum.EasingStyle.Quad), { BackgroundTransparency = i == active and 0 or 0.65 }):Play()',
+    '      end',
+    '      active = active % 3 + 1',
+    '      task.wait(0.3)',
+    '    end',
+    '  end)',
+    '  local dragging, dragStart, startPos',
+    '  pill.InputBegan:Connect(function(inp)',
+    '    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then',
+    '      dragging = true',
+    '      dragStart = inp.Position',
+    '      startPos = pill.Position',
+    '    end',
+    '  end)',
+    '  pill.InputEnded:Connect(function(inp)',
+    '    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then',
+    '      dragging = false',
+    '    end',
+    '  end)',
+    '  UIS.InputChanged:Connect(function(inp)',
+    '    if dragging and startPos then',
+    '      if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then',
+    '        local delta = inp.Position - dragStart',
+    '        pill.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)',
+    '      end',
     '    end',
     '  end)',
     'end)',
@@ -2442,11 +2409,7 @@ function wrapKeyGui(source, scriptSlug, baseUrl, opts, canaryUrl, integrityMode,
     '      local __decoyFn = loadstring([==[' + buildDecoyChunk() + ']==])',
     '      if __decoyFn then __decoyFn() end',
     '    end)',
-    '    do',
-    '      local __dMin, __dMax = 5, 12',
-    '      local __delay = __dMin + (__dMax - __dMin) * (math.random())',
-    '      if task and task.wait then task.wait(__delay) else wait(__delay) end',
-    '    end',
+
     '    pcall(function()',
     '      if type(debug) == "table" and type(debug.sethook) == "function" then',
     '        debug.sethook(nil)',
@@ -2725,9 +2688,8 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
   const entry = chunkNonces.get(nonce);
   if (!entry) return res.status(401).send("-- expired");
 
-  // Look up the script to get its source and validate key
   const { data: script } = await supabase.from("scripts")
-    .select("id, source, key_mode, enabled, project_id, projects!inner(status, owner_account_id)")
+    .select("enabled, project_id, projects!inner(status)")
     .eq("slug", entry.scriptSlug).maybeSingle();
 
   if (!script || !script.enabled || script.projects.status === "paused") {
@@ -2735,20 +2697,13 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
     return res.status(403).send("-- forbidden");
   }
 
-  // Consume the nonce
-  const valid = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
-  if (!valid) return res.status(401).send("-- expired");
+  // Consume nonce and get stored plaintext slice
+  const plaintextSlice = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
+  if (!plaintextSlice) return res.status(401).send("-- expired");
 
-  // Re-split the source identically to how it was split at delivery time
-  // (same numChunks, same chunkSize math) and return only this chunk encrypted.
-  const src = Buffer.from(script.source || "", "utf8");
-  const chunkSize = Math.ceil(src.length / entry.totalChunks);
-  // FIX: pass the raw byte slice straight through — same reasoning as in
-  // splitAndEncryptSource. This endpoint must re-split IDENTICALLY to how
-  // it was split at delivery time, byte-for-byte, not string-for-string.
-  const slice = src.subarray(entry.chunkIdx * chunkSize, (entry.chunkIdx + 1) * chunkSize);
-  const encrypted = encryptDelivery(slice, nonce);
-  res.status(200).send(encrypted);
+  // Return plaintext directly — no client-side decryption needed.
+  // Security is from the single-use nonce gate + Roblox UA check above.
+  res.status(200).send(plaintextSlice.toString("utf8"));
 });
 
 // ============================================================
