@@ -2631,6 +2631,16 @@ app.get("/api/me", requireAuth, async (req, res) => {
 // re-posting the same ciphertext produces a different (invalid) key and
 // the GCM tag check fails. No replay possible.
 // ============================================================
+// FIX: this raw-body parser MUST be registered before the POST route
+// below. Express dispatches middleware/routes in the order they were
+// added to the app — having this express.raw() call further down in
+// the file (after the route that needs it) meant it never ran in time,
+// so req.body was always empty for every /v1/decrypt request and the
+// endpoint 400'd on every single call, no matter how valid the
+// ciphertext was. This is why every load was failing with
+// "decrypt_failed" and the loading GUI never dismissed (the Lua side
+// aborts and returns as soon as it sees a non-200 or empty response).
+app.use("/v1/decrypt", express.raw({ type: "application/octet-stream", limit: "4mb" }));
 app.post("/v1/decrypt/:nonce", async (req, res) => {
   res.type("text/plain");
   if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("");
@@ -2667,9 +2677,6 @@ app.post("/v1/decrypt/:nonce", async (req, res) => {
     res.status(403).send("");
   }
 });
-
-// Also accept raw body for the decrypt endpoint (express.json won't parse octet-stream)
-app.use("/v1/decrypt", express.raw({ type: "application/octet-stream", limit: "4mb" }));
 
 // ============================================================
 // STRATEGY B: /v1/chunk/:nonce
@@ -3155,6 +3162,18 @@ async function handleLoadRoute(req, res) {
     // verification preamble to the source. The preamble calls /v1/idcheck
     // with the player's live hwid/userId/placeId. If a dumped copy of this
     // source is run by a different player/device, the check fails and kicks.
+    //
+    // FIX: __canaryToken/__canaryUrl must be declared BEFORE
+    // buildIdCheckPreamble uses __canaryUrl below. They used to be declared
+    // ~15 lines further down (after their first use) - since both are
+    // `const` in the same block, that's a Temporal Dead Zone violation:
+    // every raw=1 request (the step every delivery mode - loading GUI, key
+    // GUI, headless - funnels into to fetch the real script) threw
+    // "ReferenceError: Cannot access '__canaryUrl' before initialization"
+    // here, the request never got a response, and the Lua side's HttpGet
+    // just hung/failed - which is why the loading indicator never finished.
+    const __canaryToken = issueCanaryToken(scriptSlug, key || "");
+    const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
     const __pid   = String(req.query.px || "").trim();
     const __gp    = String(req.query.gp || "").trim();
     const __idTok = issueIdToken(hwid, __pid, __gp);
@@ -3172,8 +3191,6 @@ async function handleLoadRoute(req, res) {
     // it, so a saved copy fails the redeem and the player gets kicked.
     const __execTicket = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
-    const __canaryToken = issueCanaryToken(scriptSlug, key || "");
-    const __canaryUrl = PUBLIC_BASE_URL + "/v1/canary/" + __canaryToken;
     const __execResult = wrapExecCheck(__wmWithId, __verifyUrl);
     const __runtimeKey = __execResult.runtimeKey;
 
