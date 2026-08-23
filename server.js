@@ -789,18 +789,47 @@ setInterval(() => {
 //   → UTF-8 split issue: subarray() on Buffer is byte-safe, string split is not
 //   → Always split the Buffer, never split the string directly
 function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
-  const src = Buffer.from(source, "utf8");
-  const chunkSize = Math.ceil(src.length / numChunks);
+  // FIX: split on UTF-8 CHARACTER boundaries, not raw byte offsets.
+  // Previous version sliced a Buffer at byte offsets (src.subarray), which
+  // can land in the middle of a multi-byte UTF-8 character whenever the
+  // script (or any injected wrapper text) contains non-ASCII bytes. That
+  // alone was safe AS LONG AS the slice stayed a raw Buffer until final
+  // reassembly — but /v1/chunk (the endpoint that actually serves each
+  // slice to the client) calls .toString("utf8") on each slice
+  // INDIVIDUALLY before sending it, which decodes a partial multi-byte
+  // sequence in isolation and corrupts it (replacement chars / dropped
+  // bytes) before the client ever sees it. Splitting on character
+  // boundaries up front means every chunk is already complete, valid
+  // UTF-8 on its own, so per-chunk .toString("utf8") on the server and
+  // string concatenation on the client are both safe regardless of what
+  // /v1/chunk does with each slice.
+  const chars = Array.from(source); // codepoint-safe (handles surrogate pairs too)
+  const totalBytes = Buffer.byteLength(source, "utf8");
+  const targetBytesPerChunk = Math.ceil(totalBytes / numChunks);
+
+  const slices = [];
+  let currentChars = [];
+  let currentBytes = 0;
+  for (const ch of chars) {
+    currentChars.push(ch);
+    currentBytes += Buffer.byteLength(ch, "utf8");
+    if (currentBytes >= targetBytesPerChunk && slices.length < numChunks - 1) {
+      slices.push(currentChars.join(""));
+      currentChars = [];
+      currentBytes = 0;
+    }
+  }
+  slices.push(currentChars.join("")); // remainder (always at least one, even if source was empty)
+
+  // If numChunks was larger than the number of splits we actually made
+  // (e.g. very short source), collapse to however many non-empty slices
+  // exist so we never issue empty trailing chunks.
+  const finalSlices = slices.filter((s, i) => s.length > 0 || i === 0);
+
   const chunks = [];
-  for (let i = 0; i < numChunks; i++) {
-    // FIX: keep this a raw Buffer slice — do NOT .toString("utf8") here.
-    // Cutting a byte buffer at an arbitrary offset can land in the middle
-    // of a multi-byte UTF-8 character; decoding that partial slice to a
-    // string corrupts it (replacement chars) before it's even encrypted,
-    // so the reassembled source on the Roblox side no longer matches the
-    // original bytes -> intermittent "Incomplete statement" loadstring errors.
-    const slice = src.subarray(i * chunkSize, (i + 1) * chunkSize);
-    const nonce = issueChunkNonce(scriptSlug, key, i, numChunks, slice);
+  for (let i = 0; i < finalSlices.length; i++) {
+    const slice = Buffer.from(finalSlices[i], "utf8"); // now guaranteed a clean, complete UTF-8 sequence
+    const nonce = issueChunkNonce(scriptSlug, key, i, finalSlices.length, slice);
     const encrypted = encryptDelivery(slice, nonce);
     chunks.push({ nonce, encrypted });
   }
