@@ -2643,7 +2643,19 @@ app.get("/api/me", requireAuth, async (req, res) => {
 app.use("/v1/decrypt", express.raw({ type: "application/octet-stream", limit: "4mb" }));
 app.post("/v1/decrypt/:nonce", async (req, res) => {
   res.type("text/plain");
-  if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("");
+  // FIX: this endpoint is POSTed to via the executor's http.request/
+  // request implementation (needed for a POST body + custom headers,
+  // which game:HttpGet can't do). Unlike game:HttpGet, that call is
+  // executor-controlled and doesn't reliably carry a "Roblox" User-Agent
+  // on every executor (confirmed on Delta) - so the isRobloxClient() gate
+  // here was rejecting every legitimate decrypt call with a 403 before
+  // the ciphertext was ever looked at, which is why delivery always
+  // failed with "decrypt_failed" even after the nonce/TDZ fixes.
+  // Same exemption already exists for raw=1/stage2=1 in gateLoaderRequest,
+  // for the same reason. Security here doesn't depend on UA sniffing
+  // anyway - it depends on the single-use nonce (can't be replayed) and
+  // the AES-GCM auth tag (rejects tampered/wrong-key ciphertext), both
+  // still fully enforced below.
   if (isRateLimited("decrypt-ip", getClientIp(req), 20, 15 * 1000)) return res.status(429).send("");
 
   const nonce = String(req.params.nonce || "").replace(/[^a-f0-9]/gi, "").slice(0, 64);
