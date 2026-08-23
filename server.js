@@ -2301,7 +2301,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
   ].join("\n");
 }
 
-function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv) {
+function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv, prebuiltAssembler) {
   opts = opts || {};
   rawUrl = rawUrl || "";
   rawNonce = rawNonce || "";
@@ -2391,7 +2391,21 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  gui:Destroy()',
     'end)',
     'if not __s_ok then warn("[S] err: "..tostring(__s_er)) end',
-    ...buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv),
+    // FIX: when a prebuiltAssembler is supplied (modern Strategy A+B chunked
+    // path), embed it directly instead of falling back to
+    // buildFetchDecryptDecoyLoadLines. That legacy path expects the raw=1
+    // response to be "64-char runtime key" + code concatenated as one
+    // string (string.sub(__decrypted,1,64) / string.sub(__decrypted,65)) -
+    // but raw=1 now returns the buildChunkAssembler Lua source itself, a
+    // completely different format. Feeding that mismatched format through
+    // the old key-prefix slicing cuts the assembler text at an arbitrary
+    // character offset (65), landing mid-token essentially at random -
+    // which is exactly what produced the "Expected identifier ... got
+    // '<digits>'" parse errors (the exact digits/position varied run to
+    // run because generated variable names have random lengths).
+    ...(prebuiltAssembler
+      ? [prebuiltAssembler]
+      : buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv)),
     ''
   ].join("\n");
 }
@@ -3444,15 +3458,36 @@ async function handleLoadRoute(req, res) {
     );
   }
 
+  // Shared: build the modern Strategy A+B (HWID-token + chunked) assembler
+  // for whichever mode needs to embed it directly. This mirrors exactly
+  // what the raw=1 branch above builds — kept as one helper (the
+  // already-defined buildSecureDelivery) so both places can't drift out
+  // of sync with each other again like they did before this fix.
+  async function __buildAssemblerFor(px, gp) {
+    const __keyId = key ? (await supabase.from("keys").select("id").eq("key", key).maybeSingle()).data?.id : null;
+    const __wmSrc = injectWatermark(__raw, __keyId, hwid, ip);
+    const __execTicket = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
+    const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
+    return buildSecureDelivery({
+      source: __wmSrc,
+      scriptSlug,
+      key,
+      hwid,
+      pid: px,
+      gp,
+      canaryUrl: __dCanaryUrl,
+      verifyUrl: __verifyUrl,
+      integrityMode: __integrityMode,
+      strictGenv: __strictGenvCheck,
+      nonceTtlMs: __nonceTtlMs,
+    });
+  }
+
   // loading GUI mode
   if (script.player_ui === "loading") {
-    const __rawNonce_lg = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
-    const __rawUrl_lg = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
-      + "?key=" + encodeURIComponent(key || "")
-      + "&px=" + encodeURIComponent(__dpid)
-      + "&raw=1&n=" + __rawNonce_lg;
+    const __assembler_lg = await __buildAssemblerFor(__dpid, __dgp);
     return res.status(200).send(
-      wrapLoadingGui(__raw, __opts, __rawUrl_lg, __rawNonce_lg, __dCanaryUrl, __integrityMode, __strictGenvCheck)
+      wrapLoadingGui(__raw, __opts, "", "", __dCanaryUrl, __integrityMode, __strictGenvCheck, __assembler_lg)
     );
   }
 
@@ -3468,13 +3503,9 @@ async function handleLoadRoute(req, res) {
       }
       return block("missing or expired session token", 401, null, projectId, script.id);
     }
-    const __rawNonce_s2 = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
-    const __rawUrl_s2 = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
-      + "?key=" + encodeURIComponent(key || "")
-      + "&px=" + encodeURIComponent(__dpid)
-      + "&raw=1&n=" + __rawNonce_s2;
+    const __assembler_s2 = await __buildAssemblerFor(__dpid, __dgp);
     return res.status(200).send(
-      wrapHeadlessDecoyDelay(__rawUrl_s2, __rawNonce_s2, __dCanaryUrl, __integrityMode, __strictGenvCheck)
+      wrapHeadlessDecoyDelay("", "", __dCanaryUrl, __integrityMode, __strictGenvCheck, __assembler_s2)
     );
   }
   const __s2Token = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
