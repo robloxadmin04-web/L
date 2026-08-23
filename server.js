@@ -667,6 +667,36 @@ setInterval(() => {
 // Must be the first thing that executes — before any game logic.
 // If the check fails for any reason, the player is kicked and
 // the rest of the source never runs.
+// ============================================================
+// STRATEGY A: HWID-BOUND IDENTITY TOKEN
+// ============================================================
+// Every delivered script starts with a Lua preamble that calls
+// /v1/idcheck/:token with the player's live hwid + userId + placeId.
+// The token was minted at delivery time for that exact combination.
+//
+// If a dumped copy of the script is run by a different player/device:
+//   - hwid mismatch  → server returns "0" → player kicked
+//   - userId mismatch → server returns "0" → player kicked
+//   - token expired (30s TTL) → "0" → kicked
+//   - token already used (single-use) → "0" → kicked
+//
+// DEBUG CHECKLIST for Strategy A failures:
+//   "id_mismatch" in canary log:
+//     → Most likely: hwid not sent in x-hwid header (executor issue)
+//     → OR: gethwid() returns nil on that executor (use RbxAnalyticsService fallback)
+//     → OR: token expired — player took >30s to reach idcheck call
+//     → OR: genuine different device (dump replay attempt)
+//   "0" returned from /v1/idcheck:
+//     → Check if px (UserId) and gp (PlaceId) are being sent in the rawUrl
+//     → They must match what was in the original /v1/load request
+//
+// HOW IT FLOWS:
+//   1. /v1/load?raw=1 → issueIdToken(hwid, pid, gp) → stores in idTokens map
+//   2. buildIdCheckPreamble(token) → embeds Lua that calls /v1/idcheck/:token
+//   3. idPreamble is PREPENDED to the source before wrapExecCheck
+//   4. Source is split into chunks — idPreamble is in chunk #0
+//   5. When Lua assembles chunks and runs the source, idcheck fires FIRST
+// ============================================================
 function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
   const checkUrl = PUBLIC_BASE_URL + "/v1/idcheck/" + idToken;
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
@@ -743,6 +773,21 @@ setInterval(() => {
 
 // Split source into N chunks, encrypt each independently.
 // Returns array of { nonce, encrypted } objects.
+// splitAndEncryptSource: splits execResult.code (NOT raw script source)
+// into N chunks, encrypts each, and stores the plaintext slice in the
+// chunkNonces map so /v1/chunk can return it directly.
+//
+// CRITICAL: Always pass execResult.code here, never script.source.
+// The chunks contain the full wrapExecCheck+idPreamble+source Lua.
+//
+// DEBUG: If /v1/chunk returns wrong content:
+//   → Check that you're passing execResult.code, not __raw
+//   → The plaintextSlice stored in chunkNonces is what gets returned
+//   → Each nonce is single-use — don't retry the same chunk URL
+//
+// DEBUG: "Incomplete statement" after assembling chunks:
+//   → UTF-8 split issue: subarray() on Buffer is byte-safe, string split is not
+//   → Always split the Buffer, never split the string directly
 function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
   const src = Buffer.from(source, "utf8");
   const chunkSize = Math.ceil(src.length / numChunks);
@@ -765,6 +810,33 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
 // Build a Lua assembler that fetches all chunks, decrypts each via
 // /v1/chunk/:nonce, concatenates them, and passes the result to
 // loadstring exactly once at the end.
+// buildChunkAssembler: generates Lua that fetches all chunks via
+// game:HttpGet("/v1/chunk/:nonce"), concatenates them into the full
+// source, then calls loadstring() exactly once.
+//
+// KEY DESIGN DECISIONS:
+//   1. /v1/chunk returns PLAINTEXT (server decrypts before returning).
+//      No client-side decryption needed — executor compatibility issue avoided.
+//   2. NO exec verify here — wrapExecCheck already embeds /v1/verify
+//      inside the chunked source. A second verify would consume the
+//      single-use nonce and always fail.
+//   3. SHA-256 is injected here for runtime key verification after
+//      loadstring(assembled) runs and returns the wrapper function.
+//
+// DEBUG: "chunk_fail_N" in canary log:
+//   → Chunk nonce expired (60s TTL) — check for slow network or delays
+//   → Chunk nonce already consumed (retry attempt)
+//   → /v1/chunk returned non-200 — check server logs
+//
+// DEBUG: "[S] err: ..." after assembling:
+//   → loadstring(assembled) failed — Lua syntax error in assembled chunks
+//   → Common cause: UTF-8 split mid-character (see splitAndEncryptSource)
+//   → Another cause: sha256Lua() variable name conflict (now fixed with random prefix)
+//
+// DEBUG: wrappedV is nil (type check fails):
+//   → The assembled source is valid Lua but doesn't return a function
+//   → wrapExecCheck wraps source in: return function(rt) ... end
+//   → If integrityMode="off", source runs directly (elseif branch handles this)
 function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const lines = [];
@@ -898,17 +970,29 @@ setInterval(() => {
 // passing input without the actual key (which only lives in the obfuscated
 // loader, never in the delivered body).
 function sha256Lua() {
-  // Minimal pure-Lua SHA-256 we inject once. Variable names are randomized
-  // per call by the caller so they don't become a static fingerprint.
-  return `
-local __K={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}
-local function __bxor(a,b) if bit32 then return bit32.bxor(a,b) end local r,v=0,1 while a>0 or b>0 do local ba,bb=a%2,b%2;if ba~=bb then r=r+v end;a=(a-ba)/2;b=(b-bb)/2;v=v*2 end return r end
-local function __band(a,b) if bit32 then return bit32.band(a,b) end local r,v=0,1 while a>0 and b>0 do if a%2==1 and b%2==1 then r=r+v end;a=math.floor(a/2);b=math.floor(b/2);v=v*2 end return r end
-local function __bnot(a) if bit32 then return bit32.bnot(a) end return 0xFFFFFFFF-a end
-local function __rr(x,n) if bit32 then return bit32.rrotate(x,n) end n=n%32;return __bxor(math.floor(x/2^n)%0x100000000, (x*2^(32-n))%0x100000000) end
-local function __rs(x,n) if bit32 then return bit32.rshift(x,n) end return math.floor(x/2^n)%0x100000000 end
-local function __add(a,b) return (a+b)%0x100000000 end
-local function __sha256(msg)
+  // Generates a pure-Lua SHA-256 implementation with fully randomized
+  // variable names on every call. This prevents conflicts when sha256Lua()
+  // is injected multiple times in the same Lua chunk (e.g. once inside
+  // wrapExecCheck source and once inside buildChunkAssembler).
+  //
+  // DEBUG: If you see "attempt to call a nil value" on the sha256 line,
+  // it means sha256Lua() was called but its return value wasn't wrapped
+  // in an IIFE before being assigned. The pattern must always be:
+  //   local _sha = (function() <sha256Lua()> end)()
+  //
+  // DEBUG: If you see "Expected identifier, got ','" near the sha256 block,
+  // it means a previous version used hardcoded names (__K, __bxor, etc.)
+  // that conflicted with another injection in the same chunk. The randomized
+  // names below fix this.
+  const p = "_" + crypto.randomBytes(4).toString("hex");
+  return `local ${p}K={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}
+local function ${p}bx(a,b) if bit32 then return bit32.bxor(a,b) end local r,v=0,1 while a>0 or b>0 do local ba,bb=a%2,b%2;if ba~=bb then r=r+v end;a=(a-ba)/2;b=(b-bb)/2;v=v*2 end return r end
+local function ${p}ba(a,b) if bit32 then return bit32.band(a,b) end local r,v=0,1 while a>0 and b>0 do if a%2==1 and b%2==1 then r=r+v end;a=math.floor(a/2);b=math.floor(b/2);v=v*2 end return r end
+local function ${p}bn(a) if bit32 then return bit32.bnot(a) end return 0xFFFFFFFF-a end
+local function ${p}rr(x,n) if bit32 then return bit32.rrotate(x,n) end n=n%32;return ${p}bx(math.floor(x/2^n)%0x100000000,(x*2^(32-n))%0x100000000) end
+local function ${p}rs(x,n) if bit32 then return bit32.rshift(x,n) end return math.floor(x/2^n)%0x100000000 end
+local function ${p}ad(a,b) return (a+b)%0x100000000 end
+local function ${p}sh(msg)
   local bits=msg:len()*8
   msg=msg..string.char(0x80)
   while msg:len()%64~=56 do msg=msg..string.char(0) end
@@ -916,33 +1000,30 @@ local function __sha256(msg)
   local h={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}
   for i=1,msg:len()/64 do
     local w={}
-    for j=1,16 do
-      local o=(i-1)*64+(j-1)*4
-      w[j]=msg:byte(o+1)*2^24+msg:byte(o+2)*2^16+msg:byte(o+3)*2^8+msg:byte(o+4)
-    end
+    for j=1,16 do local o=(i-1)*64+(j-1)*4;w[j]=msg:byte(o+1)*2^24+msg:byte(o+2)*2^16+msg:byte(o+3)*2^8+msg:byte(o+4) end
     for j=17,64 do
-      local s0=__bxor(__rr(w[j-15],7),__bxor(__rr(w[j-15],18),__rs(w[j-15],3)))
-      local s1=__bxor(__rr(w[j-2],17),__bxor(__rr(w[j-2],19),__rs(w[j-2],10)))
-      w[j]=__add(__add(__add(w[j-16],s0),w[j-7]),s1)
+      local s0=${p}bx(${p}rr(w[j-15],7),${p}bx(${p}rr(w[j-15],18),${p}rs(w[j-15],3)))
+      local s1=${p}bx(${p}rr(w[j-2],17),${p}bx(${p}rr(w[j-2],19),${p}rs(w[j-2],10)))
+      w[j]=${p}ad(${p}ad(${p}ad(w[j-16],s0),w[j-7]),s1)
     end
     local a,b,c,d,e,f,g,hh=table.unpack(h)
     for j=1,64 do
-      local S1=__bxor(__rr(e,6),__bxor(__rr(e,11),__rr(e,25)))
-      local ch=__bxor(__band(e,f),__band(__bnot(e),g))
-      local temp1=__add(__add(__add(__add(hh,S1),ch),__K[j]),w[j])
-      local S0=__bxor(__rr(a,2),__bxor(__rr(a,13),__rr(a,22)))
-      local maj=__bxor(__band(a,b),__bxor(__band(a,c),__band(b,c)))
-      local temp2=__add(S0,maj)
-      hh=g;g=f;f=e;e=__add(d,temp1);d=c;c=b;b=a;a=__add(temp1,temp2)
+      local S1=${p}bx(${p}rr(e,6),${p}bx(${p}rr(e,11),${p}rr(e,25)))
+      local ch=${p}bx(${p}ba(e,f),${p}ba(${p}bn(e),g))
+      local t1=${p}ad(${p}ad(${p}ad(${p}ad(hh,S1),ch),${p}K[j]),w[j])
+      local S0=${p}bx(${p}rr(a,2),${p}bx(${p}rr(a,13),${p}rr(a,22)))
+      local mj=${p}bx(${p}ba(a,b),${p}bx(${p}ba(a,c),${p}ba(b,c)))
+      local t2=${p}ad(S0,mj)
+      hh=g;g=f;f=e;e=${p}ad(d,t1);d=c;c=b;b=a;a=${p}ad(t1,t2)
     end
-    h[1]=__add(h[1],a);h[2]=__add(h[2],b);h[3]=__add(h[3],c);h[4]=__add(h[4],d)
-    h[5]=__add(h[5],e);h[6]=__add(h[6],f);h[7]=__add(h[7],g);h[8]=__add(h[8],hh)
+    h[1]=${p}ad(h[1],a);h[2]=${p}ad(h[2],b);h[3]=${p}ad(h[3],c);h[4]=${p}ad(h[4],d)
+    h[5]=${p}ad(h[5],e);h[6]=${p}ad(h[6],f);h[7]=${p}ad(h[7],g);h[8]=${p}ad(h[8],hh)
   end
   local hex=""
   for _,v in ipairs(h) do hex=hex..string.format("%08x",v) end
   return hex
 end
-return __sha256`;
+return ${p}sh`;
 }
 
 function wrapExecCheck(source, verifyUrl) {
@@ -1206,8 +1287,14 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
 
   const chunkSize = 60;
   const toChunks = (arr) => {
+    // DEBUG: If you see "Expected identifier, got ','" in Lua, it means
+    // an empty chunk produced a leading comma: local t={,1,2,...}
+    // This filter removes empty chunks to prevent that.
     const chunks = [];
-    for (let i = 0; i < arr.length; i += chunkSize) chunks.push(arr.slice(i, i + chunkSize).join(","));
+    for (let i = 0; i < arr.length; i += chunkSize) {
+      const slice = arr.slice(i, i + chunkSize);
+      if (slice.length > 0) chunks.push(slice.join(","));
+    }
     return chunks;
   };
   const evenChunks = toChunks(evenBytes);
@@ -1222,9 +1309,11 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
   const keyTable = Array.from(derivedKey).join(",");
 
   const decoder = [
-    // Even/odd split tables
-    `local ${tE}={${evenChunks.join(",")}}`,
-    `local ${tO}={${oddChunks.join(",")}}`,
+    // Even/odd split tables — guard against empty arrays which would
+    // produce "local t={}" which is valid, vs "local t={,}" which breaks.
+    // DEBUG: "Expected identifier, got ','" on line 1 = empty chunk issue here.
+    `local ${tE}={${evenChunks.length > 0 ? evenChunks.join(",") : "0"}}`,
+    `local ${tO}={${oddChunks.length > 0 ? oddChunks.join(",") : "0"}}`,
     // Re-interleave into full pass-1 cipher text
     `local ${tF}={}`,
     `do local ${i},${j}=1,1`,
@@ -1274,8 +1363,8 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
     `    task.spawn(function()`,
     `      local ${delay}=${delayVal}`,
     `      if task and task.wait then task.wait(${delay}) else wait(${delay}) end`,
-    `      local ${tE2}={${toChunks(evenB2).join(",")}}`,
-    `      local ${tO2}={${toChunks(oddB2).join(",")}}`,
+    `      local ${tE2}={${toChunks(evenB2).length > 0 ? toChunks(evenB2).join(",") : "0"}}`,
+    `      local ${tO2}={${toChunks(oddB2).length > 0 ? toChunks(oddB2).join(",") : "0"}}`,
     `      local ${tF2}={}`,
     `      do local ${i2},${j2}=1,1`,
     `        while ${i2}<=#${tE2} or ${j2}<=#${tO2} do`,
@@ -1779,7 +1868,9 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
   const tbl=r(), dec=r(), idx=r(), m=r(), ki=r(), p0=r(), fn=r(), err=r();
 
   return [
-    `local ${tbl}={${chunks.join(",")}}`,
+    // DEBUG: "Expected identifier, got ','" here = empty chunks array.
+    // This guard ensures the Lua table always has at least one element.
+    `local ${tbl}={${chunks.length > 0 ? chunks.join(",") : "0"}}`,
     `local ${dec}={}`,
     `local ${m}=${mask}`,
     `for ${idx}=1,#${tbl} do`,
@@ -2848,6 +2939,79 @@ app.get("/v1/handshake", async (req, res) => {
 
 // ============================================================
 // PUBLIC LOADER - with HWID, expiry, and block/allow checks
+// ============================================================
+// ============================================================
+// MAIN DELIVERY PIPELINE — handleLoadRoute
+// ============================================================
+// This is the heart of Solaries. Every loadstring() call from a
+// Roblox executor flows through here. Here's the full path:
+//
+// DELIVERY FLOW BY MODE:
+//
+//   no_gui (Indicator):
+//     /v1/loaders/:slug.lua → /v1/handshake → /v1/bootstrap → handleLoadRoute
+//     → buildStage1Stub (stage1) → Lua fetches stage2 → handleLoadRoute?stage2=1
+//     → issueRawNonce → wrapHeadlessDecoyDelay(rawUrl, rawNonce)
+//     → Lua runs decoy → Lua fetches rawUrl (?raw=1) → handleLoadRoute?raw=1
+//     → Strategy A+B applied → encrypted assembler returned
+//     → Lua decrypts (via /v1/decrypt) → runs assembler
+//     → Assembler fetches chunks (via /v1/chunk/:nonce) → concatenates
+//     → loadstring(assembled) → script runs → indicator destroyed
+//
+//   loading:
+//     /v1/load → issueRawNonce → wrapLoadingGui(rawUrl, rawNonce)
+//     → Lua shows loading screen → fetches rawUrl (?raw=1)
+//     → Strategy A+B → encrypted assembler → Lua decrypts
+//     → assembler → chunks → script runs → loading screen destroyed
+//
+//   key_gui (no key yet):
+//     /v1/load → wrapKeyGui("", ...) — shell only, no source
+//     → user enters key → Lua fetches /v1/load?key=xxx
+//     → follows no_gui flow from stage1 onwards
+//
+// DEBUG GUIDE — common errors and where they come from:
+//
+//   "[S] err: <name>:1: Expected identifier, got ','"
+//     → wrapIntegrityCheck generated a Lua table with a leading comma
+//     → Cause: empty evenChunks/oddChunks array in wrapIntegrityCheck
+//     → Fix: toChunks() now filters empty slices (already applied)
+//     → Also: sha256Lua() previously used hardcoded __K etc. — now randomized
+//
+//   "[S] err: <name>:N: attempt to call a nil value"
+//     → sha256fnV variable used but not declared (IIFE missing)
+//     → OR: sha256Lua() variable names conflicted with another injection
+//     → Fix: sha256Lua() now uses unique random prefix per call
+//
+//   "invalid url for http request"
+//     → rawUrl was "" when passed to wrapLoadingGui/wrapHeadlessDecoyDelay
+//     → These wrappers NEED a real rawUrl — never pass ""
+//     → Fix: always issueRawNonce + build rawUrl before calling wrappers
+//
+//   "chunk_fail_N" in canary log:
+//     → /v1/chunk/:nonce returned non-200 or empty
+//     → Nonce expired (60s TTL) — check for slow delivery
+//     → Nonce already consumed (retry attempt blocked, correct behavior)
+//
+//   "chunk_decrypt_fail_N" in canary log (OLD — should not appear now):
+//     → Was caused by /v1/chunk returning encrypted data and assembler
+//       trying to POST-decrypt it. Fixed: /v1/chunk now returns plaintext.
+//
+//   "id_mismatch" in canary log:
+//     → Strategy A failed — dumped script run on wrong device
+//     → OR: gethwid() unavailable on executor (check fallback to RbxAnalyticsService)
+//     → OR: idToken expired before idcheck was called (raise ID_TOKEN_TTL_MS)
+//
+//   Indicator never disappears / loading never ends:
+//     → raw=1 request failed or returned error
+//     → Check __canaryUrl is declared BEFORE buildIdCheckPreamble call
+//     → Check that rawNonce TTL (60s) is sufficient
+//     → Check /v1/decrypt endpoint is reachable
+//
+//   Script never runs (silent fail):
+//     → wrapExecCheck verify failed (/v1/verify nonce expired or double-used)
+//     → NEVER call /v1/verify twice for the same nonce
+//     → buildChunkAssembler does NOT call /v1/verify — wrapExecCheck handles it
+//
 // ============================================================
 async function handleLoadRoute(req, res) {
   // FIX C: block browsers, non-Roblox HTTP clients, and requests without
