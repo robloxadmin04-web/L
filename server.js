@@ -2293,7 +2293,10 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '  end)',
     'end)',
     '',
+    'local __assemblerOk, __assemblerErr = pcall(function()',
     ...payloadLines,
+    'end)',
+    'if not __assemblerOk then warn("[S] assembler err: "..tostring(__assemblerErr)) end',
     'pcall(function() if __solIndicator then __solIndicator:Destroy() end end)',
     ''
   ].join("\n");
