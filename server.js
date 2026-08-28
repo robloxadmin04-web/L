@@ -866,7 +866,7 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
 //   â†’ The assembled source is valid Lua but doesn't return a function
 //   â†’ wrapExecCheck wraps source in: return function(rt) ... end
 //   â†’ If integrityMode="off", source runs directly (elseif branch handles this)
-function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode) {
+function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode, expectedAssemblyHash) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const lines = [];
 
@@ -921,11 +921,19 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
   const sha256fnV = r();
 
   lines.push(
-    `${statusFnV}("LOADSTRING")`,
-    `-- [ASSEMBLE COMPLETE â€” RUN]`,
+    `${statusFnV}("ASSEMBLY_VERIFY")`,
+    `-- [ASSEMBLY COMPLETE â€” VERIFY BEFORE LOADSTRING]`,
     `local ${sha256fnV} = (function()`,
     sha256Lua(),
     `end)()`,
+    `local __assemblyHash = ${sha256fnV}(${assembledVar})`,
+    `warn("[S] stage=ASSEMBLY_VERIFY length="..tostring(#${assembledVar}).." hash="..tostring(__assemblyHash))`,
+    `if __assemblyHash ~= "${expectedAssemblyHash}" then`,
+    `  ${statusFnV}("ASSEMBLY_VERIFY", "hash mismatch")`,
+    `  warn("[S] stage=ASSEMBLY_VERIFY error: HASH_MISMATCH expected=".."${expectedAssemblyHash}".." actual="..tostring(__assemblyHash))`,
+    `  return`,
+    `end`,
+    `${statusFnV}("LOADSTRING")`,
     `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
     `if not ${fnV} then ${statusFnV}("LOADSTRING", ${errV}); warn("[S] stage=LOADSTRING error: "..tostring(${errV})); return end`,
     `${statusFnV}("EXECUTE")`,
@@ -2743,6 +2751,7 @@ async function buildSecureDelivery({
     verifyUrl,
     runtimeKey,
     integrityMode,
+    crypto.createHash("sha256").update(execResult.code).digest("hex"),
   );
 
   // --- Wrap assembler in integrity checks ---
@@ -3563,6 +3572,7 @@ async function handleLoadRoute(req, res) {
       __verifyUrl,
       __runtimeKey,
       __integrityMode,
+      crypto.createHash("sha256").update(__execResult.code).digest("hex"),
     );
 
     // Wrap the assembler itself in integrity checks + stage-split so it's
