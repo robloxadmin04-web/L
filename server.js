@@ -866,7 +866,7 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
 //   â†’ The assembled source is valid Lua but doesn't return a function
 //   â†’ wrapExecCheck wraps source in: return function(rt) ... end
 //   â†’ If integrityMode="off", source runs directly (elseif branch handles this)
-function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode) {
+function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode, expectedAssemblyHash) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const lines = [];
 
@@ -921,11 +921,19 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
   const sha256fnV = r();
 
   lines.push(
-    `${statusFnV}("LOADSTRING")`,
-    `-- [ASSEMBLE COMPLETE â€” RUN]`,
+    `${statusFnV}("ASSEMBLY_VERIFY")`,
+    `-- [ASSEMBLY COMPLETE â€” VERIFY BEFORE LOADSTRING]`,
     `local ${sha256fnV} = (function()`,
     sha256Lua(),
     `end)()`,
+    `local __assemblyHash = ${sha256fnV}(${assembledVar})`,
+    `warn("[S] stage=ASSEMBLY_VERIFY length="..tostring(#${assembledVar}).." hash="..tostring(__assemblyHash))`,
+    `if __assemblyHash ~= "${expectedAssemblyHash}" then`,
+    `  ${statusFnV}("ASSEMBLY_VERIFY", "hash mismatch")`,
+    `  warn("[S] stage=ASSEMBLY_VERIFY error: HASH_MISMATCH expected=".."${expectedAssemblyHash}".." actual="..tostring(__assemblyHash))`,
+    `  return`,
+    `end`,
+    `${statusFnV}("LOADSTRING")`,
     `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
     `if not ${fnV} then ${statusFnV}("LOADSTRING", ${errV}); warn("[S] stage=LOADSTRING error: "..tostring(${errV})); return end`,
     `${statusFnV}("EXECUTE")`,
@@ -935,15 +943,45 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     `  local ${resV}h = ${sha256fnV}(${rtV})`,
     `  if ${resV}h == "${crypto.createHash("sha256").update(runtimeKey).digest("hex")}" then`,
     `    ${statusFnV}("RUN")`,
-    `    local ${okV}x, ${resV}x = pcall(${wrappedV}, ${rtV})`,
-    `    if not ${okV}x then ${statusFnV}("RUN", ${resV}x); warn("[S] stage=RUN error: "..tostring(${resV}x)); return end`,
+    // The payload has now successfully reached its actual run stage. The
+    // loading indicator must not wait for the payload to return: game scripts
+    // commonly contain long-lived loops, event connections, or waits.
+    `    if type(__solMarkRunning) == "function" then pcall(__solMarkRunning) end`,
+    // Do not synchronously wait for the real payload. Long-lived Roblox scripts
+    // commonly contain event loops / waits and would otherwise keep the loader
+    // wrapper blocked forever. Run it in its own task and keep error reporting.
+    `    task.spawn(function()`,
+    `      local __payloadFinished = false`,
+    `      warn("[S] stage=PAYLOAD_START")`,
+    `      warn("[S] stage=PAYLOAD_CALL")`,
+    `      task.delay(10, function()`,
+    `        if not __payloadFinished then warn("[S] stage=PAYLOAD_WAITING error: payload has not returned after 10s") end`,
+    `      end)`,
+    `      local __payloadOk, __payloadErr = xpcall(function()`,
+    `        return ${wrappedV}(${rtV})`,
+    `      end, function(__payloadError)`,
+    `        local __msg = tostring(__payloadError)`,
+    `        pcall(function()`,
+    `          if debug and type(debug.traceback) == "function" then __msg = __msg .. "\\n" .. tostring(debug.traceback()) end`,
+    `        end)`,
+    `        return __msg`,
+    `      end)`,
+    `      __payloadFinished = true`,
+    `      if __payloadOk then`,
+    `        warn("[S] stage=PAYLOAD_RETURN")`,
+    `      else`,
+    `        ${statusFnV}("RUN", __payloadErr)`,
+    `        warn("[S] stage=RUN error: "..tostring(__payloadErr))`,
+    `      end`,
+    `    end)`,
     `  else`,
     `    ${statusFnV}("RUNTIME_KEY")`,
     `    warn("[S] stage=RUNTIME_KEY error: runtime key mismatch"); return`,
     `  end`,
     `elseif ${okV}r then`,
-    `  -- source ran directly (no wrapper)`,
-    `  ${statusFnV}("DONE")`,
+    `  -- wrapper returned nil; this usually means an execution gate/early guard stopped it`,
+    `  ${statusFnV}("EXECUTE_GATE", ${wrappedV} or "wrapper returned nil")`,
+    `  warn("[S] stage=EXECUTE_GATE error: wrapper returned "..tostring(${wrappedV}))`,
     `else`,
     `  ${statusFnV}("EXECUTE", ${wrappedV})`,
     `  warn("[S] stage=EXECUTE error: "..tostring(${wrappedV}))`,
@@ -1088,58 +1126,24 @@ function wrapExecCheck(source, verifyUrl) {
 
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const sha256fn = r(), rtVar = r(), hashVar = r(), computed = r(), okV = r(), rV = r(), plrV = r();
-  const stageV = r(), stageFnV = r(), verifyDoneV = r(), verifyBodyV = r(), verifyThreadV = r();
-
-  // Diagnostic-only timeout: the verification requirement itself is unchanged.
-  // Previously a hanging game:HttpGet() could block the payload forever, so the
-  // loader only reported PAYLOAD_WAITING and never reached its cleanup path.
-  const VERIFY_TIMEOUT_SEC = 8;
 
   const wrapped = [
     "do",
-    `  local ${stageV} = (type(getgenv) == "function" and getgenv() or _G)`,
-    `  local function ${stageFnV}(s, e)`,
-    `    pcall(function() if type(${stageV}.__SOLARIES_SET_STAGE) == "function" then ${stageV}.__SOLARIES_SET_STAGE(tostring(s), e and tostring(e) or nil) end end)`,
+    `  local __ok = false`,
+    `  local ${okV}, ${rV} = pcall(function() return game:HttpGet("${verifyUrl}") end)`,
+    `  if ${okV} and ${rV} == "1" then __ok = true end`,
+    `  if not __ok then`,
+    `    return`,
     `  end`,
-    `  ${stageFnV}("VERIFY_START")`,
-    `  local ${verifyDoneV} = false`,
-    `  local ${verifyBodyV} = nil`,
-    `  local ${verifyThreadV} = task.spawn(function()`,
-    `    local __verifyOk, __verifyRes = pcall(function() return game:HttpGet("${verifyUrl}") end)`,
-    `    ${verifyBodyV} = __verifyOk and __verifyRes or ("HTTP_ERROR: " .. tostring(__verifyRes))`,
-    `    ${verifyDoneV} = true`,
-    `  end)`,
-    `  local __verifyDeadline = os.clock() + ${VERIFY_TIMEOUT_SEC}`,
-    `  while not ${verifyDoneV} and os.clock() < __verifyDeadline do task.wait(0.1) end`,
-    `  if not ${verifyDoneV} then`,
-    `    pcall(function() task.cancel(${verifyThreadV}) end)`,
-    `    ${stageFnV}("VERIFY_TIMEOUT", "${VERIFY_TIMEOUT_SEC}s")`,
-    `    error("VERIFY_TIMEOUT after ${VERIFY_TIMEOUT_SEC}s")`,
-    `  end`,
-    `  if type(${verifyBodyV}) == "string" and string.sub(${verifyBodyV}, 1, 11) == "HTTP_ERROR:" then`,
-    `    ${stageFnV}("VERIFY_HTTP_ERROR", ${verifyBodyV})`,
-    `    error(${verifyBodyV})`,
-    `  end`,
-    `  if ${verifyBodyV} ~= "1" then`,
-    `    ${stageFnV}("VERIFY_REJECTED", tostring(${verifyBodyV}))`,
-    `    error("VERIFY_REJECTED: " .. tostring(${verifyBodyV}))`,
-    `  end`,
-    `  ${stageFnV}("VERIFY_OK")`,
     `end`,
     // Inject pure-Lua SHA-256 and verify the runtime key
     `local ${sha256fn} = (function()`,
     sha256Lua(),
     `end)()`,
     `return function(${rtVar})`,
-    `  if type(${rtVar}) ~= "string" or #${rtVar} ~= 64 then`,
-    `    ${stageFnV}("RUNTIME_KEY", "invalid key")`,
-    `    error("RUNTIME_KEY_INVALID")`,
-    `  end`,
+    `  if type(${rtVar}) ~= "string" or #${rtVar} ~= 64 then return end`,
     `  local ${computed} = ${sha256fn}(${rtVar})`,
-    `  if ${computed} ~= "${expectedHash}" then`,
-    `    ${stageFnV}("RUNTIME_KEY", "hash mismatch")`,
-    `    error("RUNTIME_KEY_MISMATCH")`,
-    `  end`,
+    `  if ${computed} ~= "${expectedHash}" then return end`,
     source,
     `end`,
   ].join("\n");
@@ -2279,6 +2283,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     'local __solIndicator',
     'local __solStage = "INIT"',
     'local __solDone = false',
+    'local __solRunning = false',
     'local __solFailed = false',
     'pcall(function()',
     '  local Players = game:GetService("Players")',
@@ -2373,6 +2378,11 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '    end',
     '  end)',
     'end)',
+    'local function __solMarkRunning()',
+    '  __solRunning = true',
+    '  __solDone = true',
+    '  pcall(function() if __solIndicator then __solIndicator:Destroy() end end)',
+    'end',
     '',
     'local __watchdog = task.delay(45, function()',
     '  if not __solDone and __solIndicator and __solIndicator.Parent then',
@@ -2741,6 +2751,7 @@ async function buildSecureDelivery({
     verifyUrl,
     runtimeKey,
     integrityMode,
+    crypto.createHash("sha256").update(execResult.code).digest("hex"),
   );
 
   // --- Wrap assembler in integrity checks ---
@@ -3561,6 +3572,7 @@ async function handleLoadRoute(req, res) {
       __verifyUrl,
       __runtimeKey,
       __integrityMode,
+      crypto.createHash("sha256").update(__execResult.code).digest("hex"),
     );
 
     // Wrap the assembler itself in integrity checks + stage-split so it's
