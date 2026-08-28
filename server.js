@@ -870,12 +870,22 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const lines = [];
 
-  // Fetch + decrypt each chunk sequentially
+  // Fetch each chunk sequentially. The status hook is intentionally global
+  // because the assembler may be executed through loadstring() and therefore
+  // cannot see lexical locals from the outer loader wrapper.
   const partVars = chunks.map(() => r());
   const assembledVar = r();
   const okV = r(), resV = r(), iV = r(), urlV = r();
+  const statusV = r(), statusFnV = r();
 
-  lines.push(`local ${assembledVar} = ""`);
+  lines.push(
+    `local ${statusV} = (type(getgenv) == "function" and getgenv() or _G)`,
+    `local function ${statusFnV}(s, e)`,
+    `  pcall(function() if type(${statusV}.__SOLARIES_SET_STAGE) == "function" then ${statusV}.__SOLARIES_SET_STAGE(tostring(s), e and tostring(e) or nil) end end)`,
+    `end`,
+    `local ${assembledVar} = ""`,
+    `${statusFnV}("ASSEMBLER")`,
+  );
   // FIX: /v1/chunk/:nonce returns the chunk still AES-256-GCM encrypted
   // (base64) — Luau has no native AES, so each chunk must be round-tripped
   // through the server's /v1/decrypt/:nonce endpoint (same nonce, used only
@@ -888,10 +898,13 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     const pv = partVars[i];
     const chunkUrl = baseUrl + "/v1/chunk/" + chunks[i].nonce;
     lines.push(
+      `${statusFnV}("CHUNK_${i + 1}")`,
       `local ${okV}${i}, ${resV}${i} = pcall(function()`,
       `  return game:HttpGet("${chunkUrl}")`,
       `end)`,
       `if not ${okV}${i} or not ${resV}${i} or ${resV}${i} == "" then`,
+      `  ${statusFnV}("CHUNK_${i + 1}", ${resV}${i} or "empty response")`,
+      `  warn("[S] stage=CHUNK_${i + 1} error: "..tostring(${resV}${i} or "empty response"))`,
       `  pcall(function() game:HttpGet("${canaryUrl}?r=chunk_fail_${i}") end)`,
       `  return`,
       `end`,
@@ -908,21 +921,32 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
   const sha256fnV = r();
 
   lines.push(
+    `${statusFnV}("LOADSTRING")`,
     `-- [ASSEMBLE COMPLETE — RUN]`,
     `local ${sha256fnV} = (function()`,
     sha256Lua(),
     `end)()`,
     `local ${fnV}, ${errV} = loadstring(${assembledVar})`,
-    `if not ${fnV} then warn("[S] err: "..tostring(${errV})); return end`,
+    `if not ${fnV} then ${statusFnV}("LOADSTRING", ${errV}); warn("[S] stage=LOADSTRING error: "..tostring(${errV})); return end`,
+    `${statusFnV}("EXECUTE")`,
     `local ${okV}r, ${wrappedV} = pcall(${fnV})`,
     `if ${okV}r and type(${wrappedV}) == "function" then`,
     `  local ${rtV} = "${runtimeKey}"`,
     `  local ${resV}h = ${sha256fnV}(${rtV})`,
     `  if ${resV}h == "${crypto.createHash("sha256").update(runtimeKey).digest("hex")}" then`,
-    `    ${wrappedV}(${rtV})`,
+    `    ${statusFnV}("RUN")`,
+    `    local ${okV}x, ${resV}x = pcall(${wrappedV}, ${rtV})`,
+    `    if not ${okV}x then ${statusFnV}("RUN", ${resV}x); warn("[S] stage=RUN error: "..tostring(${resV}x)); return end`,
+    `  else`,
+    `    ${statusFnV}("RUNTIME_KEY")`,
+    `    warn("[S] stage=RUNTIME_KEY error: runtime key mismatch"); return`,
     `  end`,
     `elseif ${okV}r then`,
     `  -- source ran directly (no wrapper)`,
+    `  ${statusFnV}("DONE")`,
+    `else`,
+    `  ${statusFnV}("EXECUTE", ${wrappedV})`,
+    `  warn("[S] stage=EXECUTE error: "..tostring(${wrappedV}))`,
     `end`,
   );
 
@@ -2219,6 +2243,9 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '',
     '-- 3-dot loading indicator',
     'local __solIndicator',
+    'local __solStage = "INIT"',
+    'local __solDone = false',
+    'local __solFailed = false',
     'pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
@@ -2235,6 +2262,26 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '  gui.DisplayOrder = 999998',
     '  gui.Parent = parentGui',
     '  __solIndicator = gui',
+    '  local __solStageLabel = Instance.new("TextLabel")',
+    '  __solStageLabel.AnchorPoint = Vector2.new(0.5, 0)',
+    '  __solStageLabel.Position = UDim2.new(0.5, 0, 0.5, 18)',
+    '  __solStageLabel.Size = UDim2.fromOffset(260, 22)',
+    '  __solStageLabel.BackgroundTransparency = 1',
+    '  __solStageLabel.Font = Enum.Font.Gotham',
+    '  __solStageLabel.Text = "Loading..."',
+    '  __solStageLabel.TextColor3 = Color3.fromRGB(175, 175, 180)',
+    '  __solStageLabel.TextSize = 12',
+    '  __solStageLabel.TextTransparency = 0.15',
+    '  __solStageLabel.Parent = gui',
+    '  local __solGlobal = type(getgenv) == "function" and getgenv() or _G',
+    '  __solGlobal.__SOLARIES_SET_STAGE = function(stage, err)',
+    '    __solStage = tostring(stage or "UNKNOWN")',
+    '    if err then __solFailed = true end',
+    '    if __solStageLabel and __solStageLabel.Parent then',
+    '      __solStageLabel.Text = err and ("Error: " .. __solStage .. " — " .. tostring(err)) or __solStage',
+    '    end',
+    '    if err then warn("[S] stage=" .. __solStage .. " error: " .. tostring(err)) end',
+    '  end',
     '  local pill = Instance.new("Frame")',
     '  pill.Size = UDim2.fromOffset(52, 20)',
     '  pill.Position = UDim2.new(0.5, -26, 0.5, -10)',
@@ -2293,11 +2340,27 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '  end)',
     'end)',
     '',
+    'local __watchdog = task.delay(45, function()',
+    '  if not __solDone and __solIndicator and __solIndicator.Parent then',
+    '    local __g = type(getgenv) == "function" and getgenv() or _G',
+    '    if type(__g.__SOLARIES_SET_STAGE) == "function" then __g.__SOLARIES_SET_STAGE("TIMEOUT", "45s") end',
+    '    warn("[S] stage=TIMEOUT last_stage=" .. tostring(__solStage))',
+    '    task.wait(0.75)',
+    '    pcall(function() if __solIndicator then __solIndicator:Destroy() end end)',
+    '  end',
+    'end)',
     'local __assemblerOk, __assemblerErr = pcall(function()',
     ...payloadLines,
     'end)',
-    'if not __assemblerOk then warn("[S] assembler err: "..tostring(__assemblerErr)) end',
+    '__solDone = true',
+    'if not __assemblerOk then',
+    '  warn("[S] stage=" .. tostring(__solStage) .. " error: " .. tostring(__assemblerErr))',
+    '  if __solStageLabel and __solStageLabel.Parent then __solStageLabel.Text = "Error: " .. tostring(__solStage) end',
+    'end',
+    'if __solFailed then task.wait(2) end',
     'pcall(function() if __solIndicator then __solIndicator:Destroy() end end)',
+    'pcall(function() if __watchdog then task.cancel(__watchdog) end end)',
+    'pcall(function() local __g = type(getgenv) == "function" and getgenv() or _G; if __g.__SOLARIES_SET_STAGE then __g.__SOLARIES_SET_STAGE = nil end end)',
     ''
   ].join("\n");
 }
@@ -2314,6 +2377,10 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
   return [
     '--[[ PROPRIETARY ]]',
     '',
+    'local __solStage = "INIT"',
+    'local __solDone = false',
+    'local __solFailed = false',
+    'local __solGui',
     'local __s_ok, __s_er = pcall(function()',
     '  local Players = game:GetService("Players")',
     '  local TweenService = game:GetService("TweenService")',
@@ -2329,6 +2396,7 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  gui.DisplayOrder = 999999',
     '  gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling',
     '  gui.Parent = parentGui',
+    '  __solGui = gui',
     '  local bg = Instance.new("Frame")',
     '  bg.Size = UDim2.fromScale(1, 1)',
     '  bg.BackgroundColor3 = Color3.fromRGB(17, 17, 19)',
@@ -2357,6 +2425,13 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  sub.TextTransparency = 1',
     '  sub.TextScaled = true',
     '  sub.Parent = bg',
+    '  local __solGlobal = type(getgenv) == "function" and getgenv() or _G',
+    '  __solGlobal.__SOLARIES_SET_STAGE = function(stage, err)',
+    '    __solStage = tostring(stage or "UNKNOWN")',
+    '    if err then __solFailed = true end',
+    '    if sub and sub.Parent then sub.Text = err and ("Error: " .. __solStage) or (__solStage .. "...") end',
+    '    if err then warn("[S] stage=" .. __solStage .. " error: " .. tostring(err)) end',
+    '  end',
     '  local track = Instance.new("Frame")',
     '  track.AnchorPoint = Vector2.new(0.5, 0.5)',
     '  track.Position = UDim2.fromScale(0.5, 0.66)',
@@ -2391,7 +2466,20 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     '  task.wait(0.45)',
     '  gui:Destroy()',
     'end)',
-    'if not __s_ok then warn("[S] err: "..tostring(__s_er)) end',
+    'if not __s_ok then',
+    '  __solFailed = true',
+    '  __solStage = "UI_INIT"',
+    '  warn("[S] stage=UI_INIT error: " .. tostring(__s_er))',
+    'end',
+    'local __watchdog = task.delay(45, function()',
+    '  if not __solDone and __solGui and __solGui.Parent then',
+    '    local __g = type(getgenv) == "function" and getgenv() or _G',
+    '    if type(__g.__SOLARIES_SET_STAGE) == "function" then __g.__SOLARIES_SET_STAGE("TIMEOUT", "45s") end',
+    '    warn("[S] stage=TIMEOUT last_stage=" .. tostring(__solStage))',
+    '    task.wait(0.75)',
+    '    pcall(function() __solGui:Destroy() end)',
+    '  end',
+    'end)',
     // FIX: when a prebuiltAssembler is supplied (modern Strategy A+B chunked
     // path), embed it directly instead of falling back to
     // buildFetchDecryptDecoyLoadLines. That legacy path expects the raw=1
@@ -2407,6 +2495,12 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     ...(prebuiltAssembler
       ? [prebuiltAssembler]
       : buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv)),
+    '',
+    '__solDone = true',
+    'if __solFailed then task.wait(2) end',
+    'pcall(function() if __solGui then __solGui:Destroy() end end)',
+    'pcall(function() if __watchdog then task.cancel(__watchdog) end end)',
+    'pcall(function() local __g = type(getgenv) == "function" and getgenv() or _G; if __g.__SOLARIES_SET_STAGE then __g.__SOLARIES_SET_STAGE = nil end end)',
     ''
   ].join("\n");
 }
