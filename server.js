@@ -935,6 +935,10 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     `  local ${resV}h = ${sha256fnV}(${rtV})`,
     `  if ${resV}h == "${crypto.createHash("sha256").update(runtimeKey).digest("hex")}" then`,
     `    ${statusFnV}("RUN")`,
+    // The payload has now successfully reached its actual run stage. The
+    // loading indicator must not wait for the payload to return: game scripts
+    // commonly contain long-lived loops, event connections, or waits.
+    `    if type(__solMarkRunning) == "function" then pcall(__solMarkRunning) end`,
     `    local ${okV}x, ${resV}x = pcall(${wrappedV}, ${rtV})`,
     `    if not ${okV}x then ${statusFnV}("RUN", ${resV}x); warn("[S] stage=RUN error: "..tostring(${resV}x)); return end`,
     `  else`,
@@ -2245,6 +2249,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     'local __solIndicator',
     'local __solStage = "INIT"',
     'local __solDone = false',
+    'local __solRunning = false',
     'local __solFailed = false',
     'pcall(function()',
     '  local Players = game:GetService("Players")',
@@ -2339,6 +2344,11 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '    end',
     '  end)',
     'end)',
+    'local function __solMarkRunning()',
+    '  __solRunning = true',
+    '  __solDone = true',
+    '  pcall(function() if __solIndicator then __solIndicator:Destroy() end end)',
+    'end',
     '',
     'local __watchdog = task.delay(45, function()',
     '  if not __solDone and __solIndicator and __solIndicator.Parent then',
