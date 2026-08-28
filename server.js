@@ -375,7 +375,7 @@ setInterval(() => {
 // copy-pasted generic dumper.
 // ============================================================
 const loadChallenges = new Map(); // challenge -> { pid, ip, gp, expires, used }
-const CHALLENGE_TTL_MS = 8 * 1000;
+const CHALLENGE_TTL_MS = 30 * 1000;
 
 function issueChallenge(pid, ip, gp) {
   const challenge = crypto.randomBytes(16).toString("hex");
