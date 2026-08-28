@@ -3511,7 +3511,9 @@ async function handleLoadRoute(req, res) {
   const __s2Token = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
   const __stage2Url = PUBLIC_BASE_URL + "/v1/load/" + scriptSlug
     + "?key=" + encodeURIComponent(key || "")
-    + "&stage2=1&s2=" + encodeURIComponent(__s2Token);
+    + "&stage2=1&s2=" + encodeURIComponent(__s2Token)
+    + "&px=" + encodeURIComponent(__dpid)
+    + "&gp=" + encodeURIComponent(__dgp);
   return res.status(200).send(buildStage1Stub(__stage2Url, __dCanaryUrl, __strictGenvCheck, __integrityMode));
 }
 app.get("/v1/load/:script_slug", handleLoadRoute);
