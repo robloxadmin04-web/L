@@ -629,7 +629,7 @@ const ID_TOKEN_SECRET = process.env.ID_TOKEN_SECRET || (() => {
   return crypto.createHmac("sha256", Buffer.from(DELIVERY_SECRET)).update("id-token-v1").digest("hex");
 })();
 const idTokens = new Map(); // token -> { hwid, userId, placeId, expires }
-const ID_TOKEN_TTL_MS = 30 * 1000; // 30 seconds — enough to reach /v1/idcheck
+const ID_TOKEN_TTL_MS = 90 * 1000; // 90 seconds — buffer for slow connections
 
 function issueIdToken(hwid, userId, placeId) {
   const ts = Date.now();
@@ -1071,8 +1071,6 @@ function wrapExecCheck(source, verifyUrl) {
     `  local ${okV}, ${rV} = pcall(function() return game:HttpGet("${verifyUrl}") end)`,
     `  if ${okV} and ${rV} == "1" then __ok = true end`,
     `  if not __ok then`,
-    `    local ${plrV} = game:GetService("Players").LocalPlayer`,
-    `    if ${plrV} then ${plrV}:Kick("Session expired.") end`,
     `    return`,
     `  end`,
     `end`,
@@ -1101,7 +1099,7 @@ function wrapExecCheck(source, verifyUrl) {
 // intent, but worth flagging separately from generic scrape alerts.
 // ============================================================
 const canaryTokens = new Map(); // token -> { scriptSlug, key, expires }
-const CANARY_TTL_MS = 20 * 1000;
+const CANARY_TTL_MS = 60 * 1000;
 
 function issueCanaryToken(scriptSlug, key) {
   const token = crypto.randomBytes(16).toString("hex");
