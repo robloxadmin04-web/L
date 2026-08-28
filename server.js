@@ -943,7 +943,9 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     // commonly contain event loops / waits and would otherwise keep the loader
     // wrapper blocked forever. Run it in its own task and keep error reporting.
     `    task.spawn(function()`,
+    `      warn("[S] stage=PAYLOAD_START")`,
     `      local ${okV}x, ${resV}x = pcall(${wrappedV}, ${rtV})`,
+    `      if ${okV}x then warn("[S] stage=PAYLOAD_RETURN") end`,
     `      if not ${okV}x then ${statusFnV}("RUN", ${resV}x); warn("[S] stage=RUN error: "..tostring(${resV}x)) end`,
     `    end)`,
     `  else`,
@@ -951,8 +953,9 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     `    warn("[S] stage=RUNTIME_KEY error: runtime key mismatch"); return`,
     `  end`,
     `elseif ${okV}r then`,
-    `  -- source ran directly (no wrapper)`,
-    `  ${statusFnV}("DONE")`,
+    `  -- wrapper returned nil; this usually means an execution gate/early guard stopped it`,
+    `  ${statusFnV}("EXECUTE_GATE", ${wrappedV} or "wrapper returned nil")`,
+    `  warn("[S] stage=EXECUTE_GATE error: wrapper returned "..tostring(${wrappedV}))`,
     `else`,
     `  ${statusFnV}("EXECUTE", ${wrappedV})`,
     `  warn("[S] stage=EXECUTE error: "..tostring(${wrappedV}))`,
