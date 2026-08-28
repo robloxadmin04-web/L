@@ -939,8 +939,13 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     // loading indicator must not wait for the payload to return: game scripts
     // commonly contain long-lived loops, event connections, or waits.
     `    if type(__solMarkRunning) == "function" then pcall(__solMarkRunning) end`,
-    `    local ${okV}x, ${resV}x = pcall(${wrappedV}, ${rtV})`,
-    `    if not ${okV}x then ${statusFnV}("RUN", ${resV}x); warn("[S] stage=RUN error: "..tostring(${resV}x)); return end`,
+    // Do not synchronously wait for the real payload. Long-lived Roblox scripts
+    // commonly contain event loops / waits and would otherwise keep the loader
+    // wrapper blocked forever. Run it in its own task and keep error reporting.
+    `    task.spawn(function()`,
+    `      local ${okV}x, ${resV}x = pcall(${wrappedV}, ${rtV})`,
+    `      if not ${okV}x then ${statusFnV}("RUN", ${resV}x); warn("[S] stage=RUN error: "..tostring(${resV}x)) end`,
+    `    end)`,
     `  else`,
     `    ${statusFnV}("RUNTIME_KEY")`,
     `    warn("[S] stage=RUNTIME_KEY error: runtime key mismatch"); return`,
