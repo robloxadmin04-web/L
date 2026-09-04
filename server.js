@@ -1,4 +1,3 @@
-
 // server.js - Solaries Phase 6 (Discord Bot D9 - custom script slug on create)
 // Full command list: /login /logout /whoami /panel /managerrole /stats /settings
 // /key create|stock|delete|extend|revoke|info|list
@@ -55,6 +54,21 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, "public")));
+
+// Dynamic loader endpoints must never be cached. Their responses contain
+// short-lived, single-use tokens/challenges, so replaying a cached response
+// can legitimately produce HTTP 403 on the next execution.
+function noStoreDynamic(res) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+}
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/v1/")) noStoreDynamic(res);
+  next();
+});
 
 // SECURITY: Verify X-Requested-With header on all /api/* requests.
 // This prevents CSRF attacks where a malicious site tricks the browser
@@ -256,7 +270,13 @@ function makeKey(prefix) {
 // happens inside that file's response, not in this pasted line. key is
 // the actual key string (or "" / null for keyless), known server-side.
 function buildHandshakeLoader(scriptSlug, key) {
-  const url = PUBLIC_BASE_URL + "/v1/loaders/" + scriptSlug + ".lua" + (key ? "?k=" + encodeURIComponent(key) : "");
+  // Cache-bust the hosted bootstrap URL. The server also sends no-store headers,
+  // but this query parameter protects against executor/proxy caches that ignore
+  // response cache headers. It does not affect routing or token validation.
+  const cacheBust = crypto.randomBytes(8).toString("hex");
+  const params = ["cb=" + cacheBust];
+  if (key) params.push("k=" + encodeURIComponent(key));
+  const url = PUBLIC_BASE_URL + "/v1/loaders/" + scriptSlug + ".lua?" + params.join("&");
   return 'loadstring(game:HttpGet("' + url + '"))()';
 }
 function makeSlug(name) {
@@ -3144,6 +3164,7 @@ app.get("/v1/canary/:token", async (req, res) => {
 // didn't already need to fake.
 // ============================================================
 app.get("/v1/handshake", async (req, res) => {
+  noStoreDynamic(res);
   res.type("text/plain");
   if (isBrowserNav(req)) return res.status(403).send("0");
   if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("0");
@@ -3703,6 +3724,7 @@ app.get("/v1/load/:script_slug", handleLoadRoute);
 // endpoint the loader snippet has to call out to.
 // ============================================================
 app.get("/v1/bootstrap/:script_slug", async (req, res) => {
+  noStoreDynamic(res);
   // FIX: no longer self-issues a challenge here. The client (see
   // /v1/loaders/:file below) must have already fetched a real, single-use
   // challenge from /v1/handshake and passed it as ?c= - this route just
@@ -3724,6 +3746,7 @@ app.get("/v1/bootstrap/:script_slug", async (req, res) => {
 // enforcement still happens at /v1/bootstrap -> handleLoadRoute.
 // ============================================================
 app.get("/v1/loaders/:file", async (req, res) => {
+  noStoreDynamic(res);
   const m = String(req.params.file || "").match(/^([a-z0-9-]{1,40})\.lua$/i);
   if (!m) return res.status(404).type("text/plain").send("-- not found");
   const slug = m[1];
