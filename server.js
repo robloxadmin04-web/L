@@ -2357,7 +2357,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '    __solStage = tostring(stage or "UNKNOWN")',
     '    if err then __solFailed = true end',
     '    if __solStageLabel and __solStageLabel.Parent then',
-    '      __solStageLabel.Text = err and ("Error: " .. __solStage .. " Ã¢â‚¬â€ " .. tostring(err)) or __solStage',
+    '      __solStageLabel.Text = err and ("Error: " .. __solStage .. " â€” " .. tostring(err)) or __solStage',
     '    end',
     '    if err then warn("[S] stage=" .. __solStage .. " error: " .. tostring(err)) end',
     '  end',
@@ -3848,7 +3848,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
   }
   const __earlyCheck = __earlyCheckLines.join("\n") + "\n";
 
-  const __trollJunk = buildTrollJunk();
+  const __trollJunk = "";
 
   const lua = [
     '--[[ PROPRIETARY ]]',
