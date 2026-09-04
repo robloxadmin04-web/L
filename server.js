@@ -95,7 +95,7 @@ app.use((req, res, next) => {
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=(), usb=()");
-  // SECURITY: HSTS â€” force HTTPS for 1 year once first visited over HTTPS.
+  // SECURITY: HSTS Ã¢â‚¬â€ force HTTPS for 1 year once first visited over HTTPS.
   // Prevents protocol downgrade attacks (SSLstrip etc.).
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   res.setHeader(
@@ -198,7 +198,7 @@ function getSession(token, req) {
     const ua = String(req.headers["user-agent"] || "").slice(0, 256);
     const uaHash = crypto.createHash("sha256").update(ua).digest("hex").slice(0, 16);
     if (uaHash !== s.ua_hash) {
-      // UA mismatch â€” possible stolen token. Invalidate and reject.
+      // UA mismatch Ã¢â‚¬â€ possible stolen token. Invalidate and reject.
       sessions.delete(token);
       return null;
     }
@@ -387,7 +387,7 @@ function consumeChallenge(challenge, pid, ip, gp) {
   const c = loadChallenges.get(challenge);
   if (!c) return false;
   if (c.used || Date.now() > c.expires) { loadChallenges.delete(challenge); return false; }
-  // NOTE: IP check removed â€” Roblox/Cloudflare/Railway proxies can
+  // NOTE: IP check removed Ã¢â‚¬â€ Roblox/Cloudflare/Railway proxies can
   // assign different IPs between the handshake and bootstrap requests
   // causing false 403s. Challenge is still protected by: single-use,
   // 8s TTL, player ID binding, and place ID binding.
@@ -428,7 +428,7 @@ function consumeLoaderToken(token) {
   if (!token) return false;
   const t = loaderTokens.get(token);
   if (!t) return false;
-  loaderTokens.delete(token); // always delete â€” single use
+  loaderTokens.delete(token); // always delete Ã¢â‚¬â€ single use
   if (Date.now() > t.expires) return false;
   return true;
 }
@@ -562,7 +562,7 @@ function injectWatermark(source, keyId, hwid, ip) {
 // ============================================================
 // FIX #2: Encrypt the delivered script body.
 // Instead of sending plain Lua over the wire (sniffable by anyone
-// who can see the HTTP response â€” proxy tools, mitmproxy, etc.),
+// who can see the HTTP response Ã¢â‚¬â€ proxy tools, mitmproxy, etc.),
 // the body is AES-256-GCM encrypted with a per-request key derived
 // from the nonce, hwid, and a server secret. The loader Lua embeds
 // a matching decryptor so only that specific request/device can
@@ -576,7 +576,7 @@ const DELIVERY_SECRET = process.env.DELIVERY_SECRET;
 // is visible in the raw=1 URL (?n=<nonce>), so anyone who captured the
 // HTTP response could XOR it back to plaintext without any key material.
 // AES-256-GCM:
-//  - Key = HKDF-SHA256(DELIVERY_SECRET + nonce) â†’ 32 bytes, one-time-use
+//  - Key = HKDF-SHA256(DELIVERY_SECRET + nonce) Ã¢â€ â€™ 32 bytes, one-time-use
 //  - IV  = random 12 bytes per call
 //  - Auth tag = 16 bytes (GCM integrity, detects tampering)
 // The Lua decoder in buildFetchDecryptDecoyLoadLines is updated to match.
@@ -585,7 +585,7 @@ function deriveDeliveryKey(nonce) {
   const nonceBytes = Buffer.from(nonce, "hex");
   return crypto.createHmac("sha256", nonceBytes)
     .update(Buffer.from(DELIVERY_SECRET))
-    .digest(); // 32 bytes â†’ AES-256 key
+    .digest(); // 32 bytes Ã¢â€ â€™ AES-256 key
 }
 
 function encryptDelivery(plaintext, nonce) {
@@ -615,12 +615,12 @@ function encryptDelivery(plaintext, nonce) {
 // which verifies the CURRENT request's hwid/userId/placeId matches
 // what the token was minted for. If the attacker dumps the source and
 // runs it from a different account/device:
-//   - Their hwid is different â†’ server rejects â†’ Kick("Session expired.")
-//   - Their userId is different â†’ same result
-//   - Token is expired (30s TTL) â†’ same result
-//   - Token already consumed (single-use) â†’ same result
+//   - Their hwid is different Ã¢â€ â€™ server rejects Ã¢â€ â€™ Kick("Session expired.")
+//   - Their userId is different Ã¢â€ â€™ same result
+//   - Token is expired (30s TTL) Ã¢â€ â€™ same result
+//   - Token already consumed (single-use) Ã¢â€ â€™ same result
 //
-// This makes dumped source USELESS â€” it is cryptographically bound to
+// This makes dumped source USELESS Ã¢â‚¬â€ it is cryptographically bound to
 // the exact device+player+place that originally requested it.
 // ============================================================
 const ID_TOKEN_SECRET = process.env.ID_TOKEN_SECRET || (() => {
@@ -629,7 +629,7 @@ const ID_TOKEN_SECRET = process.env.ID_TOKEN_SECRET || (() => {
   return crypto.createHmac("sha256", Buffer.from(DELIVERY_SECRET)).update("id-token-v1").digest("hex");
 })();
 const idTokens = new Map(); // token -> { hwid, userId, placeId, expires }
-const ID_TOKEN_TTL_MS = 90 * 1000; // 90 seconds â€” buffer for slow connections
+const ID_TOKEN_TTL_MS = 90 * 1000; // 90 seconds Ã¢â‚¬â€ buffer for slow connections
 
 function issueIdToken(hwid, userId, placeId) {
   const ts = Date.now();
@@ -664,7 +664,7 @@ setInterval(() => {
 }, 15 * 1000).unref();
 
 // Lua preamble injected at the TOP of every delivered source.
-// Must be the first thing that executes â€” before any game logic.
+// Must be the first thing that executes Ã¢â‚¬â€ before any game logic.
 // If the check fails for any reason, the player is kicked and
 // the rest of the source never runs.
 // ============================================================
@@ -675,26 +675,26 @@ setInterval(() => {
 // The token was minted at delivery time for that exact combination.
 //
 // If a dumped copy of the script is run by a different player/device:
-//   - hwid mismatch  â†’ server returns "0" â†’ player kicked
-//   - userId mismatch â†’ server returns "0" â†’ player kicked
-//   - token expired (30s TTL) â†’ "0" â†’ kicked
-//   - token already used (single-use) â†’ "0" â†’ kicked
+//   - hwid mismatch  Ã¢â€ â€™ server returns "0" Ã¢â€ â€™ player kicked
+//   - userId mismatch Ã¢â€ â€™ server returns "0" Ã¢â€ â€™ player kicked
+//   - token expired (30s TTL) Ã¢â€ â€™ "0" Ã¢â€ â€™ kicked
+//   - token already used (single-use) Ã¢â€ â€™ "0" Ã¢â€ â€™ kicked
 //
 // DEBUG CHECKLIST for Strategy A failures:
 //   "id_mismatch" in canary log:
-//     â†’ Most likely: hwid not sent in x-hwid header (executor issue)
-//     â†’ OR: gethwid() returns nil on that executor (use RbxAnalyticsService fallback)
-//     â†’ OR: token expired â€” player took >30s to reach idcheck call
-//     â†’ OR: genuine different device (dump replay attempt)
+//     Ã¢â€ â€™ Most likely: hwid not sent in x-hwid header (executor issue)
+//     Ã¢â€ â€™ OR: gethwid() returns nil on that executor (use RbxAnalyticsService fallback)
+//     Ã¢â€ â€™ OR: token expired Ã¢â‚¬â€ player took >30s to reach idcheck call
+//     Ã¢â€ â€™ OR: genuine different device (dump replay attempt)
 //   "0" returned from /v1/idcheck:
-//     â†’ Check if px (UserId) and gp (PlaceId) are being sent in the rawUrl
-//     â†’ They must match what was in the original /v1/load request
+//     Ã¢â€ â€™ Check if px (UserId) and gp (PlaceId) are being sent in the rawUrl
+//     Ã¢â€ â€™ They must match what was in the original /v1/load request
 //
 // HOW IT FLOWS:
-//   1. /v1/load?raw=1 â†’ issueIdToken(hwid, pid, gp) â†’ stores in idTokens map
-//   2. buildIdCheckPreamble(token) â†’ embeds Lua that calls /v1/idcheck/:token
+//   1. /v1/load?raw=1 Ã¢â€ â€™ issueIdToken(hwid, pid, gp) Ã¢â€ â€™ stores in idTokens map
+//   2. buildIdCheckPreamble(token) Ã¢â€ â€™ embeds Lua that calls /v1/idcheck/:token
 //   3. idPreamble is PREPENDED to the source before wrapExecCheck
-//   4. Source is split into chunks â€” idPreamble is in chunk #0
+//   4. Source is split into chunks Ã¢â‚¬â€ idPreamble is in chunk #0
 //   5. When Lua assembles chunks and runs the source, idcheck fires FIRST
 // ============================================================
 function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
@@ -728,8 +728,8 @@ function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
 // and is encrypted independently with AES-256-GCM.
 //
 // Attack resistance:
-//   - Attacker who dumps one loadstring call gets ONE chunk â€” useless alone
-//   - Each chunk URL contains a different single-use nonce â€” can't replay
+//   - Attacker who dumps one loadstring call gets ONE chunk Ã¢â‚¬â€ useless alone
+//   - Each chunk URL contains a different single-use nonce Ã¢â‚¬â€ can't replay
 //   - Chunks must be reassembled IN ORDER server-side token chain
 //   - Each chunk fetch requires a valid Roblox client (UA + pid checks)
 //   - If any chunk fetch fails (nonce expired/used), whole delivery aborts
@@ -743,7 +743,7 @@ function buildIdCheckPreamble(idToken, canaryUrl, integrityMode) {
 // the delivery pattern cannot reliably predict how many fetches to intercept.
 // ============================================================
 const chunkNonces = new Map();
-const CHUNK_NONCE_TTL_MS = 60 * 1000; // 60s â€” enough for decoy+fetch pipeline
+const CHUNK_NONCE_TTL_MS = 60 * 1000; // 60s Ã¢â‚¬â€ enough for decoy+fetch pipeline
 
 function issueChunkNonce(scriptSlug, key, chunkIdx, totalChunks, plaintextSlice) {
   const nonce = crypto.randomBytes(16).toString("hex");
@@ -781,20 +781,20 @@ setInterval(() => {
 // The chunks contain the full wrapExecCheck+idPreamble+source Lua.
 //
 // DEBUG: If /v1/chunk returns wrong content:
-//   â†’ Check that you're passing execResult.code, not __raw
-//   â†’ The plaintextSlice stored in chunkNonces is what gets returned
-//   â†’ Each nonce is single-use â€” don't retry the same chunk URL
+//   Ã¢â€ â€™ Check that you're passing execResult.code, not __raw
+//   Ã¢â€ â€™ The plaintextSlice stored in chunkNonces is what gets returned
+//   Ã¢â€ â€™ Each nonce is single-use Ã¢â‚¬â€ don't retry the same chunk URL
 //
 // DEBUG: "Incomplete statement" after assembling chunks:
-//   â†’ UTF-8 split issue: subarray() on Buffer is byte-safe, string split is not
-//   â†’ Always split the Buffer, never split the string directly
+//   Ã¢â€ â€™ UTF-8 split issue: subarray() on Buffer is byte-safe, string split is not
+//   Ã¢â€ â€™ Always split the Buffer, never split the string directly
 function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
   // FIX: split on UTF-8 CHARACTER boundaries, not raw byte offsets.
   // Previous version sliced a Buffer at byte offsets (src.subarray), which
   // can land in the middle of a multi-byte UTF-8 character whenever the
   // script (or any injected wrapper text) contains non-ASCII bytes. That
   // alone was safe AS LONG AS the slice stayed a raw Buffer until final
-  // reassembly â€” but /v1/chunk (the endpoint that actually serves each
+  // reassembly Ã¢â‚¬â€ but /v1/chunk (the endpoint that actually serves each
   // slice to the client) calls .toString("utf8") on each slice
   // INDIVIDUALLY before sending it, which decodes a partial multi-byte
   // sequence in isolation and corrupts it (replacement chars / dropped
@@ -845,27 +845,27 @@ function splitAndEncryptSource(source, scriptSlug, key, numChunks) {
 //
 // KEY DESIGN DECISIONS:
 //   1. /v1/chunk returns PLAINTEXT (server decrypts before returning).
-//      No client-side decryption needed â€” executor compatibility issue avoided.
-//   2. NO exec verify here â€” wrapExecCheck already embeds /v1/verify
+//      No client-side decryption needed Ã¢â‚¬â€ executor compatibility issue avoided.
+//   2. NO exec verify here Ã¢â‚¬â€ wrapExecCheck already embeds /v1/verify
 //      inside the chunked source. A second verify would consume the
 //      single-use nonce and always fail.
 //   3. SHA-256 is injected here for runtime key verification after
 //      loadstring(assembled) runs and returns the wrapper function.
 //
 // DEBUG: "chunk_fail_N" in canary log:
-//   â†’ Chunk nonce expired (60s TTL) â€” check for slow network or delays
-//   â†’ Chunk nonce already consumed (retry attempt)
-//   â†’ /v1/chunk returned non-200 â€” check server logs
+//   Ã¢â€ â€™ Chunk nonce expired (60s TTL) Ã¢â‚¬â€ check for slow network or delays
+//   Ã¢â€ â€™ Chunk nonce already consumed (retry attempt)
+//   Ã¢â€ â€™ /v1/chunk returned non-200 Ã¢â‚¬â€ check server logs
 //
 // DEBUG: "[S] err: ..." after assembling:
-//   â†’ loadstring(assembled) failed â€” Lua syntax error in assembled chunks
-//   â†’ Common cause: UTF-8 split mid-character (see splitAndEncryptSource)
-//   â†’ Another cause: sha256Lua() variable name conflict (now fixed with random prefix)
+//   Ã¢â€ â€™ loadstring(assembled) failed Ã¢â‚¬â€ Lua syntax error in assembled chunks
+//   Ã¢â€ â€™ Common cause: UTF-8 split mid-character (see splitAndEncryptSource)
+//   Ã¢â€ â€™ Another cause: sha256Lua() variable name conflict (now fixed with random prefix)
 //
 // DEBUG: wrappedV is nil (type check fails):
-//   â†’ The assembled source is valid Lua but doesn't return a function
-//   â†’ wrapExecCheck wraps source in: return function(rt) ... end
-//   â†’ If integrityMode="off", source runs directly (elseif branch handles this)
+//   Ã¢â€ â€™ The assembled source is valid Lua but doesn't return a function
+//   Ã¢â€ â€™ wrapExecCheck wraps source in: return function(rt) ... end
+//   Ã¢â€ â€™ If integrityMode="off", source runs directly (elseif branch handles this)
 function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyUrl, runtimeKey, integrityMode, expectedAssemblyHash) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const lines = [];
@@ -887,11 +887,11 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     `${statusFnV}("ASSEMBLER")`,
   );
   // FIX: /v1/chunk/:nonce returns the chunk still AES-256-GCM encrypted
-  // (base64) â€” Luau has no native AES, so each chunk must be round-tripped
+  // (base64) Ã¢â‚¬â€ Luau has no native AES, so each chunk must be round-tripped
   // through the server's /v1/decrypt/:nonce endpoint (same nonce, used only
   // for key derivation) BEFORE being appended. Previously the raw ciphertext
   // was concatenated straight into assembledVar and handed to loadstring(),
-  // which is why loadstring always failed with "Incomplete statement" â€”
+  // which is why loadstring always failed with "Incomplete statement" Ã¢â‚¬â€
   // it was parsing encrypted bytes, not Lua source.
   // Simple: /v1/chunk returns plaintext directly (server-side decrypt)
   for (let i = 0; i < chunks.length; i++) {
@@ -913,8 +913,8 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
     );
   }
 
-  // Assemble complete â€” run via loadstring once.
-  // NOTE: no exec verify here â€” wrapExecCheck already embedded it inside
+  // Assemble complete Ã¢â‚¬â€ run via loadstring once.
+  // NOTE: no exec verify here Ã¢â‚¬â€ wrapExecCheck already embedded it inside
   // the source that was split into chunks. Running it again here would
   // consume the single-use nonce before the source gets to verify it.
   const fnV = r(), errV = r(), rtV = r(), wrappedV = r();
@@ -922,7 +922,7 @@ function buildChunkAssembler(chunks, baseUrl, canaryUrl, idPreamble, execVerifyU
 
   lines.push(
     `${statusFnV}("ASSEMBLY_VERIFY")`,
-    `-- [ASSEMBLY COMPLETE â€” VERIFY BEFORE LOADSTRING]`,
+    `-- [ASSEMBLY COMPLETE Ã¢â‚¬â€ VERIFY BEFORE LOADSTRING]`,
     `local ${sha256fnV} = (function()`,
     sha256Lua(),
     `end)()`,
@@ -1048,16 +1048,16 @@ setInterval(() => {
 }, 60 * 1000).unref();
 
 // SECURITY UPGRADE: Runtime execution lock.
-// OLD: sum of char codes of the 32-char runtime key. Trivially bypassable â€”
+// OLD: sum of char codes of the 32-char runtime key. Trivially bypassable Ã¢â‚¬â€
 // any string with the same byte-sum passes the check. e.g. if keyHash=4800,
-// a 32-char string of all 'x' (150 each Ã— 32 = 4800) passes. Attacker can
+// a 32-char string of all 'x' (150 each Ãƒâ€” 32 = 4800) passes. Attacker can
 // find a valid fake key in <1ms with a simple search.
 //
 // NEW: HMAC-SHA256. The runtime key is now a random 32-byte token. The server
 // embeds its SHA-256 hash (hex, 64 chars) in the Lua. The Lua verifies by
 // re-computing the hash at runtime using a pure-Lua SHA-256 impl injected into
 // the script. An attacker who dumps the code sees the expected HASH, not the
-// key â€” and SHA-256 is preimage-resistant, so they cannot reverse it to find a
+// key Ã¢â‚¬â€ and SHA-256 is preimage-resistant, so they cannot reverse it to find a
 // passing input without the actual key (which only lives in the obfuscated
 // loader, never in the delivered body).
 function sha256Lua() {
@@ -1120,7 +1120,7 @@ return ${p}sh`;
 function wrapExecCheck(source, verifyUrl) {
   const runtimeKey = crypto.randomBytes(32).toString("hex"); // 64 hex chars
   // SECURITY: Store the SHA-256 hash of the key in the Lua, not the key itself.
-  // Attacker who dumps the Lua body sees only the hash â€” SHA-256 is
+  // Attacker who dumps the Lua body sees only the hash Ã¢â‚¬â€ SHA-256 is
   // preimage-resistant so they cannot find a passing key from the hash alone.
   const expectedHash = crypto.createHash("sha256").update(runtimeKey).digest("hex");
 
@@ -1157,7 +1157,7 @@ function wrapExecCheck(source, verifyUrl) {
 // Canary tripwires: single-use, short-lived tokens like the exec ticket,
 // but hit ONLY when the environment looks tampered with (native funcs
 // hooked, debug library exposed, etc). A real client on a clean executor
-// never calls this URL, so any hit is a strong signal â€” not proof of
+// never calls this URL, so any hit is a strong signal Ã¢â‚¬â€ not proof of
 // intent, but worth flagging separately from generic scrape alerts.
 // ============================================================
 const canaryTokens = new Map(); // token -> { scriptSlug, key, expires }
@@ -1200,7 +1200,7 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
   const kick = kickOnFail !== false;
   const serverTs = Date.now();
 
-  // Pre-generate ALL variable names â€” no inline r() calls anywhere.
+  // Pre-generate ALL variable names Ã¢â‚¬â€ no inline r() calls anywhere.
   // Every response has completely unique identifiers so static
   // analysis ("find __s_sp") is impossible.
   const rpt=r(), sus=r(), rsn=r(), lss=r(), isc=r();
@@ -1281,12 +1281,12 @@ function buildIntegritySnippet(canaryUrl, kickOnFail) {
     `    end`,
     `  end`,
     `end`,
-    // LAYER 6: Anti-getgc â€” neutralize GC memory scanners
+    // LAYER 6: Anti-getgc Ã¢â‚¬â€ neutralize GC memory scanners
     `pcall(function() local ${g2}=type(getgenv)=="function" and getgenv() or _G`,
     `  if type(${g2}.getgc)=="function" then ${g2}.getgc=function() return {} end end`,
     `  if type(${g2}.getgcinfo)=="function" then ${g2}.getgcinfo=function() return 0 end end`,
     `end)`,
-    // LAYER 7: Timestamp validation â€” reject if >30s since server generated this response
+    // LAYER 7: Timestamp validation Ã¢â‚¬â€ reject if >30s since server generated this response
     `local ${ts}=${serverTs}`,
     `if not ${sus} and type(os)=="table" and type(os.time)=="function" then`,
     `  local ${td}=os.time()*1000`,
@@ -1338,20 +1338,20 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
   //
   // OLD flaw: `local _m = <mask>` appeared in plaintext in the generated Lua.
   // Any attacker could read the mask, XOR back the char table, and recover
-  // the full integrity check source â€” which tells them exactly what signals
+  // the full integrity check source Ã¢â‚¬â€ which tells them exactly what signals
   // we look for, making it trivial to patch them out.
   //
-  // NEW approach â€” two independent transforms applied in order:
+  // NEW approach Ã¢â‚¬â€ two independent transforms applied in order:
   //   Pass 1: modular-addition cipher (same NUL-safe scheme as buildStage1Stub)
   //           with a key derived from DELIVERY_SECRET so the mask is NEVER in
-  //           the Lua at all â€” the Lua decoder uses the same derivation.
+  //           the Lua at all Ã¢â‚¬â€ the Lua decoder uses the same derivation.
   //   Pass 2: the output of pass 1 is split into two interleaved halves stored
   //           in separate tables. The decoder re-interleaves them before pass-1
   //           decode. An attacker who grabs one table gets half the data; they
   //           need both, in the right order, to reconstruct the cipher text.
   //
   // The derivation key is: HMAC-SHA256(DELIVERY_SECRET, canaryUrl + serverTs)
-  // â€” unique per response (canaryUrl contains a fresh random token), never
+  // Ã¢â‚¬â€ unique per response (canaryUrl contains a fresh random token), never
   // stored in the Lua, and tied to the server secret so it cannot be computed
   // without DELIVERY_SECRET.
   const serverTs = Date.now();
@@ -1392,13 +1392,13 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
   const tE=r(), tO=r(), tF=r(), dec=r(), i=r(), j=r(), b=r(), k=r(), fn=r(), er=r();
 
-  // The derivation key bytes are embedded as a Lua table â€” no secret, just
+  // The derivation key bytes are embedded as a Lua table Ã¢â‚¬â€ no secret, just
   // deterministic from DELIVERY_SECRET + canaryUrl + ts, both of which an
   // attacker cannot reproduce without the server secret.
   const keyTable = Array.from(derivedKey).join(",");
 
   const decoder = [
-    // Even/odd split tables â€” guard against empty arrays which would
+    // Even/odd split tables Ã¢â‚¬â€ guard against empty arrays which would
     // produce "local t={}" which is valid, vs "local t={,}" which breaks.
     // DEBUG: "Expected identifier, got ','" on line 1 = empty chunk issue here.
     `local ${tE}={${evenChunks.length > 0 ? evenChunks.join(",") : "0"}}`,
@@ -1423,7 +1423,7 @@ function wrapIntegrityCheck(source, canaryUrl, kickOnFail) {
     `if ${fn} then ${fn}() end`,
   ];
 
-  // Runtime re-check via task.spawn â€” fires 10-20s AFTER script starts.
+  // Runtime re-check via task.spawn Ã¢â‚¬â€ fires 10-20s AFTER script starts.
   // Uses a fresh derivation so the recheck table is completely different
   // from the initial check (different canaryUrl token in key derivation).
   const recheck   = buildIntegritySnippet(canaryUrl, kickOnFail);
@@ -1579,7 +1579,7 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     "  end",
     "end",
     // ---------------------------------------------------------------
-    // ATTACK #1: debug.sethook â€” monitors all function calls silently.
+    // ATTACK #1: debug.sethook Ã¢â‚¬â€ monitors all function calls silently.
     // HIGH FALSE-POSITIVE RISK: some executors use debug hooks internally
     // for error handling. Only treated as a block signal in "kick" mode;
     // in "log" mode it reports but does NOT set __s_hc = false
@@ -1632,7 +1632,7 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
     // ATTACK #3: decompile / getscriptbytecode / saveinstance.
     // Neutralizes dump tools by replacing them with empty functions.
     // ONLY runs in "kick" mode to avoid breaking other user scripts
-    // in "log" mode â€” a normal user who has decompile() for other
+    // in "log" mode Ã¢â‚¬â€ a normal user who has decompile() for other
     // purposes shouldn't lose it just because they loaded our script.
     // ---------------------------------------------------------------
     ...(mode === "kick" ? [
@@ -1664,7 +1664,7 @@ function hookGuardLuaLines(canaryUrl, mode, strictGenv) {
       "  end",
       "end)",
     ] : []),
-    // LAYER: Anti-getgc (all modes â€” doesn't break user scripts)
+    // LAYER: Anti-getgc (all modes Ã¢â‚¬â€ doesn't break user scripts)
     "pcall(function()",
     "  local __genv3 = type(getgenv) == \"function\" and getgenv() or _G",
     "  if type(__genv3.getgc) == \"function\" then __genv3.getgc = function() return {} end end",
@@ -1788,7 +1788,7 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
         "end",
         "",
       ] : []),
-      // debug.sethook spy detection â€” log-only in non-kick mode (high FP risk)
+      // debug.sethook spy detection Ã¢â‚¬â€ log-only in non-kick mode (high FP risk)
       "if not __suspect and type(debug) == \"table\" and type(debug.gethook) == \"function\" then",
       "  local ok, hookFn = pcall(debug.gethook)",
       "  if ok and hookFn ~= nil then",
@@ -1797,7 +1797,7 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
         : ["    __s_rp(\"debug_hook_active\")"]),
       "  end",
       "end",
-      // game metatable hook detection â€” log-only in non-kick mode (high FP risk)
+      // game metatable hook detection Ã¢â‚¬â€ log-only in non-kick mode (high FP risk)
       "if not __suspect then",
       "  local ok, mt = pcall(getrawmetatable or rawgetmetatable or function() return nil end, game)",
       "  if ok and mt then",
@@ -1824,7 +1824,7 @@ function buildStage1Stub(stage2Url, canaryUrl, strictGenv, integrityMode) {
       "    end",
       "  end",
       "end",
-      // Neutralize dump tools + extraction functions â€” ONLY in kick mode
+      // Neutralize dump tools + extraction functions Ã¢â‚¬â€ ONLY in kick mode
       ...(integrityMode === "kick" ? [
         "pcall(function()",
         // NOTE: cloneref/newcclosure/clonefunction/getthreadidentity/
@@ -2062,26 +2062,26 @@ function buildDecoyChunk() {
 // Pads the /v1/loaders output with obfuscated-looking garbage
 // code, ASCII troll faces, and fake "encrypted" strings to
 // waste the time of anyone trying to reverse-engineer the
-// bootstrap. Changes every request. Completely inert â€” pcall
+// bootstrap. Changes every request. Completely inert Ã¢â‚¬â€ pcall
 // wraps everything so it can't break actual execution.
 // ============================================================
 function buildTrollJunk() {
-  // Classic troll face ASCII art â€” nothing else. No messages, no fake blocks,
+  // Classic troll face ASCII art Ã¢â‚¬â€ nothing else. No messages, no fake blocks,
   // no emojis, no headers. Just the face, exactly as it appears everywhere.
   return [
-    "--â €â €â €â €â €â €â €â£ â£¤â£¤â£¤â¡¤â¢¤â£¤â£¤â£¤â£¤â£¤â£„â£€â£€â¡€â €â €â €â €â €â €â €â €",
-    "--â €â €â €â €â €â£ â£¿â¡¿â£Ÿâ ¯â¡’â¢¯â£½â£“â£’â¢¾â£¯â£­â£¿â£¿â ¿â ­â ­â£¯â£·â£¦â¡€â €â €â €",
-    "--â €â €â €â €â£°â£¿â£¯â£žâ£•â£½â ¾â ¿â ¿â ¿â¢¿â£â£¿â£¿â£¿â¡—â£½â£¿â£¿â£·â¡â£¿â£¿â¡†â €â €",
-    "--â €â €â €â£€â£›â ›â¢¿â£›â¢â¢â£€â£€â£€â “â ¶â ˆâ£¿â£¿â¡¿â —â ‰â â¢€â£€â£¹â£›â£›â£³â¢„â €",
-    "--â €â¡”â¡¾â¢â£´â¡†â¢¦â£¬â£™â£›â£‹â£¤â£¿â£¿â£·â£¾â£¿â£¿â£¿â¡†â¢¿â£¿â¡Ÿâ »â ›â¡‰â£â£²â¢±â ",
-    "--â €â£‡â£‡â¢¸â£‰â¡€â¢¦â£Œâ¡™â »â ¿â£¯â£­â£¥â ¡â¡¤â ¿â¢¿â£¿â£¿â¡†â ‰â¡»â¢¿â£¿â ‡â¢»â£Ÿâ ¼â €",
-    "--â €â ˆâ ªâ£´â£¿â£§â¡€â¢‰â ›â ˜â¢¶â£¦â£¬â ‰â£€â “â ¿â ¿â ¯â¢‰â£´â ¿â ¿â “â¡â¡„â €â£¿â ƒâ €",
-    "--â €â €â €â ™â£¿â£¿â£·â£Œâ »â¢ â£¤â£€â ‰â â ›â ¿â ¿â °â ¶â ¦â °â ¶â ‡â ˜â ƒâ â €â£¿â €â €",
-    "--â €â €â €â €â ˜â¢¿â£¿â£¿â£·â£Œâ »â¢¿â ‡â£¼â£¶â£¦â¡„â£„â£€â¡€â¢€â¡€â¢€â¡€â¡€â €â¢ â£¿â €â €",
-    "--â €â €â €â €â €â €â ™â ¯â£›â ­â£»â ¶â£¬â£‰â£›â ›â ƒâ ¿â ¿â ƒâ ¿â ƒâ šâ£€â£â£¤â£¾â£¿â¡€â €",
-    "--â €â €â €â €â €â €â €â €â €â ™â ’â ¯â£¶â£‹â¡½â¢›â£¿â£¯â£¿â£­â£­â¡¿â¢¿â£¿â£»â£¾â¢Ÿâ£¿â¡‡â €",
-    "--â €â €â €â €â €â €â €â €â €â €â €â €â €â ‰â ›â ¿â ¿â£¶â£¾â£¿â£¿â£¿â£­â£­â£­â£¶â£¿â¡¿â â €",
-    "--â €â €â €â €â €â €â €â €â €â €â €â €â €â €â €â €â €â €â €â ‰â ™â ›â ›â ›â ›â ‹â â €â €â €",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢Â£ Ã¢Â£Â¤Ã¢Â£Â¤Ã¢Â£Â¤Ã¢Â¡Â¤Ã¢Â¢Â¤Ã¢Â£Â¤Ã¢Â£Â¤Ã¢Â£Â¤Ã¢Â£Â¤Ã¢Â£Â¤Ã¢Â£â€žÃ¢Â£â‚¬Ã¢Â£â‚¬Ã¢Â¡â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢Â£ Ã¢Â£Â¿Ã¢Â¡Â¿Ã¢Â£Å¸Ã¢ Â¯Ã¢Â¡â€™Ã¢Â¢Â¯Ã¢Â£Â½Ã¢Â£â€œÃ¢Â£â€™Ã¢Â¢Â¾Ã¢Â£Â¯Ã¢Â£Â­Ã¢Â£Â¿Ã¢Â£Â¿Ã¢ Â¿Ã¢ Â­Ã¢ Â­Ã¢Â£Â¯Ã¢Â£Â·Ã¢Â£Â¦Ã¢Â¡â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢Â£Â°Ã¢Â£Â¿Ã¢Â£Â¯Ã¢Â£Å¾Ã¢Â£â€¢Ã¢Â£Â½Ã¢ Â¾Ã¢ Â¿Ã¢ Â¿Ã¢ Â¿Ã¢Â¢Â¿Ã¢Â£ÂÃ¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â¡â€”Ã¢Â£Â½Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â·Ã¢Â¡ÂÃ¢Â£Â¿Ã¢Â£Â¿Ã¢Â¡â€ Ã¢ â‚¬Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢Â£â‚¬Ã¢Â£â€ºÃ¢ â€ºÃ¢Â¢Â¿Ã¢Â£â€ºÃ¢Â¢ÂÃ¢Â¢ÂÃ¢Â£â‚¬Ã¢Â£â‚¬Ã¢Â£â‚¬Ã¢ â€œÃ¢ Â¶Ã¢ Ë†Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â¡Â¿Ã¢ â€”Ã¢ â€°Ã¢ ÂÃ¢Â¢â‚¬Ã¢Â£â‚¬Ã¢Â£Â¹Ã¢Â£â€ºÃ¢Â£â€ºÃ¢Â£Â³Ã¢Â¢â€žÃ¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢Â¡â€Ã¢Â¡Â¾Ã¢Â¢ÂÃ¢Â£Â´Ã¢Â¡â€ Ã¢Â¢Â¦Ã¢Â£Â¬Ã¢Â£â„¢Ã¢Â£â€ºÃ¢Â£â€¹Ã¢Â£Â¤Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â·Ã¢Â£Â¾Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â¡â€ Ã¢Â¢Â¿Ã¢Â£Â¿Ã¢Â¡Å¸Ã¢ Â»Ã¢ â€ºÃ¢Â¡â€°Ã¢Â£ÂÃ¢Â£Â²Ã¢Â¢Â±Ã¢ Â",
+    "--Ã¢ â‚¬Ã¢Â£â€¡Ã¢Â£â€¡Ã¢Â¢Â¸Ã¢Â£â€°Ã¢Â¡â‚¬Ã¢Â¢Â¦Ã¢Â£Å’Ã¢Â¡â„¢Ã¢ Â»Ã¢ Â¿Ã¢Â£Â¯Ã¢Â£Â­Ã¢Â£Â¥Ã¢ Â¡Ã¢Â¡Â¤Ã¢ Â¿Ã¢Â¢Â¿Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â¡â€ Ã¢ â€°Ã¢Â¡Â»Ã¢Â¢Â¿Ã¢Â£Â¿Ã¢ â€¡Ã¢Â¢Â»Ã¢Â£Å¸Ã¢ Â¼Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ Ë†Ã¢ ÂªÃ¢Â£Â´Ã¢Â£Â¿Ã¢Â£Â§Ã¢Â¡â‚¬Ã¢Â¢â€°Ã¢ â€ºÃ¢ ËœÃ¢Â¢Â¶Ã¢Â£Â¦Ã¢Â£Â¬Ã¢ â€°Ã¢Â£â‚¬Ã¢ â€œÃ¢ Â¿Ã¢ Â¿Ã¢ Â¯Ã¢Â¢â€°Ã¢Â£Â´Ã¢ Â¿Ã¢ Â¿Ã¢ â€œÃ¢Â¡ÂÃ¢Â¡â€žÃ¢ â‚¬Ã¢Â£Â¿Ã¢ Æ’Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â„¢Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â·Ã¢Â£Å’Ã¢ Â»Ã¢Â¢ Ã¢Â£Â¤Ã¢Â£â‚¬Ã¢ â€°Ã¢ ÂÃ¢ â€ºÃ¢ Â¿Ã¢ Â¿Ã¢ Â°Ã¢ Â¶Ã¢ Â¦Ã¢ Â°Ã¢ Â¶Ã¢ â€¡Ã¢ ËœÃ¢ Æ’Ã¢ ÂÃ¢ â‚¬Ã¢Â£Â¿Ã¢ â‚¬Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ ËœÃ¢Â¢Â¿Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â·Ã¢Â£Å’Ã¢ Â»Ã¢Â¢Â¿Ã¢ â€¡Ã¢Â£Â¼Ã¢Â£Â¶Ã¢Â£Â¦Ã¢Â¡â€žÃ¢Â£â€žÃ¢Â£â‚¬Ã¢Â¡â‚¬Ã¢Â¢â‚¬Ã¢Â¡â‚¬Ã¢Â¢â‚¬Ã¢Â¡â‚¬Ã¢Â¡â‚¬Ã¢ â‚¬Ã¢Â¢ Ã¢Â£Â¿Ã¢ â‚¬Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â„¢Ã¢ Â¯Ã¢Â£â€ºÃ¢ Â­Ã¢Â£Â»Ã¢ Â¶Ã¢Â£Â¬Ã¢Â£â€°Ã¢Â£â€ºÃ¢ â€ºÃ¢ Æ’Ã¢ Â¿Ã¢ Â¿Ã¢ Æ’Ã¢ Â¿Ã¢ Æ’Ã¢ Å¡Ã¢Â£â‚¬Ã¢Â£ÂÃ¢Â£Â¤Ã¢Â£Â¾Ã¢Â£Â¿Ã¢Â¡â‚¬Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â„¢Ã¢ â€™Ã¢ Â¯Ã¢Â£Â¶Ã¢Â£â€¹Ã¢Â¡Â½Ã¢Â¢â€ºÃ¢Â£Â¿Ã¢Â£Â¯Ã¢Â£Â¿Ã¢Â£Â­Ã¢Â£Â­Ã¢Â¡Â¿Ã¢Â¢Â¿Ã¢Â£Â¿Ã¢Â£Â»Ã¢Â£Â¾Ã¢Â¢Å¸Ã¢Â£Â¿Ã¢Â¡â€¡Ã¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â€°Ã¢ â€ºÃ¢ Â¿Ã¢ Â¿Ã¢Â£Â¶Ã¢Â£Â¾Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â¿Ã¢Â£Â­Ã¢Â£Â­Ã¢Â£Â­Ã¢Â£Â¶Ã¢Â£Â¿Ã¢Â¡Â¿Ã¢ ÂÃ¢ â‚¬",
+    "--Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬Ã¢ â€°Ã¢ â„¢Ã¢ â€ºÃ¢ â€ºÃ¢ â€ºÃ¢ â€ºÃ¢ â€¹Ã¢ ÂÃ¢ â‚¬Ã¢ â‚¬Ã¢ â‚¬",
   ].join("\n") + "\n";
 }
 
@@ -2141,13 +2141,13 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
     'end',
     'local __decrypted = __decResp',
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
     // UNIQUE STAGE 1: ROBLOX ENVIRONMENT FINGERPRINT
-    // Verify we're in a real Roblox game â€” not a simulated
+    // Verify we're in a real Roblox game Ã¢â‚¬â€ not a simulated
     // environment, sandboxed executor, or replay tool. Check
     // for objects that only exist in a live Roblox session.
     // No other protection system does this check.
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
     'do',
     '  local __env_ok = true',
     '  local __env_checks = {',
@@ -2171,14 +2171,14 @@ function buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityM
     '  end',
     'end',
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
     // UNIQUE STAGE 2: HONEYPOT TRAP
     // Set a fake global that LOOKS like the decrypted source.
     // Dump tools that scan globals for long strings will grab
     // this instead of the real source. The fake contains a
-    // canary URL â€” if someone executes the "dumped" code, the
+    // canary URL Ã¢â‚¬â€ if someone executes the "dumped" code, the
     // canary fires and reveals who leaked it.
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
     'pcall(function()',
     '  local __ge = type(getgenv) == "function" and getgenv() or _G',
     '  local __honeypot = "-- Protected Script\\n"',
@@ -2317,7 +2317,7 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
     '    __solStage = tostring(stage or "UNKNOWN")',
     '    if err then __solFailed = true end',
     '    if __solStageLabel and __solStageLabel.Parent then',
-    '      __solStageLabel.Text = err and ("Error: " .. __solStage .. " â€” " .. tostring(err)) or __solStage',
+    '      __solStageLabel.Text = err and ("Error: " .. __solStage .. " Ã¢â‚¬â€ " .. tostring(err)) or __solStage',
     '    end',
     '    if err then warn("[S] stage=" .. __solStage .. " error: " .. tostring(err)) end',
     '  end',
@@ -2734,36 +2734,23 @@ async function buildSecureDelivery({
   const idPreamble = buildIdCheckPreamble(idTok, canaryUrl, integrityMode);
 
   // --- Build exec check wrapper around source+idPreamble ---
+  // Strategy B (per-chunk split delivery) is intentionally disabled.
+  // The complete wrapped source is returned as one Lua payload so the normal
+  // loadstring path can execute it without chunk assembly/reassembly.
   const sourceWithId = idPreamble + source;
-  const execResult   = wrapExecCheck(sourceWithId, verifyUrl);
-  const runtimeKey   = execResult.runtimeKey;
+  const execResult = wrapExecCheck(sourceWithId, verifyUrl);
 
-  // --- Strategy B: Split into 3-7 chunks ---
-  const numChunks = 3 + crypto.randomInt(5);
-  const chunks    = splitAndEncryptSource(execResult.code, scriptSlug, key || "", numChunks);
-
-  // --- Build chunk assembler Lua ---
-  const assembler = buildChunkAssembler(
-    chunks,
-    PUBLIC_BASE_URL,
-    canaryUrl,
-    idPreamble,
-    verifyUrl,
-    runtimeKey,
-    integrityMode,
-    crypto.createHash("sha256").update(execResult.code).digest("hex"),
-  );
-
-  // --- Wrap assembler in integrity checks ---
-  const wrappedAssembler = integrityMode === "off"
-    ? assembler
-    : wrapIntegrityCheck(assembler, canaryUrl, integrityMode === "kick");
+  // Keep the existing integrity protection, but do not split the actual
+  // delivered script into multiple network chunks.
+  const wrappedSource = integrityMode === "off"
+    ? execResult.code
+    : wrapIntegrityCheck(execResult.code, canaryUrl, integrityMode === "kick");
 
   // --- Optional GUI wrapper (loading screen, key GUI, etc.) ---
   if (typeof wrapperFn === "function") {
-    return wrapperFn(wrappedAssembler);
+    return wrapperFn(wrappedSource);
   }
-  return wrappedAssembler;
+  return wrappedSource;
 }
 
 
@@ -2843,7 +2830,7 @@ app.post("/api/signin", async (req, res) => {
 
   const ip = getClientIp(req);
 
-  // SECURITY: Check lockout before anything else â€” locked IPs get no
+  // SECURITY: Check lockout before anything else Ã¢â‚¬â€ locked IPs get no
   // information about whether the key was valid, rate limits, etc.
   if (isSigninLocked(ip)) {
     return res.status(429).json({ ok: false, error: "Too many failed attempts. Try again in 15 minutes." });
@@ -2894,7 +2881,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
 });
 
 // ============================================================
-// /v1/decrypt/:nonce  â€” Server-side AES-256-GCM decryption endpoint.
+// /v1/decrypt/:nonce  Ã¢â‚¬â€ Server-side AES-256-GCM decryption endpoint.
 // The Lua client POSTs the raw base64 ciphertext it received from /v1/load
 // ?raw=1. We verify the GCM auth tag and return the plaintext only if it
 // passes. This keeps the DELIVERY_SECRET fully server-side: the Lua client
@@ -2903,13 +2890,13 @@ app.get("/api/me", requireAuth, async (req, res) => {
 //
 // Gated by the same single-use nonce as the raw=1 endpoint: the nonce is
 // consumed by consumeRawNonce in the raw=1 handler, so this endpoint is
-// the ONLY consumer of the derived key â€” once the plaintext is returned,
+// the ONLY consumer of the derived key Ã¢â‚¬â€ once the plaintext is returned,
 // re-posting the same ciphertext produces a different (invalid) key and
 // the GCM tag check fails. No replay possible.
 // ============================================================
 // FIX: this raw-body parser MUST be registered before the POST route
 // below. Express dispatches middleware/routes in the order they were
-// added to the app â€” having this express.raw() call further down in
+// added to the app Ã¢â‚¬â€ having this express.raw() call further down in
 // the file (after the route that needs it) meant it never ran in time,
 // so req.body was always empty for every /v1/decrypt request and the
 // endpoint 400'd on every single call, no matter how valid the
@@ -2944,7 +2931,7 @@ app.post("/v1/decrypt/:nonce", async (req, res) => {
   } else if (typeof req.body === "string") {
     cipherB64 = req.body.trim();
   } else {
-    // express.json() parsed it â€” shouldn't happen for octet-stream but be safe
+    // express.json() parsed it Ã¢â‚¬â€ shouldn't happen for octet-stream but be safe
     cipherB64 = String(req.body || "").trim();
   }
   if (!cipherB64) return res.status(400).send("");
@@ -2961,7 +2948,7 @@ app.post("/v1/decrypt/:nonce", async (req, res) => {
     const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
     res.status(200).send(pt.toString("utf8"));
   } catch (e) {
-    // GCM auth tag mismatch â†’ tampered or wrong nonce â†’ return nothing
+    // GCM auth tag mismatch Ã¢â€ â€™ tampered or wrong nonce Ã¢â€ â€™ return nothing
     res.status(403).send("");
   }
 });
@@ -2969,7 +2956,7 @@ app.post("/v1/decrypt/:nonce", async (req, res) => {
 // ============================================================
 // STRATEGY B: /v1/chunk/:nonce
 // Delivers one encrypted chunk of the script source.
-// Each chunk has its own single-use nonce â€” a dumped chunk URL
+// Each chunk has its own single-use nonce Ã¢â‚¬â€ a dumped chunk URL
 // cannot be replayed (nonce already consumed), and even if it
 // could, the attacker gets only a fragment of the source.
 // ============================================================
@@ -2996,7 +2983,7 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
   const plaintextSlice = consumeChunkNonce(nonce, entry.scriptSlug, entry.key, entry.chunkIdx);
   if (!plaintextSlice) return res.status(401).send("-- expired");
 
-  // Return plaintext directly â€” no client-side decryption needed.
+  // Return plaintext directly Ã¢â‚¬â€ no client-side decryption needed.
   // Security is from the single-use nonce gate + Roblox UA check above.
   res.status(200).send(plaintextSlice.toString("utf8"));
 });
@@ -3006,7 +2993,7 @@ app.get("/v1/chunk/:nonce", async (req, res) => {
 // Called by the HWID-bound preamble injected into every delivered source.
 // Verifies that hwid + userId + placeId match what the token was minted for.
 // Single-use + 30s TTL: even if attacker captures the full source AND this URL,
-// they cannot use it â€” token is already consumed by the legitimate player,
+// they cannot use it Ã¢â‚¬â€ token is already consumed by the legitimate player,
 // and their own hwid/userId won't match anyway.
 // ============================================================
 app.get("/v1/idcheck/:token", async (req, res) => {
@@ -3021,7 +3008,7 @@ app.get("/v1/idcheck/:token", async (req, res) => {
 
   const ok = verifyIdToken(token, hwid, userId, placeId);
   if (!ok) {
-    // Log the mismatch â€” every hit here is either a dump replay attempt
+    // Log the mismatch Ã¢â‚¬â€ every hit here is either a dump replay attempt
     // or a race condition (should be extremely rare with 30s TTL).
     await supabase.from("access_log").insert({
       event: "blocked",
@@ -3106,7 +3093,7 @@ app.get("/v1/handshake", async (req, res) => {
   // still allowed for backward compat with wrapHwidBootstrap and the
   // key GUI's internal re-request (which build their own handshake
   // call without lt=), but calls WITH an invalid/expired/consumed lt
-  // are rejected â€” this is what kills the "copy bootstrap from Discord"
+  // are rejected Ã¢â‚¬â€ this is what kills the "copy bootstrap from Discord"
   // attack: the pasted code has lt=EXPIRED_TOKEN, so it fails here.
   const lt = String(req.query.lt || "").trim();
   if (lt && !consumeLoaderToken(lt)) {
@@ -3126,7 +3113,7 @@ app.get("/v1/handshake", async (req, res) => {
 // PUBLIC LOADER - with HWID, expiry, and block/allow checks
 // ============================================================
 // ============================================================
-// MAIN DELIVERY PIPELINE â€” handleLoadRoute
+// MAIN DELIVERY PIPELINE Ã¢â‚¬â€ handleLoadRoute
 // ============================================================
 // This is the heart of Solaries. Every loadstring() call from a
 // Roblox executor flows through here. Here's the full path:
@@ -3134,68 +3121,68 @@ app.get("/v1/handshake", async (req, res) => {
 // DELIVERY FLOW BY MODE:
 //
 //   no_gui (Indicator):
-//     /v1/loaders/:slug.lua â†’ /v1/handshake â†’ /v1/bootstrap â†’ handleLoadRoute
-//     â†’ buildStage1Stub (stage1) â†’ Lua fetches stage2 â†’ handleLoadRoute?stage2=1
-//     â†’ issueRawNonce â†’ wrapHeadlessDecoyDelay(rawUrl, rawNonce)
-//     â†’ Lua runs decoy â†’ Lua fetches rawUrl (?raw=1) â†’ handleLoadRoute?raw=1
-//     â†’ Strategy A+B applied â†’ encrypted assembler returned
-//     â†’ Lua decrypts (via /v1/decrypt) â†’ runs assembler
-//     â†’ Assembler fetches chunks (via /v1/chunk/:nonce) â†’ concatenates
-//     â†’ loadstring(assembled) â†’ script runs â†’ indicator destroyed
+//     /v1/loaders/:slug.lua Ã¢â€ â€™ /v1/handshake Ã¢â€ â€™ /v1/bootstrap Ã¢â€ â€™ handleLoadRoute
+//     Ã¢â€ â€™ buildStage1Stub (stage1) Ã¢â€ â€™ Lua fetches stage2 Ã¢â€ â€™ handleLoadRoute?stage2=1
+//     Ã¢â€ â€™ issueRawNonce Ã¢â€ â€™ wrapHeadlessDecoyDelay(rawUrl, rawNonce)
+//     Ã¢â€ â€™ Lua runs decoy Ã¢â€ â€™ Lua fetches rawUrl (?raw=1) Ã¢â€ â€™ handleLoadRoute?raw=1
+//     Ã¢â€ â€™ Strategy A+B applied Ã¢â€ â€™ encrypted assembler returned
+//     Ã¢â€ â€™ Lua decrypts (via /v1/decrypt) Ã¢â€ â€™ runs assembler
+//     Ã¢â€ â€™ Assembler fetches chunks (via /v1/chunk/:nonce) Ã¢â€ â€™ concatenates
+//     Ã¢â€ â€™ loadstring(assembled) Ã¢â€ â€™ script runs Ã¢â€ â€™ indicator destroyed
 //
 //   loading:
-//     /v1/load â†’ issueRawNonce â†’ wrapLoadingGui(rawUrl, rawNonce)
-//     â†’ Lua shows loading screen â†’ fetches rawUrl (?raw=1)
-//     â†’ Strategy A+B â†’ encrypted assembler â†’ Lua decrypts
-//     â†’ assembler â†’ chunks â†’ script runs â†’ loading screen destroyed
+//     /v1/load Ã¢â€ â€™ issueRawNonce Ã¢â€ â€™ wrapLoadingGui(rawUrl, rawNonce)
+//     Ã¢â€ â€™ Lua shows loading screen Ã¢â€ â€™ fetches rawUrl (?raw=1)
+//     Ã¢â€ â€™ Strategy A+B Ã¢â€ â€™ encrypted assembler Ã¢â€ â€™ Lua decrypts
+//     Ã¢â€ â€™ assembler Ã¢â€ â€™ chunks Ã¢â€ â€™ script runs Ã¢â€ â€™ loading screen destroyed
 //
 //   key_gui (no key yet):
-//     /v1/load â†’ wrapKeyGui("", ...) â€” shell only, no source
-//     â†’ user enters key â†’ Lua fetches /v1/load?key=xxx
-//     â†’ follows no_gui flow from stage1 onwards
+//     /v1/load Ã¢â€ â€™ wrapKeyGui("", ...) Ã¢â‚¬â€ shell only, no source
+//     Ã¢â€ â€™ user enters key Ã¢â€ â€™ Lua fetches /v1/load?key=xxx
+//     Ã¢â€ â€™ follows no_gui flow from stage1 onwards
 //
-// DEBUG GUIDE â€” common errors and where they come from:
+// DEBUG GUIDE Ã¢â‚¬â€ common errors and where they come from:
 //
 //   "[S] err: <name>:1: Expected identifier, got ','"
-//     â†’ wrapIntegrityCheck generated a Lua table with a leading comma
-//     â†’ Cause: empty evenChunks/oddChunks array in wrapIntegrityCheck
-//     â†’ Fix: toChunks() now filters empty slices (already applied)
-//     â†’ Also: sha256Lua() previously used hardcoded __K etc. â€” now randomized
+//     Ã¢â€ â€™ wrapIntegrityCheck generated a Lua table with a leading comma
+//     Ã¢â€ â€™ Cause: empty evenChunks/oddChunks array in wrapIntegrityCheck
+//     Ã¢â€ â€™ Fix: toChunks() now filters empty slices (already applied)
+//     Ã¢â€ â€™ Also: sha256Lua() previously used hardcoded __K etc. Ã¢â‚¬â€ now randomized
 //
 //   "[S] err: <name>:N: attempt to call a nil value"
-//     â†’ sha256fnV variable used but not declared (IIFE missing)
-//     â†’ OR: sha256Lua() variable names conflicted with another injection
-//     â†’ Fix: sha256Lua() now uses unique random prefix per call
+//     Ã¢â€ â€™ sha256fnV variable used but not declared (IIFE missing)
+//     Ã¢â€ â€™ OR: sha256Lua() variable names conflicted with another injection
+//     Ã¢â€ â€™ Fix: sha256Lua() now uses unique random prefix per call
 //
 //   "invalid url for http request"
-//     â†’ rawUrl was "" when passed to wrapLoadingGui/wrapHeadlessDecoyDelay
-//     â†’ These wrappers NEED a real rawUrl â€” never pass ""
-//     â†’ Fix: always issueRawNonce + build rawUrl before calling wrappers
+//     Ã¢â€ â€™ rawUrl was "" when passed to wrapLoadingGui/wrapHeadlessDecoyDelay
+//     Ã¢â€ â€™ These wrappers NEED a real rawUrl Ã¢â‚¬â€ never pass ""
+//     Ã¢â€ â€™ Fix: always issueRawNonce + build rawUrl before calling wrappers
 //
 //   "chunk_fail_N" in canary log:
-//     â†’ /v1/chunk/:nonce returned non-200 or empty
-//     â†’ Nonce expired (60s TTL) â€” check for slow delivery
-//     â†’ Nonce already consumed (retry attempt blocked, correct behavior)
+//     Ã¢â€ â€™ /v1/chunk/:nonce returned non-200 or empty
+//     Ã¢â€ â€™ Nonce expired (60s TTL) Ã¢â‚¬â€ check for slow delivery
+//     Ã¢â€ â€™ Nonce already consumed (retry attempt blocked, correct behavior)
 //
-//   "chunk_decrypt_fail_N" in canary log (OLD â€” should not appear now):
-//     â†’ Was caused by /v1/chunk returning encrypted data and assembler
+//   "chunk_decrypt_fail_N" in canary log (OLD Ã¢â‚¬â€ should not appear now):
+//     Ã¢â€ â€™ Was caused by /v1/chunk returning encrypted data and assembler
 //       trying to POST-decrypt it. Fixed: /v1/chunk now returns plaintext.
 //
 //   "id_mismatch" in canary log:
-//     â†’ Strategy A failed â€” dumped script run on wrong device
-//     â†’ OR: gethwid() unavailable on executor (check fallback to RbxAnalyticsService)
-//     â†’ OR: idToken expired before idcheck was called (raise ID_TOKEN_TTL_MS)
+//     Ã¢â€ â€™ Strategy A failed Ã¢â‚¬â€ dumped script run on wrong device
+//     Ã¢â€ â€™ OR: gethwid() unavailable on executor (check fallback to RbxAnalyticsService)
+//     Ã¢â€ â€™ OR: idToken expired before idcheck was called (raise ID_TOKEN_TTL_MS)
 //
 //   Indicator never disappears / loading never ends:
-//     â†’ raw=1 request failed or returned error
-//     â†’ Check __canaryUrl is declared BEFORE buildIdCheckPreamble call
-//     â†’ Check that rawNonce TTL (60s) is sufficient
-//     â†’ Check /v1/decrypt endpoint is reachable
+//     Ã¢â€ â€™ raw=1 request failed or returned error
+//     Ã¢â€ â€™ Check __canaryUrl is declared BEFORE buildIdCheckPreamble call
+//     Ã¢â€ â€™ Check that rawNonce TTL (60s) is sufficient
+//     Ã¢â€ â€™ Check /v1/decrypt endpoint is reachable
 //
 //   Script never runs (silent fail):
-//     â†’ wrapExecCheck verify failed (/v1/verify nonce expired or double-used)
-//     â†’ NEVER call /v1/verify twice for the same nonce
-//     â†’ buildChunkAssembler does NOT call /v1/verify â€” wrapExecCheck handles it
+//     Ã¢â€ â€™ wrapExecCheck verify failed (/v1/verify nonce expired or double-used)
+//     Ã¢â€ â€™ NEVER call /v1/verify twice for the same nonce
+//     Ã¢â€ â€™ buildChunkAssembler does NOT call /v1/verify Ã¢â‚¬â€ wrapExecCheck handles it
 //
 // ============================================================
 async function handleLoadRoute(req, res) {
@@ -3276,7 +3263,7 @@ async function handleLoadRoute(req, res) {
 
   // Declare early so the rate-limit block below can reference them
   // without hitting a TDZ ReferenceError (projectId was previously
-  // defined AFTER the block that used it â€” a const in the Temporal Dead
+  // defined AFTER the block that used it Ã¢â‚¬â€ a const in the Temporal Dead
   // Zone throws, crashing the handler whenever the rate limit fired).
   const projectId = script.project_id;
   const accountId = script.projects.owner_account_id;
@@ -3511,8 +3498,8 @@ async function handleLoadRoute(req, res) {
         global.__solScrapeAlert(accountId, __n ? "nonce_replay" : "raw_no_key", {
           scriptSlug, ip, hwid, key,
           reason: __n
-            ? "raw=1 hit with invalid/expired/used nonce â€” possible URL replay"
-            : "raw=1 hit with no nonce â€” direct URL construction attempt",
+            ? "raw=1 hit with invalid/expired/used nonce Ã¢â‚¬â€ possible URL replay"
+            : "raw=1 hit with no nonce Ã¢â‚¬â€ direct URL construction attempt",
         });
       }
       return block("missing or expired session token", 401, null, projectId, script.id);
@@ -3555,44 +3542,25 @@ async function handleLoadRoute(req, res) {
     const __execResult = wrapExecCheck(__wmWithId, __verifyUrl);
     const __runtimeKey = __execResult.runtimeKey;
 
-    // STRATEGY B: Split the source into random 3-7 chunks, each with its
-    // own nonce. The Lua assembler (itself stage-split so only it is exposed
-    // to a hook first) fetches each chunk, decrypts via /v1/chunk/:nonce,
-    // concatenates, and only then calls loadstring once on the full source.
-    // A hooked loadstring sees only the assembler wrapper first â€” worthless.
-    const __numChunks = 3 + crypto.randomInt(5); // 3-7 chunks
-    const __chunks = splitAndEncryptSource(__execResult.code, scriptSlug, key || "", __numChunks);
+    // Strategy B (per-chunk split delivery) is disabled. Return the complete
+    // wrapped source as one encrypted response instead of generating chunk
+    // nonces and a Lua assembler. This keeps the normal loadstring flow intact.
+    const __wrappedSource = __integrityMode === "off"
+      ? __execResult.code
+      : wrapIntegrityCheck(__execResult.code, __canaryUrl, __integrityMode === "kick");
 
-    // Build the Lua assembler â€” fetches all chunks + does exec check + runs
-    const __assembler = buildChunkAssembler(
-      __chunks,
-      PUBLIC_BASE_URL,
-      __canaryUrl,
-      __idPreamble,
-      __verifyUrl,
-      __runtimeKey,
-      __integrityMode,
-      crypto.createHash("sha256").update(__execResult.code).digest("hex"),
-    );
-
-    // Wrap the assembler itself in integrity checks + stage-split so it's
-    // the decoy-first thing exposed to any hooked loadstring
-    const __wrappedAssembler = __integrityMode === "off"
-      ? __assembler
-      : wrapIntegrityCheck(__assembler, __canaryUrl, __integrityMode === "kick");
-
-    // Encrypt the full assembler wrapper as the single raw=1 response
-    const __enc = encryptDelivery(__wrappedAssembler, __n);
+    // Encrypt the complete source as the single raw=1 response.
+    const __enc = encryptDelivery(__wrappedSource, __n);
     return res.status(200).send(__enc);
   }
 
-  // â”€â”€ Shared delivery context for all remaining modes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Shared delivery context for all remaining modes Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const __dpid = String(req.query.px || "").trim();
   const __dgp  = String(req.query.gp || "").trim();
   const __dCanaryToken = issueCanaryToken(scriptSlug, key || "");
   const __dCanaryUrl   = PUBLIC_BASE_URL + "/v1/canary/" + __dCanaryToken;
 
-  // key_gui without key â€” shell only.
+  // key_gui without key Ã¢â‚¬â€ shell only.
   // When user submits a key, wrapKeyGui makes a fresh /v1/load request
   // which goes through the full A+B pipeline via raw=1.
   if (script.player_ui === "key_gui" && !key) {
@@ -3603,7 +3571,7 @@ async function handleLoadRoute(req, res) {
 
   // Shared: build the modern Strategy A+B (HWID-token + chunked) assembler
   // for whichever mode needs to embed it directly. This mirrors exactly
-  // what the raw=1 branch above builds â€” kept as one helper (the
+  // what the raw=1 branch above builds Ã¢â‚¬â€ kept as one helper (the
   // already-defined buildSecureDelivery) so both places can't drift out
   // of sync with each other again like they did before this fix.
   async function __buildAssemblerFor(px, gp) {
@@ -3634,7 +3602,7 @@ async function handleLoadRoute(req, res) {
     );
   }
 
-  // no_gui â€” stage-split delivery
+  // no_gui Ã¢â‚¬â€ stage-split delivery
   if (req.query.stage2) {
     const __s2 = String(req.query.s2 || "");
     if (!consumeRawNonce(__s2, scriptSlug, key || "")) {
@@ -3710,7 +3678,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
   // bootstrap Lua below embeds it in the handshake call. If someone
   // copies the Lua output from Discord and runs it from a different
   // IP (or after the 30s TTL), the handshake rejects the stale token
-  // and the whole chain dies â€” the URL is reusable, but the OUTPUT
+  // and the whole chain dies Ã¢â‚¬â€ the URL is reusable, but the OUTPUT
   // (the actual Lua code) is single-use.
   const __lt = issueLoaderToken();
 
@@ -3749,7 +3717,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
     '    local ok2, r = pcall(iscc, loadstring)',
     '    if ok2 and r == false then return false end',
     '  end',
-    // ENHANCED: hookfunction detection â€” hookfunction makes the
+    // ENHANCED: hookfunction detection Ã¢â‚¬â€ hookfunction makes the
     // replacement pass iscclosure, but it stores the original
     // function as an upvalue. A native C-closure (real loadstring)
     // has 0 upvalues; a hookfunction'd wrapper has at least 1.
@@ -3757,7 +3725,7 @@ app.get("/v1/loaders/:file", async (req, res) => {
     '    local ok6, uv = pcall(debug.getupvalue, loadstring, 1)',
     '    if ok6 and uv ~= nil then return false end',
     '  end',
-    // ENHANCED: getgenv check â€” if someone replaced loadstring
+    // ENHANCED: getgenv check Ã¢â‚¬â€ if someone replaced loadstring
     // globally before our code ran, getgenv().loadstring is different
     // from the reference we'd expect.
     '  if type(getgenv) == "function" then',
@@ -3767,13 +3735,13 @@ app.get("/v1/loaders/:file", async (req, res) => {
     '      if genv.loadstring and genv.loadstring ~= ls_ref then return false end',
     '    end',
     '  end',
-    // ENHANCED: debug.sethook spy detection â€” catch hooks set before
+    // ENHANCED: debug.sethook spy detection Ã¢â‚¬â€ catch hooks set before
     // our code loaded.
     '  if type(debug) == "table" and type(debug.gethook) == "function" then',
     '    local ok8, hookFn = pcall(debug.gethook)',
     '    if ok8 and hookFn ~= nil then return false end',
     '  end',
-    // Check game.HttpGet â€” a hooked HttpGet is how Discord-shared
+    // Check game.HttpGet Ã¢â‚¬â€ a hooked HttpGet is how Discord-shared
     // dumpers capture responses without touching loadstring.
     '  if game and game.HttpGet then',
     '    local ok3, r3 = pcall(function()',
@@ -4148,7 +4116,7 @@ app.patch("/api/projects/:id", requireAuth, async (req, res) => {
   // ------------------------------------------------------------
   // Protection tuning fields (dashboard "Protection tuning" card).
   // Clamped server-side too, since the DB column has no CHECK
-  // constraint of its own â€” never trust the client-side clamp alone.
+  // constraint of its own Ã¢â‚¬â€ never trust the client-side clamp alone.
   // ------------------------------------------------------------
   if (["kick", "log", "off"].includes(req.body?.integrity_mode)) {
     patch.integrity_mode = req.body.integrity_mode;
@@ -4204,7 +4172,7 @@ async function loadScriptOwned(scriptId, accountId) {
 app.get("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
   if (!await ownsProject(req.params.pid, req.session.account_id))
     return res.status(404).json({ ok: false, error: "Project not found" });
-  // SECURITY: source is NOT included in the list â€” only metadata.
+  // SECURITY: source is NOT included in the list Ã¢â‚¬â€ only metadata.
   // A single XSS or session-theft would otherwise expose every script's
   // full source code in one request. Source is fetched separately only
   // when the editor is opened (GET /api/scripts/:id/source).
@@ -4215,7 +4183,7 @@ app.get("/api/projects/:pid/scripts", requireAuth, async (req, res) => {
   res.json({ ok: true, scripts: data });
 });
 
-// Dedicated source endpoint â€” requires explicit fetch, not bundled with list
+// Dedicated source endpoint Ã¢â‚¬â€ requires explicit fetch, not bundled with list
 app.get("/api/scripts/:id/source", requireAuth, async (req, res) => {
   if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
   const existing = await loadScriptOwned(req.params.id, req.session.account_id);
@@ -4604,7 +4572,7 @@ app.get("/api/accounts", requireAuth, requireOwner, async (req, res) => {
   res.json({ ok: true, accounts: data });
 });
 
-// Separate, intentional single-account key reveal â€” requires explicit lookup
+// Separate, intentional single-account key reveal Ã¢â‚¬â€ requires explicit lookup
 // so bulk key harvest via XSS is not possible from the accounts list page.
 app.get("/api/accounts/:id/key", requireAuth, requireOwner, async (req, res) => {
   if (!isValidUUID(req.params.id)) return res.status(400).json({ ok: false, error: "Invalid ID" });
@@ -4968,13 +4936,13 @@ async function startDiscordBot() {
       if (!client.isReady()) return;
       const colorMap = { nonce_replay: 0xef4444, rate_limit: 0xf59e0b, raw_no_key: 0xef4444 };
       const titleMap = {
-        nonce_replay:  "âš ï¸ Raw Code Replay Attempt",
-        rate_limit:    "ðŸš¦ Rate Limit â€” Possible Scraper",
-        raw_no_key:    "ðŸ”‘ Raw Endpoint Hit Without Valid Key",
+        nonce_replay:  "Ã¢Å¡ Ã¯Â¸Â Raw Code Replay Attempt",
+        rate_limit:    "Ã°Å¸Å¡Â¦ Rate Limit Ã¢â‚¬â€ Possible Scraper",
+        raw_no_key:    "Ã°Å¸â€â€˜ Raw Endpoint Hit Without Valid Key",
       };
       const embed = new EmbedBuilder()
         .setColor(colorMap[type] || 0xef4444)
-        .setTitle(titleMap[type] || "âš ï¸ Suspicious Load Attempt")
+        .setTitle(titleMap[type] || "Ã¢Å¡ Ã¯Â¸Â Suspicious Load Attempt")
         .setTimestamp()
         .addFields(
           { name: "Script", value: details.scriptSlug || "-", inline: true },
@@ -6851,7 +6819,7 @@ async function startDiscordBot() {
 
       const { data: rows } = await query;
       if (!rows || rows.length === 0) {
-        return interaction.editReply({ content: "âœ… No suspicious attempts found." });
+        return interaction.editReply({ content: "Ã¢Å“â€¦ No suspicious attempts found." });
       }
 
       const lines = rows.map((r) => {
@@ -6860,12 +6828,12 @@ async function startDiscordBot() {
         const key = r.keys?.key ? r.keys.key.slice(0, 6) + "..." + r.keys.key.slice(-4) : "none";
         const ip = r.ip || "?";
         const hwid = r.hwid ? r.hwid.slice(0, 8) + "..." : "none";
-        return `\`${when}\` **${script}** â€” IP: \`${ip}\` HWID: \`${hwid}\` Key: \`${key}\`\n> ${r.reason}`;
+        return `\`${when}\` **${script}** Ã¢â‚¬â€ IP: \`${ip}\` HWID: \`${hwid}\` Key: \`${key}\`\n> ${r.reason}`;
       });
 
       const embed = new EmbedBuilder()
         .setColor(0xef4444)
-        .setTitle("ðŸ”’ Recent Security Alerts")
+        .setTitle("Ã°Å¸â€â€™ Recent Security Alerts")
         .setDescription(lines.join("\n\n"))
         .setFooter({ text: "Last 10 suspicious attempts" })
         .setTimestamp();
@@ -6889,7 +6857,7 @@ async function startDiscordBot() {
       if (error && error.message.includes("duplicate"))
         return interaction.editReply({ content: `IP \`${ip}\` is already blocked.` });
       if (error) return interaction.editReply({ content: "Error: " + error.message });
-      return interaction.editReply({ content: `ðŸš« IP \`${ip}\` blocked from \`${scriptSlug}\`.` });
+      return interaction.editReply({ content: `Ã°Å¸Å¡Â« IP \`${ip}\` blocked from \`${scriptSlug}\`.` });
     }
 
     // --- blockhwid ---
@@ -6909,7 +6877,7 @@ async function startDiscordBot() {
       if (error && error.message.includes("duplicate"))
         return interaction.editReply({ content: "HWID is already blocked." });
       if (error) return interaction.editReply({ content: "Error: " + error.message });
-      return interaction.editReply({ content: `ðŸš« HWID \`${hwid.slice(0, 8)}...\` blocked from \`${scriptSlug}\`.` });
+      return interaction.editReply({ content: `Ã°Å¸Å¡Â« HWID \`${hwid.slice(0, 8)}...\` blocked from \`${scriptSlug}\`.` });
     }
 
     // --- unblock ---
@@ -6931,7 +6899,7 @@ async function startDiscordBot() {
       if (error) return interaction.editReply({ content: "Error: " + error.message });
       if (!deleted || deleted.length === 0)
         return interaction.editReply({ content: `No block found for \`${value}\` on \`${scriptSlug}\`.` });
-      return interaction.editReply({ content: `âœ… Unblocked \`${value}\` from \`${scriptSlug}\`.` });
+      return interaction.editReply({ content: `Ã¢Å“â€¦ Unblocked \`${value}\` from \`${scriptSlug}\`.` });
     }
   }
 
@@ -6979,7 +6947,7 @@ async function startDiscordBot() {
     const topReasons = [...reasonCounts.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([reason, count]) => `\`${count}Ã—\` ${reason}`);
+      .map(([reason, count]) => `\`${count}Ãƒâ€”\` ${reason}`);
 
     const integrityMode = project.integrity_mode || "log";
     const strictGenv = project.strict_genv_check === true;
@@ -6988,43 +6956,43 @@ async function startDiscordBot() {
     const whitelistOnly = project.whitelist_only === true;
     const blockedCount = blocked24h.count || 0;
 
-    const modeDisplay = integrityMode === "kick" ? "ðŸŸ¢ Kick (block + report)"
-      : integrityMode === "log" ? "ðŸŸ¡ Log only"
-      : "ðŸ”´ Off";
+    const modeDisplay = integrityMode === "kick" ? "Ã°Å¸Å¸Â¢ Kick (block + report)"
+      : integrityMode === "log" ? "Ã°Å¸Å¸Â¡ Log only"
+      : "Ã°Å¸â€Â´ Off";
 
     let color, headline;
     if (integrityMode === "off") {
       color = 0xef4444;
-      headline = "ðŸ”´ Runtime integrity checks are **off** â€” hooked executors won't be caught, only logged loader-level abuse.";
+      headline = "Ã°Å¸â€Â´ Runtime integrity checks are **off** Ã¢â‚¬â€ hooked executors won't be caught, only logged loader-level abuse.";
     } else if (blockedCount > 20) {
       color = 0xf59e0b;
-      headline = `ðŸŸ¡ Elevated activity â€” **${blockedCount}** blocked attempts in the last 24h.`;
+      headline = `Ã°Å¸Å¸Â¡ Elevated activity Ã¢â‚¬â€ **${blockedCount}** blocked attempts in the last 24h.`;
     } else {
       color = 0x22c55e;
-      headline = `ðŸŸ¢ Protection active â€” ${blockedCount ? `${blockedCount} blocked attempt(s)` : "nothing unusual"} in the last 24h.`;
+      headline = `Ã°Å¸Å¸Â¢ Protection active Ã¢â‚¬â€ ${blockedCount ? `${blockedCount} blocked attempt(s)` : "nothing unusual"} in the last 24h.`;
     }
 
     const embed = new EmbedBuilder()
       .setColor(color)
-      .setTitle("ðŸ›¡ï¸ Security Panel â€” " + project.name)
+      .setTitle("Ã°Å¸â€ºÂ¡Ã¯Â¸Â Security Panel Ã¢â‚¬â€ " + project.name)
       .setDescription(headline)
       .addFields(
         { name: "Integrity check mode", value: modeDisplay, inline: true },
         { name: "Execution ticket TTL", value: `${ticketTtl}s`, inline: true },
         { name: "Loader rate limit", value: `${rateLimit}/min per IP`, inline: true },
-        { name: "Strict env check", value: strictGenv ? "âœ… On" : "âž– Off", inline: true },
-        { name: "Whitelist-only", value: whitelistOnly ? "ðŸ”’ On" : "âž– Off", inline: true },
-        { name: "Project status", value: project.status === "active" ? "ðŸŸ¢ Active" : "â¸ï¸ " + project.status, inline: true },
+        { name: "Strict env check", value: strictGenv ? "Ã¢Å“â€¦ On" : "Ã¢Å¾â€“ Off", inline: true },
+        { name: "Whitelist-only", value: whitelistOnly ? "Ã°Å¸â€â€™ On" : "Ã¢Å¾â€“ Off", inline: true },
+        { name: "Project status", value: project.status === "active" ? "Ã°Å¸Å¸Â¢ Active" : "Ã¢ÂÂ¸Ã¯Â¸Â " + project.status, inline: true },
         { name: "Loads (24h)", value: String(loads24h.count || 0), inline: true },
         { name: "Blocked attempts (24h)", value: String(blockedCount), inline: true },
-        { name: "Blocklist", value: `${blockedIps.count || 0} IP Â· ${blockedHwids.count || 0} HWID`, inline: true },
+        { name: "Blocklist", value: `${blockedIps.count || 0} IP Ã‚Â· ${blockedHwids.count || 0} HWID`, inline: true },
       );
 
     if (topReasons.length) {
       embed.addFields({ name: "Top block reasons (24h)", value: topReasons.join("\n"), inline: false });
     }
 
-    embed.setFooter({ text: "/security alerts for details Â· /security blockip|blockhwid to act" }).setTimestamp();
+    embed.setFooter({ text: "/security alerts for details Ã‚Â· /security blockip|blockhwid to act" }).setTimestamp();
 
     return interaction.editReply({ embeds: [embed] });
   }
@@ -7051,7 +7019,7 @@ async function startDiscordBot() {
     if (keyRow.revoked) return interaction.editReply({ content: "Key is already revoked." });
 
     await supabase.from("keys").update({ revoked: true }).eq("id", keyRow.id);
-    await interaction.editReply({ content: "âœ… Key `" + keyValue.slice(0, 6) + "..." + keyValue.slice(-4) + "` has been revoked." });
+    await interaction.editReply({ content: "Ã¢Å“â€¦ Key `" + keyValue.slice(0, 6) + "..." + keyValue.slice(-4) + "` has been revoked." });
 
     // Disable the buttons on the alert message so it's clear action was taken
     try {
@@ -7092,7 +7060,7 @@ async function startDiscordBot() {
       return interaction.editReply({ content: "IP `" + ip + "` is already blocked." });
     if (error) return interaction.editReply({ content: "Error: " + error.message });
 
-    await interaction.editReply({ content: "ðŸš« IP `" + ip + "` has been blocked from `" + (scriptSlug || "script") + "`." });
+    await interaction.editReply({ content: "Ã°Å¸Å¡Â« IP `" + ip + "` has been blocked from `" + (scriptSlug || "script") + "`." });
     try {
       const msg = interaction.message;
       const disabledRow = new ActionRowBuilder().addComponents(
@@ -7130,7 +7098,7 @@ async function startDiscordBot() {
       return interaction.editReply({ content: "HWID is already blocked." });
     if (error) return interaction.editReply({ content: "Error: " + error.message });
 
-    await interaction.editReply({ content: "ðŸš« HWID `" + hwid.slice(0, 8) + "...` has been blocked from `" + (scriptSlug || "script") + "`." });
+    await interaction.editReply({ content: "Ã°Å¸Å¡Â« HWID `" + hwid.slice(0, 8) + "...` has been blocked from `" + (scriptSlug || "script") + "`." });
     try {
       const msg = interaction.message;
       const disabledRow = new ActionRowBuilder().addComponents(
