@@ -1117,7 +1117,26 @@ end
 return ${p}sh`;
 }
 
-function wrapExecCheck(source, verifyUrl) {
+// Wrap delivery-side checks WITHOUT compiling the real payload in this
+// wrapper's lexical scope.  The old implementation concatenated `source`
+// directly into the generated function.  That made every local declared by
+// the delivered script share the same Luau register budget as the loader's
+// own locals, which could produce `Out of local registers ... exceeded limit
+// 200` even when the exact same payload compiled successfully on its own.
+//
+// The real payload is therefore kept as a Lua long-string and compiled with
+// a fresh loadstring() call only after the delivery checks pass.  The identity
+// preamble is also executed in this outer function so its `return` remains a
+// real execution gate rather than merely returning from a separately-loaded
+// payload chunk.
+function luaLongStringLiteral(source) {
+  const text = String(source == null ? "" : source);
+  let level = 0;
+  while (text.includes("]" + "=".repeat(level) + "]")) level++;
+  return "[" + "=".repeat(level) + "[" + text + "]" + "=".repeat(level) + "]";
+}
+
+function wrapExecCheck(source, verifyUrl, preamble) {
   const runtimeKey = crypto.randomBytes(32).toString("hex"); // 64 hex chars
   // SECURITY: Store the SHA-256 hash of the key in the Lua, not the key itself.
   // Attacker who dumps the Lua body sees only the hash Ã¢â‚¬â€ SHA-256 is
@@ -1125,7 +1144,9 @@ function wrapExecCheck(source, verifyUrl) {
   const expectedHash = crypto.createHash("sha256").update(runtimeKey).digest("hex");
 
   const r = () => "_" + crypto.randomBytes(3).toString("hex");
-  const sha256fn = r(), rtVar = r(), hashVar = r(), computed = r(), okV = r(), rV = r(), plrV = r();
+  const sha256fn = r(), rtVar = r(), computed = r(), okV = r(), rV = r();
+  const payloadV = r(), payloadFnV = r(), payloadErrV = r(), payloadOkV = r();
+  const payloadSource = luaLongStringLiteral(source);
 
   const wrapped = [
     "do",
@@ -1136,7 +1157,10 @@ function wrapExecCheck(source, verifyUrl) {
     `    return`,
     `  end`,
     `end`,
-    // Inject pure-Lua SHA-256 and verify the runtime key
+    // Strategy A identity gate stays OUTSIDE the payload loadstring so a
+    // failed check still aborts this execution wrapper immediately.
+    preamble || "",
+    // Inject pure-Lua SHA-256 and verify the runtime key.
     `local ${sha256fn} = (function()`,
     sha256Lua(),
     `end)()`,
@@ -1144,7 +1168,12 @@ function wrapExecCheck(source, verifyUrl) {
     `  if type(${rtVar}) ~= "string" or #${rtVar} ~= 64 then return end`,
     `  local ${computed} = ${sha256fn}(${rtVar})`,
     `  if ${computed} ~= "${expectedHash}" then return end`,
-    source,
+    // IMPORTANT: compile the real script in its own fresh chunk.
+    `  local ${payloadV} = ${payloadSource}`,
+    `  local ${payloadFnV}, ${payloadErrV} = loadstring(${payloadV})`,
+    `  if not ${payloadFnV} then error(${payloadErrV}) end`,
+    `  local ${payloadOkV}, ${payloadErrV} = pcall(${payloadFnV}, ${rtVar})`,
+    `  if not ${payloadOkV} then error(${payloadErrV}) end`,
     `end`,
   ].join("\n");
 
@@ -2775,12 +2804,12 @@ async function buildSecureDelivery({
   const idTok = issueIdToken(hwid, pid, gp);
   const idPreamble = buildIdCheckPreamble(idTok, canaryUrl, integrityMode);
 
-  // --- Build exec check wrapper around source+idPreamble ---
+  // --- Build exec check wrapper with identity gate kept outside payload ---
+  // The actual payload is compiled in a fresh loadstring chunk.
   // Strategy B (per-chunk split delivery) is intentionally disabled.
   // The complete wrapped source is returned as one Lua payload so the normal
   // loadstring path can execute it without chunk assembly/reassembly.
-  const sourceWithId = idPreamble + source;
-  const execResult = wrapExecCheck(sourceWithId, verifyUrl);
+  const execResult = wrapExecCheck(source, verifyUrl, idPreamble);
 
   // Keep the existing integrity protection, but do not split the actual
   // delivered script into multiple network chunks.
@@ -3568,7 +3597,7 @@ async function handleLoadRoute(req, res) {
     const __gp    = String(req.query.gp || "").trim();
     const __idTok = issueIdToken(hwid, __pid, __gp);
     const __idPreamble = buildIdCheckPreamble(__idTok, __canaryUrl, __integrityMode);
-    const __wmWithId = __idPreamble + __wm;
+    const __wmWithId = __wm;
     // FIX: embed a fresh, single-use, short-lived "proof of live execution"
     // ticket INSIDE the decrypted payload itself - not just around the
     // outer delivery. Without this, someone who manages to obtain the
@@ -3581,7 +3610,7 @@ async function handleLoadRoute(req, res) {
     // it, so a saved copy fails the redeem and the player gets kicked.
     const __execTicket = issueRawNonce(scriptSlug, key || "", __nonceTtlMs);
     const __verifyUrl = PUBLIC_BASE_URL + "/v1/verify/" + __execTicket;
-    const __execResult = wrapExecCheck(__wmWithId, __verifyUrl);
+    const __execResult = wrapExecCheck(__wmWithId, __verifyUrl, __idPreamble);
     const __runtimeKey = __execResult.runtimeKey;
 
     // Strategy B (per-chunk split delivery) is disabled. Return the complete
