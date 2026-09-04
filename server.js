@@ -2273,7 +2273,28 @@ function wrapHeadlessDecoyDelay(rawUrl, rawNonce, canaryUrl, integrityMode, stri
   // If a pre-built assembler is passed (from buildSecureDelivery), use it directly.
   // Otherwise fall back to old fetch-decrypt pipeline for backward compat.
   const payloadLines = prebuiltAssembler
-    ? [prebuiltAssembler]
+    ? [
+        'local __solWrappedFn',
+        'local __solWrappedOk, __solWrappedErr = pcall(function()',
+        '  local __solWrappedLoader = function()',
+        prebuiltAssembler.code,
+        '  end',
+        '  __solWrappedFn = __solWrappedLoader()',
+        'end)',
+        'if not __solWrappedOk then',
+        '  __solFailed = true',
+        '  warn("[S] stage=WRAPPER error: " .. tostring(__solWrappedErr))',
+        'elseif type(__solWrappedFn) ~= "function" then',
+        '  __solFailed = true',
+        '  warn("[S] stage=WRAPPER error: wrapped payload did not return a function")',
+        'else',
+        '  local __solRunOk, __solRunErr = pcall(__solWrappedFn, "' + prebuiltAssembler.runtimeKey + '")',
+        '  if not __solRunOk then',
+        '    __solFailed = true',
+        '    warn("[S] stage=RUN error: " .. tostring(__solRunErr))',
+        '  end',
+        'end'
+      ]
     : buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv);
   return [
     '--[[ PROPRIETARY ]]',
@@ -2539,7 +2560,28 @@ function wrapLoadingGui(source, opts, rawUrl, rawNonce, canaryUrl, integrityMode
     // '<digits>'" parse errors (the exact digits/position varied run to
     // run because generated variable names have random lengths).
     ...(prebuiltAssembler
-      ? [prebuiltAssembler]
+      ? [
+          'local __solWrappedFn',
+          'local __solWrappedOk, __solWrappedErr = pcall(function()',
+          '  local __solWrappedLoader = function()',
+          prebuiltAssembler.code,
+          '  end',
+          '  __solWrappedFn = __solWrappedLoader()',
+          'end)',
+          'if not __solWrappedOk then',
+          '  __solFailed = true',
+          '  warn("[S] stage=WRAPPER error: " .. tostring(__solWrappedErr))',
+          'elseif type(__solWrappedFn) ~= "function" then',
+          '  __solFailed = true',
+          '  warn("[S] stage=WRAPPER error: wrapped payload did not return a function")',
+          'else',
+          '  local __solRunOk, __solRunErr = pcall(__solWrappedFn, "' + prebuiltAssembler.runtimeKey + '")',
+          '  if not __solRunOk then',
+          '    __solFailed = true',
+          '    warn("[S] stage=RUN error: " .. tostring(__solRunErr))',
+          '  end',
+          'end'
+        ]
       : buildFetchDecryptDecoyLoadLines(rawUrl, rawNonce, canaryUrl, integrityMode, strictGenv)),
     '',
     '__solDone = true',
@@ -2748,9 +2790,9 @@ async function buildSecureDelivery({
 
   // --- Optional GUI wrapper (loading screen, key GUI, etc.) ---
   if (typeof wrapperFn === "function") {
-    return wrapperFn(wrappedSource);
+    return wrapperFn(wrappedSource, execResult.runtimeKey);
   }
-  return wrappedSource;
+  return { code: wrappedSource, runtimeKey: execResult.runtimeKey };
 }
 
 
