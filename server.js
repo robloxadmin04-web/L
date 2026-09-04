@@ -55,21 +55,6 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// Dynamic loader endpoints must never be cached. Their responses contain
-// short-lived, single-use tokens/challenges, so replaying a cached response
-// can legitimately produce HTTP 403 on the next execution.
-function noStoreDynamic(res) {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-  res.setHeader("Surrogate-Control", "no-store");
-}
-
-app.use((req, res, next) => {
-  if (req.path.startsWith("/v1/")) noStoreDynamic(res);
-  next();
-});
-
 // SECURITY: Verify X-Requested-With header on all /api/* requests.
 // This prevents CSRF attacks where a malicious site tricks the browser
 // into making credentialed requests to the API. The SL.api() helper
@@ -270,13 +255,7 @@ function makeKey(prefix) {
 // happens inside that file's response, not in this pasted line. key is
 // the actual key string (or "" / null for keyless), known server-side.
 function buildHandshakeLoader(scriptSlug, key) {
-  // Cache-bust the hosted bootstrap URL. The server also sends no-store headers,
-  // but this query parameter protects against executor/proxy caches that ignore
-  // response cache headers. It does not affect routing or token validation.
-  const cacheBust = crypto.randomBytes(8).toString("hex");
-  const params = ["cb=" + cacheBust];
-  if (key) params.push("k=" + encodeURIComponent(key));
-  const url = PUBLIC_BASE_URL + "/v1/loaders/" + scriptSlug + ".lua?" + params.join("&");
+  const url = PUBLIC_BASE_URL + "/v1/loaders/" + scriptSlug + ".lua" + (key ? "?k=" + encodeURIComponent(key) : "");
   return 'loadstring(game:HttpGet("' + url + '"))()';
 }
 function makeSlug(name) {
@@ -672,8 +651,9 @@ function verifyIdToken(token, hwid, userId, placeId) {
   if (!t) return false;
   idTokens.delete(token); // single-use always
   if (Date.now() > t.expires) return false;
-  // All three must match exactly
-  if (t.hwid !== (hwid || "")) return false;
+  // Hosted loader requests may not have HWID at token issuance time.
+  // Enforce HWID only when the token was actually bound to one.
+  if (t.hwid && t.hwid !== (hwid || "")) return false;
   if (t.userId !== String(userId || "")) return false;
   if (t.placeId !== String(placeId || "")) return false;
   return true;
@@ -3164,7 +3144,6 @@ app.get("/v1/canary/:token", async (req, res) => {
 // didn't already need to fake.
 // ============================================================
 app.get("/v1/handshake", async (req, res) => {
-  noStoreDynamic(res);
   res.type("text/plain");
   if (isBrowserNav(req)) return res.status(403).send("0");
   if (!isRobloxClient(req) || isKnownScraperClient(req)) return res.status(403).send("0");
@@ -3724,7 +3703,6 @@ app.get("/v1/load/:script_slug", handleLoadRoute);
 // endpoint the loader snippet has to call out to.
 // ============================================================
 app.get("/v1/bootstrap/:script_slug", async (req, res) => {
-  noStoreDynamic(res);
   // FIX: no longer self-issues a challenge here. The client (see
   // /v1/loaders/:file below) must have already fetched a real, single-use
   // challenge from /v1/handshake and passed it as ?c= - this route just
@@ -3746,7 +3724,8 @@ app.get("/v1/bootstrap/:script_slug", async (req, res) => {
 // enforcement still happens at /v1/bootstrap -> handleLoadRoute.
 // ============================================================
 app.get("/v1/loaders/:file", async (req, res) => {
-  noStoreDynamic(res);
+  // The response contains a short-lived single-use loader token. Never cache it.
+  res.set({"Cache-Control":"no-store, no-cache, must-revalidate, proxy-revalidate","Pragma":"no-cache","Expires":"0","Surrogate-Control":"no-store"});
   const m = String(req.params.file || "").match(/^([a-z0-9-]{1,40})\.lua$/i);
   if (!m) return res.status(404).type("text/plain").send("-- not found");
   const slug = m[1];
